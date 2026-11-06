@@ -27,3 +27,6 @@ playwright-report/
 .DS_Store
 *.log
 *.tsbuildinfo
+
+# skill engines downloaded on first use (platform binaries)
+.claude/skills/*/scripts/bin/
