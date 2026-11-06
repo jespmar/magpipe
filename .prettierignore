@@ -1,0 +1,9 @@
+.next/
+dist-electron/
+release/
+node_modules/
+package-lock.json
+public/brand/
+docs/spec.md
+.magpipe/
+drizzle/

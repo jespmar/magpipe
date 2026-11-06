@@ -1,0 +1,270 @@
+@import 'tailwindcss';
+
+/* ─── Design tokens (docs/spec.md §4). Dark only — there is no light mode. ─── */
+:root {
+  /* surfaces */
+  --canvas: #101010;
+  --canvas-soft: #1a1a1a;
+  --canvas-raised: #181818;
+  --hairline: #3d3a39;
+  --hairline-soft: #1f1f1f;
+  /* text */
+  --ink: #f2f2f2;
+  --ink-strong: #ffffff;
+  --body: #bdbdbd;
+  --mute: #8b949e;
+  --code-text: #f5f6f7;
+  /* accent: white is the solid accent; the sheen lives in gradients */
+  --accent: #ffffff;
+  --on-accent: #101010;
+  --ghost: #d1d5db;
+  --sheen-cyan: #22c1dc;
+  --sheen-teal: #0e9aa8;
+  --sheen-emerald: #16a35e;
+  --sheen-cyan-soft: #66d9e8;
+  --sheen-tint: #d6f5f7;
+  --warn: #fbbf24;
+  --danger: #f87171;
+  /* gradients */
+  --g-sheen: linear-gradient(135deg, #22c1dc 0%, #0e9aa8 55%, #16a35e 100%);
+  --g-sheen-text: linear-gradient(90deg, #ffffff 0%, #66d9e8 45%, #22c1dc 100%);
+  --g-card: linear-gradient(180deg, #181818 0%, #101010 100%);
+  --g-panel: linear-gradient(180deg, #141a1a 0%, #141414 100%);
+  --g-progress: linear-gradient(90deg, #ffffff 0%, #22c1dc 100%);
+  --g-button: linear-gradient(135deg, #ffffff 0%, #d6f5f7 60%, #a8e8ee 100%);
+  /* radii */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-pill: 9999px;
+  /* glow */
+  --glow-cyan: 0 0 22px rgba(34, 193, 220, 0.3);
+  /* type */
+  --font-mono-stack: SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+
+  color-scheme: dark;
+}
+
+/* ─── Tailwind theme: only the tokens above exist as colours. ─── */
+@theme inline {
+  --color-*: initial;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+  --color-canvas: var(--canvas);
+  --color-canvas-soft: var(--canvas-soft);
+  --color-canvas-raised: var(--canvas-raised);
+  --color-hairline: var(--hairline);
+  --color-hairline-soft: var(--hairline-soft);
+  --color-ink: var(--ink);
+  --color-ink-strong: var(--ink-strong);
+  --color-body: var(--body);
+  --color-mute: var(--mute);
+  --color-code-ink: var(--code-text);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
+  --color-ghost: var(--ghost);
+  --color-cyan: var(--sheen-cyan);
+  --color-teal: var(--sheen-teal);
+  --color-emerald: var(--sheen-emerald);
+  --color-cyan-soft: var(--sheen-cyan-soft);
+  --color-tint: var(--sheen-tint);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+
+  --font-sans: var(--font-inter), system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: var(--font-mono-stack);
+
+  --radius-xs: var(--r-xs);
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-pill: var(--r-pill);
+
+  /* <768 stack · 768–1279 desktop · ≥1600 wide */
+  --breakpoint-wide: 100rem;
+
+  /* Type scale (spec §4). `text-display-lg` etc. set size, line-height, tracking, weight. */
+  --text-display-xl: 60px;
+  --text-display-xl--line-height: 60px;
+  --text-display-xl--letter-spacing: -0.65px;
+  --text-display-xl--font-weight: 400;
+  --text-display-lg: 36px;
+  --text-display-lg--line-height: 40px;
+  --text-display-lg--letter-spacing: -0.9px;
+  --text-display-lg--font-weight: 400;
+  --text-display-md: 24px;
+  --text-display-md--line-height: 32px;
+  --text-display-md--letter-spacing: -0.6px;
+  --text-display-md--font-weight: 700;
+  --text-display-sm: 20px;
+  --text-display-sm--line-height: 28px;
+  --text-display-sm--font-weight: 600;
+  --text-body-lg: 18px;
+  --text-body-lg--line-height: 28px;
+  --text-body-md: 16px;
+  --text-body-md--line-height: 26px;
+  --text-body-sm: 14px;
+  --text-body-sm--line-height: 20px;
+  --text-caption: 12px;
+  --text-caption--line-height: 16px;
+  --text-code: 13px;
+  --text-code--line-height: 18px;
+  --text-button: 16px;
+  --text-button--line-height: 24px;
+  --text-button-sm: 14px;
+  --text-button-sm--line-height: 20px;
+
+  --shadow-glow: var(--glow-cyan);
+  --shadow-glow-soft: 0 0 22px rgba(34, 193, 220, 0.25);
+
+  --animate-blink: blink 1.6s ease-in-out infinite;
+
+  @keyframes blink {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.35;
+    }
+  }
+}
+
+/* ─── Composite utilities used across screens ─── */
+@utility eyebrow {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  letter-spacing: 2.52px;
+  text-transform: uppercase;
+  background: var(--g-sheen-text);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+@utility label-caps {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+
+@utility page-title {
+  font-size: 36px;
+  line-height: 40px;
+  letter-spacing: -0.9px;
+  font-weight: 400;
+  color: var(--ink-strong);
+  @media (width >= 100rem) {
+    font-size: 48px;
+    line-height: 52px;
+  }
+}
+
+/* Hairline card; no drop shadow at rest, cyan edge + glow on hover. */
+@utility card {
+  background: var(--g-card);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+  &:hover {
+    border-color: rgba(34, 193, 220, 0.45);
+    box-shadow: 0 0 28px rgba(34, 193, 220, 0.12);
+  }
+}
+
+@utility panel {
+  background: var(--g-panel);
+  border: 1px solid rgba(34, 193, 220, 0.28);
+  border-radius: var(--r-md);
+}
+
+@utility shell-container {
+  width: 100%;
+  max-width: 1200px;
+  margin-inline: auto;
+  padding-inline: 16px;
+  @media (width >= 48rem) {
+    padding-inline: 32px;
+  }
+  @media (width >= 100rem) {
+    max-width: 2300px;
+    padding-inline: 48px;
+  }
+}
+
+/* Page background: cyan glow top-centre, emerald glow bottom-right, 24px dot grid. */
+@utility ambient {
+  background:
+    radial-gradient(ellipse 55% 35% at 50% -5%, rgba(34, 193, 220, 0.14), transparent 70%),
+    radial-gradient(ellipse 35% 30% at 92% 105%, rgba(22, 163, 94, 0.1), transparent 70%),
+    radial-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px) 0 0 / 24px 24px,
+    var(--canvas);
+  background-attachment: fixed;
+}
+
+@utility glass {
+  background: rgba(16, 16, 16, 0.72);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+
+@utility text-sheen {
+  background: var(--g-sheen-text);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ─── Base ─── */
+@layer base {
+  html,
+  body {
+    background: var(--canvas);
+    color: var(--ink);
+  }
+  body {
+    font-family: var(--font-sans);
+    font-feature-settings: 'calt', 'rlig';
+    -webkit-font-smoothing: antialiased;
+  }
+  button {
+    cursor: pointer;
+  }
+  ::placeholder {
+    color: var(--mute);
+  }
+  :focus-visible {
+    outline: 2px solid var(--ink-strong);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: rgba(34, 193, 220, 0.35);
+    color: var(--ink-strong);
+  }
+}
+
+/* ─── Desktop (Electron) chrome: on macOS the frosted nav doubles as the title bar. ─── */
+html[data-desktop='darwin'] [data-titlebar] {
+  -webkit-app-region: drag;
+  padding-left: 88px;
+}
+html[data-desktop='darwin']
+  [data-titlebar]
+  :is(a, button, input, select, textarea, [role='button']) {
+  -webkit-app-region: no-drag;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

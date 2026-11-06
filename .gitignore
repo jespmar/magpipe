@@ -1,0 +1,29 @@
+# deps
+node_modules/
+
+# next
+.next/
+out/
+next-env.d.ts
+
+# electron
+dist-electron/
+release/
+
+# local data (embedded database, uploads)
+.magpipe/
+
+# env
+.env
+.env.*
+!.env.example
+
+# tests
+coverage/
+test-results/
+playwright-report/
+
+# misc
+.DS_Store
+*.log
+*.tsbuildinfo

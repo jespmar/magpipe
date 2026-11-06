@@ -1,0 +1,42 @@
+# Packages the Electron shell plus the Next.js standalone server into self-contained
+# installers. `npm run dist` builds everything first. Nothing external is needed at runtime:
+# the database (PGlite) is embedded in the server bundle.
+appId: app.magpipe.desktop
+productName: Magpipe
+copyright: Copyright © 2026 Magpipe
+directories:
+  # Two-package.json layout: dist-electron/package.json has no dependencies (see
+  # scripts/write-app-manifest.mjs), so app.asar holds only the compiled main + preload.
+  app: dist-electron
+  output: release
+  buildResources: build
+files:
+  - '**/*'
+  - '!**/*.map'
+npmRebuild: false
+
+extraResources:
+  # server.js, .next/, public/, drizzle/ migrations and the traced node_modules (PGlite incl.)
+  - from: .next/standalone
+    to: server
+    filter: ['**/*']
+
+mac:
+  category: public.app-category.developer-tools
+  icon: build/icon.png
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+win:
+  icon: build/icon.png
+  target: nsis
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+linux:
+  icon: build/icon.png
+  category: Development
+  target: AppImage
