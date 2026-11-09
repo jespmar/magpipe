@@ -75,6 +75,12 @@ implement later.
 - **Packaging.** electron-builder's two-`package.json` layout: `dist-electron/` (compiled main
   - a dependency-free manifest) becomes `app.asar`; the standalone server ships as
     `resources/server`. Installers are built per OS by `.github/workflows/desktop.yml`.
+  The traced `node_modules` of the standalone server travel through their own
+  `extraResources` entry (`.next/standalone/node_modules` → `server/node_modules`):
+  electron-builder's copy filter always skips a source directory's top-level `node_modules`,
+  whatever the pattern says, so a single entry from `.next/standalone` ships a server that
+  cannot find `next`. `npm run dist` builds the installer for the host OS; the first Linux
+  build here ran the AppImage headless and its embedded server answered `/api/health`.
 
 ## D4 · Access: per-launch token on desktop, Auth.js only for hosting
 

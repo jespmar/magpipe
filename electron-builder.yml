@@ -16,9 +16,14 @@ files:
 npmRebuild: false
 
 extraResources:
-  # server.js, .next/, public/, drizzle/ migrations and the traced node_modules (PGlite incl.)
+  # server.js, .next/, public/ and the drizzle/ migrations.
   - from: .next/standalone
     to: server
+    filter: ['**/*']
+  # The traced node_modules (PGlite incl.) go through their own entry: electron-builder's copy
+  # filter always skips a source directory's top-level node_modules, whatever the pattern says.
+  - from: .next/standalone/node_modules
+    to: server/node_modules
     filter: ['**/*']
 
 mac:
@@ -40,3 +45,5 @@ linux:
   icon: build/icon.png
   category: Development
   target: AppImage
+  # Links the running window to the .desktop entry (taskbar icon, WM_CLASS).
+  syncDesktopName: true
