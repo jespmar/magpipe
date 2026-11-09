@@ -266,3 +266,26 @@ once per server start.
   are kept and labelled (D14).
 - **Not yet:** streaming tokens into the log (events are per message and tool call), spend caps
   (`settings.spendCapUsd` is recorded, not enforced), and artifacts produced by runs.
+
+## D16 · Home as built (PR 6)
+
+- **One read, one screen.** `getHomeData()` (`lib/home.ts`) loads the agents, the last 50 runs,
+  the day's counters (`homeStats`) and the latest run's trail in one request; the page degrades
+  to `UnavailableState` when the database cannot be opened.
+- **Agent cards say what a bird is doing.** `agentCard()` (`lib/home-util.ts`, pure) derives the
+  task line, progress and footer from the runs: while an agent has a `live` step in a running
+  run the card shows that step's title, the run's settled share as the progress bar and
+  `tokens so far · elapsed`; otherwise its last finished step (`Last: …`, `tokens · N ago`), or
+  "Ready for a first task." / `no runs yet` before any run.
+- **The flight log drives live refresh.** `FlightLog` is mounted at every width (shown from
+  1600 px) and tails the latest run over the SSE route while it is queued or running, merging
+  the server replay and the stream by `seq`; each event schedules `router.refresh()` (at most
+  every 2.5 s) so the cards and counters re-read the server, and the `end` frame refreshes once
+  more. A run started in another window is noticed only on the next load.
+- **Uploads happen as files are chosen** (one `POST /api/uploads` per file, chip states
+  attaching / size / failed) so Run only sends ids; `⌘/Ctrl + Enter` submits; the textarea is
+  uncontrolled so typing before hydration is never reset. A run created lands on
+  `/runs/<displayId>` (its holding state until PR 7).
+- **The orb** is pure CSS: rings as percentage insets so one markup scales 260 → 400 px, the
+  orbit and arc under `motion-safe:`, the grid behind it on a masked pseudo-element so the mask
+  never fades the text over it.

@@ -12,7 +12,9 @@ test('fresh workspace: nav reaches every screen, marks the active link, offers t
     'aria-current',
     'page',
   );
-  await expect(page.getByText('no runs yet')).toBeVisible();
+  await expect(
+    page.getByRole('region', { name: 'The nest' }).getByText('no runs yet'),
+  ).toBeVisible();
 
   for (const [link, eyebrow] of [
     ['Agents', 'The flock'],

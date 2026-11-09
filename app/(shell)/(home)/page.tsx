@@ -1,59 +1,70 @@
-import { PageHead } from '@/components/ui/PageHead';
-import { EmptyState, UnavailableState } from '@/components/ui/EmptyState';
+import { AgentCard } from '@/components/home/AgentCard';
+import { FlightLog } from '@/components/home/FlightLog';
+import { OrchestratorCore } from '@/components/home/OrchestratorCore';
+import { PromptComposer } from '@/components/home/PromptComposer';
 import { ButtonLink } from '@/components/ui/Button';
-import { DemoLink } from '@/components/ui/DemoLink';
-import { plural, relativeTime } from '@/lib/format';
-import { getOverview } from '@/lib/overview';
+import { UnavailableState } from '@/components/ui/EmptyState';
+import { PageHead } from '@/components/ui/PageHead';
+import { getDb } from '@/lib/db';
+import { getHomeData, type HomeData } from '@/lib/home';
 
+/**
+ * Home (spec §3.2): the flock on duty, the nest, the flight log where there is room for it, and
+ * the prompt that starts a run. The log component also tails the live run and refreshes this
+ * page's server data while events stream in.
+ */
 export default async function HomePage() {
-  const ov = await getOverview();
-
-  const head = (
-    <PageHead
-      eyebrow="The flock"
-      title="Birds on the wire"
-      description="Hand Magpipe a task. It picks the birds, splits the work, flies it, and reports back."
-    />
-  );
-  if (!ov) {
+  let data: HomeData;
+  try {
+    data = await getHomeData(await getDb());
+  } catch (err) {
+    console.error('[home] unavailable:', err);
     return (
       <>
-        {head}
+        <PageHead eyebrow="The flock" title="Birds on the wire" />
         <UnavailableState />
       </>
     );
   }
-
-  // Fact lines use the precise nouns; the metaphor stays in headings and prose.
-  const facts = [
-    plural(ov.agents.count, 'agent'),
-    ov.runs.latest ? plural(ov.runs.count, 'run') : 'no runs yet',
-    ov.runs.latest ? `last run ${relativeTime(ov.runs.latest.at)}` : null,
-    plural(ov.memory.count, 'memory', 'memories'),
-  ].filter((f): f is string => f !== null);
+  const now = new Date();
+  const agentNames = Object.fromEntries(data.agents.map((a) => [a.id, a.name]));
 
   return (
-    <>
-      {head}
-      <EmptyState
-        title="Ask Magpipe is on its way"
-        facts={facts}
-        actions={
-          <>
-            <ButtonLink href="/agents" variant="outline">
-              Meet the flock
-            </ButtonLink>
-            {ov.fresh ? <DemoLink /> : null}
-          </>
-        }
-      >
-        <p>
-          The prompt where you describe a task and attach files will sit here, with your birds on
-          duty above it and the live flight log beside it. Until then, your flock is set up and
-          ready to meet
-          {ov.fresh ? ', and the demo data shows what a finished flight looks like' : ''}.
-        </p>
-      </EmptyState>
-    </>
+    <div className="flex flex-col gap-14 wide:gap-10">
+      <div className="flex flex-col gap-14 wide:grid wide:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)] wide:items-stretch wide:gap-x-12">
+        <section aria-label="The flock" className="flex min-w-0 flex-col gap-5">
+          <PageHead
+            eyebrow="The flock"
+            title="Birds on the wire"
+            actions={
+              <ButtonLink href="/agents?new=1" variant="ghost">
+                + Add a bird
+              </ButtonLink>
+            }
+          />
+          {data.agents.length > 0 ? (
+            <ul className="grid grid-cols-1 gap-5 md:grid-cols-2 wide:grid-cols-[repeat(auto-fill,minmax(300px,1fr))]">
+              {data.agents.map((card) => (
+                <li key={card.id} className="flex min-w-0">
+                  <AgentCard card={card} now={now} />
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="max-w-[31rem] text-body-sm text-body">
+              No birds yet. Add one and it appears here, ready for the next task.
+            </p>
+          )}
+        </section>
+        <OrchestratorCore stats={data.stats} hasRuns={data.hasRuns} fresh={data.fresh} />
+        <FlightLog
+          key={data.latest?.run.id ?? 'none'}
+          latest={data.latest}
+          agentNames={agentNames}
+          className="hidden wide:flex"
+        />
+      </div>
+      <PromptComposer />
+    </div>
   );
 }
