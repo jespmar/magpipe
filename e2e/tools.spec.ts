@@ -97,7 +97,10 @@ test('connect a local MCP server, test it, grant it, remove it', async ({ page }
   await card.getByRole('button', { name: 'Remove', exact: true }).click();
   await expect(card.getByText(`Remove ${name} and every agent’s grant to it?`)).toBeVisible();
   await card.getByRole('button', { name: 'Remove', exact: true }).last().click();
-  await expect(page.getByRole('status').filter({ hasText: `${name} removed.` })).toBeVisible();
+  // The dev server compiles the delete route on first use; allow for that latency.
+  await expect(page.getByRole('status').filter({ hasText: `${name} removed.` })).toBeVisible({
+    timeout: 15_000,
+  });
   await expect(card).toHaveCount(0);
 });
 
