@@ -12,6 +12,8 @@ const manifest = {
   author: root.author ?? 'Magpipe',
   private: true,
   main: 'main.js',
+  // electron-builder: the .desktop file name Electron's window association uses on Linux.
+  desktopName: 'magpipe.desktop',
 };
 fs.mkdirSync('dist-electron', { recursive: true });
 fs.writeFileSync('dist-electron/package.json', JSON.stringify(manifest, null, 2) + '\n');
