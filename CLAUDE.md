@@ -64,6 +64,12 @@ engine and no sign-in on desktop.
   from the plan (`resumeInterrupted`).
 - New public routes must be added to the matcher in `middleware.ts`; everything else is behind
   the desktop token (desktop) or a session (hosted).
+- **Keyboard shortcuts come from `lib/shortcuts.ts`.** Add a key there (the handler, the `?`
+  sheet and Settings read the same list); single keys must stay out of text fields and open
+  dialogs. Search fields are `<input type="search">` so `/` can find them.
+- **Tests never need model credentials.** Unit tests script `ModelClient`; the Playwright
+  server runs with `MAGPIPE_MODEL_STUB=scripted` (`lib/engine/stub-model.ts`), which the engine
+  ignores in production builds.
 
 ## Before you say a PR is done
 

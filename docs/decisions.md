@@ -313,3 +313,24 @@ once per server start.
   route yet). The page title is the task cut at 140 characters; the Input card holds it whole.
 - **Re-fly and Cancel** call the PR 5 routes: Re-fly lands on the new flight, Cancel refreshes
   and quotes the server's 409 reason when the run already ended.
+
+## D18 · Wide, motion, keys and the smoke flows (PR 8)
+
+- **Wide (≥1600 px) is one set of `wide:` classes per screen**, not a second layout: Home and
+  Runs put their columns in a row, Agents and Memory sit their list and detail side by side
+  (flex bases lowered so 1600 px already fits), Tools runs four equal columns. Page titles grow
+  to 48/52 through the `page-title` utility.
+- **Motion is opt-in and tested.** Every decorative animation (the live dots, the orb's orbit,
+  arc and ring) is a `motion-safe:` class; `e2e/motion.spec.ts` asserts no running animation
+  under `prefers-reduced-motion: reduce` and at least one without it. 150 ms state transitions
+  stay — they are feedback, not motion.
+- **Keyboard shortcuts** live in one list (`lib/shortcuts.ts`) that feeds the handler
+  (`components/KeyboardShortcuts.tsx`), the `?` sheet and the Settings "Keyboard" section:
+  `?`, `/` (focus the screen's search), `n` (home with the prompt ready, via `/?focus=prompt`
+  read once at load and dropped through the router), `g` then `h a r t m s`. Single keys never
+  fire inside text fields or while a dialog is open; dialogs keep their own Escape.
+- **A scripted model for tests.** `MAGPIPE_MODEL_STUB=scripted` (development only; ignored in
+  production builds) swaps the Anthropic client for `lib/engine/stub-model.ts`, which plans one
+  step for the first agent in the registry, answers it and merges a short result. The
+  Playwright server runs with it, so the spec's smoke flow — create run → see events → done —
+  runs end to end through the real engine, events and screens without credentials.

@@ -247,7 +247,7 @@ export function MemoryScreen({
 
         <section
           aria-label="Entries"
-          className="flex min-w-0 flex-[1_1_560px] flex-col gap-5 wide:flex-[1_1_1200px] wide:flex-row wide:flex-wrap wide:items-start wide:gap-6"
+          className="flex min-w-0 flex-[1_1_560px] flex-col gap-5 wide:flex-[1_1_1100px] wide:flex-row wide:flex-wrap wide:items-start wide:gap-6"
         >
           {empty ? (
             <EmptyState title="The nest is empty" actions={fresh ? <DemoLink /> : undefined}>
@@ -275,7 +275,7 @@ export function MemoryScreen({
                 />
               </div>
               {selectedVisible ? (
-                <div className="min-w-0 wide:flex-[0_1_560px]">
+                <div className="min-w-0 wide:flex-[0_1_520px]">
                   <MemoryDetail
                     entry={selectedVisible}
                     agents={agents}

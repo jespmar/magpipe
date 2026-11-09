@@ -61,7 +61,10 @@ export function ToolCard({
   }
 
   return (
-    <article aria-labelledby={`${ids}-name`} className="flex min-w-0 flex-col gap-3.5 card p-5">
+    <article
+      aria-labelledby={`${ids}-name`}
+      className="flex min-w-0 flex-1 flex-col gap-3.5 card p-5"
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <span
