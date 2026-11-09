@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { formatDuration, formatTokens, plural, relativeTime } from '@/lib/format';
-import { listSentence, runStatusLabel } from '@/lib/text';
+import { listSentence } from '@/lib/text';
 
 const now = new Date('2026-11-09T12:00:00Z');
 const ago = (sec: number) => new Date(now.getTime() - sec * 1000);
@@ -51,9 +51,5 @@ describe('plural and lists', () => {
     expect(listSentence(['Coder', 'Operator', 'Researcher', 'Reviewer'])).toBe(
       'Coder, Operator, Researcher and Reviewer',
     );
-  });
-  it('maps run status to the on-screen word', () => {
-    expect(runStatusLabel('running')).toBe('flying');
-    expect(runStatusLabel('done')).toBe('done');
   });
 });

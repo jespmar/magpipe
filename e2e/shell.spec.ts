@@ -12,7 +12,7 @@ test('fresh workspace: nav reaches every screen, marks the active link, offers t
     'aria-current',
     'page',
   );
-  await expect(page.getByText('no flights yet')).toBeVisible();
+  await expect(page.getByText('no runs yet')).toBeVisible();
 
   for (const [link, eyebrow] of [
     ['Agents', 'The flock'],
@@ -35,23 +35,33 @@ test('fresh workspace: nav reaches every screen, marks the active link, offers t
     }
   }
 
-  await page.getByRole('link', { name: 'Settings' }).click();
-  await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();
+  // Client-side navigation to the anchor scrolls the section in and focuses its heading.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('link', { name: 'Load demo data' }).click();
+  await expect(page.getByRole('heading', { level: 2, name: 'Demo data' })).toBeFocused();
+  await expect(page.getByRole('heading', { level: 2, name: 'Demo data' })).toBeInViewport();
 });
 
 test('settings loads the demo data after a confirm step and reports the result', async ({
   page,
 }) => {
   await page.goto('/settings');
-  await page.getByRole('button', { name: 'Load demo data' }).click();
+  const trigger = page.getByRole('button', { name: 'Load demo data' });
+  await trigger.click();
   await expect(
-    page.getByText(/adds 9 example tools, 12 memories and 4 finished flights/),
+    page.getByText(/adds 9 example tools, 12 memories and 4 finished runs/),
   ).toBeVisible();
   await expect(page.getByRole('button', { name: 'Load it' })).toBeFocused();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await expect(trigger).toBeFocused();
+
+  await trigger.click();
   await page.getByRole('button', { name: 'Load it' }).click();
-  const status = page.getByRole('status').filter({ hasText: /Loaded 9 tools/ });
-  await expect(status).toBeVisible();
-  await expect(status).toBeFocused();
+  await expect(page.getByRole('status').filter({ hasText: /Loaded 9 tools/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Load it again' })).toBeFocused();
+  await page.getByRole('link', { name: 'See the flights' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Runs' })).toBeVisible();
+  await expect(page.getByText(/The latest flight was “/)).toBeVisible();
 
   await page.goto('/tools');
   await expect(page.getByRole('heading', { level: 2, name: '9 tools in the kit' })).toBeVisible();
@@ -62,6 +72,9 @@ test('settings loads the demo data after a confirm step and reports the result',
   await page.getByRole('link', { name: 'Open the latest flight' }).click();
   await expect(page.getByRole('heading', { level: 1 })).not.toHaveText(/^flight_/);
   await expect(page.getByText(/^took \d\d:\d\d$/)).toBeVisible();
+  await expect(page.getByText('done', { exact: true })).toBeVisible();
+  // The demo never touches workspace settings: the footer keeps its own region label.
+  await expect(page.locator('footer')).not.toContainText('eu-north-1');
 });
 
 test('unknown addresses keep the shell, answer 404, and offer a way back', async ({ page }) => {
@@ -74,6 +87,7 @@ test('unknown addresses keep the shell, answer 404, and offer a way back', async
 
   const run = await page.goto('/runs/flight_nope');
   expect(run?.status()).toBe(404);
+  await expect(page).toHaveTitle(/Flight not found/);
   await expect(page.getByRole('heading', { level: 1, name: 'This bird flew off' })).toBeVisible();
 });
 

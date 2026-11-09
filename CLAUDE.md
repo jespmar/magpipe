@@ -46,8 +46,9 @@ engine and no sign-in on desktop.
 - **Loading boundaries live per segment** (`loading.tsx` next to each list page, re-exporting
   `PageSkeleton`), never at the `(shell)` level: a streaming boundary above a page that calls
   `notFound()` answers 200 before the 404 is known. `runs/[id]` has none on purpose.
-- **Fact lines use the precise nouns** (agents, flights, memories); the metaphor (birds, the nest,
-  shiny bits) stays in headings, eyebrows and empty-state prose.
+- **Precise lines use plain nouns.** Status pills, fact lines, table cells and Settings rows say
+  agent / run / step / memory / tool, and a run is "running", never "flying". The metaphor
+  (birds, flights, the nest, shiny bits) lives in headings, eyebrows and empty-state prose only.
 - New public routes must be added to the matcher in `middleware.ts`; everything else is behind
   the desktop token (desktop) or a session (hosted).
 

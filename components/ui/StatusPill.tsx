@@ -16,13 +16,14 @@ const STYLE: Record<StatusVariant, string> = {
   cancelled: 'border-hairline text-mute',
 };
 
+/** Status labels are precise words, never the metaphor: a run is "running", not "flying". */
 export function StatusPill({
   variant,
-  label,
+  label = variant,
   className,
 }: {
   variant: StatusVariant;
-  label: string;
+  label?: string;
   className?: string;
 }) {
   return (
