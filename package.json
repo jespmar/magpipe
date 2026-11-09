@@ -3,7 +3,7 @@
   "productName": "Magpipe",
   "version": "0.1.0",
   "private": true,
-  "description": "Magpipe \u2014 agent orchestrator",
+  "description": "Magpipe — agent orchestrator",
   "main": "dist-electron/main.js",
   "engines": {
     "node": ">=22.12"
@@ -29,6 +29,7 @@
     "e2e": "node -e \"require('fs').rmSync('.magpipe/e2e',{recursive:true,force:true})\" && playwright test"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.6.0",
     "@electric-sql/pglite": "^0.5.15",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.4",

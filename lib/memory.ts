@@ -1,11 +1,14 @@
 import 'server-only';
-import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import type { Db } from './db';
 import * as t from './db/schema';
 import { slugify } from './agents-util';
 import { newId } from './ids';
 import { summarizeHealth, type AuthorChip, type NestHealthSummary } from './memory-util';
 import type { MemoryEntry, MemoryInput, MemoryNamespace, MemoryPatch } from './schemas';
+
+/** Who wrote a fact: an agent id, or the operator. */
+export type MemoryAuthor = MemoryEntry['writtenBy'];
 
 /** A request that is well-formed but refers to things that do not exist or are not allowed. */
 export class MemoryValidationError extends Error {
@@ -95,6 +98,7 @@ async function requireNamespace(db: Db, ns: string) {
 export async function writeMemory(
   db: Db,
   input: MemoryInput,
+  author: MemoryAuthor = 'user',
 ): Promise<{ entry: MemoryEntry; created: boolean }> {
   await requireNamespace(db, input.ns);
   const now = new Date();
@@ -111,7 +115,7 @@ export async function writeMemory(
       data: input.data ?? current.data,
       confidence: input.confidence,
       source: input.source,
-      writtenBy: 'user',
+      writtenBy: author,
       expiresAt: toDate(input.expiresAt),
       verifiedAt: now,
       stale: false,
@@ -122,7 +126,7 @@ export async function writeMemory(
         {
           value: input.value,
           confidence: input.confidence,
-          writtenBy: 'user',
+          writtenBy: author,
           at: now.toISOString(),
         },
       ],
@@ -139,7 +143,7 @@ export async function writeMemory(
     data: input.data ?? null,
     confidence: input.confidence,
     source: input.source,
-    writtenBy: 'user',
+    writtenBy: author,
     readBy: [],
     expiresAt: toDate(input.expiresAt),
     verifiedAt: now,
@@ -151,7 +155,7 @@ export async function writeMemory(
       {
         value: input.value,
         confidence: input.confidence,
-        writtenBy: 'user',
+        writtenBy: author,
         at: now.toISOString(),
       },
     ],
@@ -215,4 +219,20 @@ export async function createNamespace(db: Db, label: string): Promise<MemoryName
   const ns: MemoryNamespace = { id, label, createdAt: new Date() };
   await db.insert(t.memoryNamespaces).values(ns);
   return ns;
+}
+
+/** Records that an agent read these facts (spec §6 `readBy`); idempotent. */
+export async function markRead(db: Db, ids: string[], agentId: string): Promise<void> {
+  if (ids.length === 0) return;
+  const rows = await db
+    .select({ id: t.memory.id, readBy: t.memory.readBy })
+    .from(t.memory)
+    .where(inArray(t.memory.id, ids));
+  for (const row of rows) {
+    if (row.readBy.includes(agentId)) continue;
+    await db
+      .update(t.memory)
+      .set({ readBy: [...row.readBy, agentId] })
+      .where(eq(t.memory.id, row.id));
+  }
 }

@@ -32,6 +32,84 @@ type Session = {
   close(): Promise<void>;
 };
 
+/** A tool as `tools/list` describes it, schema included — what the engine hands to the model. */
+export type McpToolDef = McpTool & { inputSchema?: Record<string, unknown> };
+
+/** One block of a tool result; only text is forwarded to the model, other kinds are named. */
+export type McpContent = { type: string; text?: string; [k: string]: unknown };
+
+export type McpCallResult = { content: McpContent[]; isError: boolean };
+
+/** Thrown by a connected server for a failed request; transport failures are plain Errors. */
+export class McpToolError extends Error {}
+
+export type McpConnection = {
+  server: { name: string; version: string } | null;
+  listTools(): Promise<McpToolDef[]>;
+  callTool(name: string, args: Record<string, unknown>): Promise<McpCallResult>;
+  close(): Promise<void>;
+};
+
+/**
+ * Connects and initialises a server for repeated use (a run step). Throws when the server
+ * cannot be reached or refuses the credentials; the caller owns `close()`.
+ */
+export async function connectMcp(
+  target: McpTarget,
+  opts: { timeoutMs?: number } = {},
+): Promise<McpConnection> {
+  const timeoutMs = opts.timeoutMs ?? 60_000;
+  const session =
+    target.transport === 'http'
+      ? await httpSession(target, timeoutMs)
+      : await stdioSession(target, timeoutMs);
+  const init = (await session.request('initialize', {
+    protocolVersion: MCP_PROTOCOL_VERSION,
+    capabilities: {},
+    clientInfo: { name: 'magpipe', version: '0.1' },
+  })) as { serverInfo?: { name?: string; version?: string } } | null;
+  await session.notify('notifications/initialized');
+  const info = init?.serverInfo;
+  return {
+    server: info?.name ? { name: info.name, version: info.version ?? '' } : null,
+    async listTools() {
+      const tools: McpToolDef[] = [];
+      let cursor: string | undefined;
+      for (let page = 0; page < 10; page++) {
+        const res = (await session.request('tools/list', cursor ? { cursor } : {})) as {
+          tools?: unknown;
+          nextCursor?: string;
+        } | null;
+        for (const item of Array.isArray(res?.tools) ? res.tools : []) {
+          if (item && typeof item === 'object' && typeof (item as McpTool).name === 'string') {
+            const { name, description, inputSchema } = item as McpToolDef;
+            tools.push({
+              name,
+              ...(typeof description === 'string' ? { description } : {}),
+              ...(inputSchema && typeof inputSchema === 'object' ? { inputSchema } : {}),
+            });
+          }
+        }
+        if (!res?.nextCursor) break;
+        cursor = res.nextCursor;
+      }
+      return tools;
+    },
+    async callTool(name, args) {
+      const res = (await session.request('tools/call', { name, arguments: args })) as {
+        content?: unknown;
+        isError?: boolean;
+      } | null;
+      const content = (Array.isArray(res?.content) ? res.content : []).filter(
+        (c): c is McpContent =>
+          !!c && typeof c === 'object' && typeof (c as McpContent).type === 'string',
+      );
+      return { content, isError: res?.isError === true };
+    },
+    close: () => session.close(),
+  };
+}
+
 class McpAuthError extends Error {}
 
 /** Connects, initialises and lists tools. Never throws: failures come back as `ok: false`. */
