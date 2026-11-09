@@ -233,7 +233,7 @@ export function MemoryScreen({
       />
 
       <div className="flex flex-wrap items-start gap-6">
-        <aside className="flex min-w-0 flex-[1_1_240px] flex-col gap-4 md:max-w-[300px] wide:max-w-[340px] wide:flex-[0_1_340px]">
+        <aside className="flex min-w-0 flex-[1_1_240px] flex-col gap-4 md:max-w-[300px] wide:max-w-[340px] wide:flex-[0_1_300px]">
           <NamespaceNav
             namespaces={namespaces}
             total={model.entries.length}

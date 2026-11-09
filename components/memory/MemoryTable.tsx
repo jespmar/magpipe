@@ -73,7 +73,9 @@ export function MemoryTable({ entries, agents, selectedId, onSelect, emptyMessag
                       />
                     ) : null}
                     <span className="flex min-w-0 flex-col">
-                      <span className="truncate font-mono text-code text-code-ink">{e.key}</span>
+                      <span className="font-mono text-code [overflow-wrap:anywhere] text-code-ink">
+                        {e.key}
+                      </span>
                       <span className="truncate text-caption text-body md:hidden">{e.value}</span>
                     </span>
                   </span>
