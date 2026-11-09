@@ -20,14 +20,20 @@ export function AgentList({
   return (
     <section
       aria-label="Agents"
-      className="min-w-0 flex-[1_1_520px] overflow-hidden rounded-md border border-hairline bg-(image:--g-card) wide:flex-[1_1_1200px]"
+      className={clsx(
+        'min-w-0 flex-[1_1_520px] overflow-hidden rounded-md border border-hairline bg-(image:--g-card) wide:flex-[1_1_1200px]',
+        // An empty roster keeps a roster's width instead of stretching across the vacated panel.
+        agents.length === 0 && 'max-w-[46rem]',
+      )}
     >
-      <div className="hidden grid-cols-12 gap-3 border-b border-hairline bg-canvas-soft px-4 py-3 label-caps md:grid">
-        <span className="col-span-5">Agent</span>
-        <span className="col-span-2">Status</span>
-        <span className="col-span-3">Model</span>
-        <span className="col-span-2 text-right">Runs · 7d</span>
-      </div>
+      {agents.length > 0 ? (
+        <div className="hidden grid-cols-12 gap-3 border-b border-hairline bg-canvas-soft px-4 py-3 label-caps md:grid">
+          <span className="col-span-5">Agent</span>
+          <span className="col-span-2">Status</span>
+          <span className="col-span-3">Model</span>
+          <span className="col-span-2 text-right">Runs · 7d</span>
+        </div>
+      ) : null}
       {agents.length === 0 ? (
         <p className="px-4 py-8 text-body-sm text-body">{emptyMessage}</p>
       ) : (
@@ -35,13 +41,13 @@ export function AgentList({
           {agents.map((a) => {
             const on = a.id === selectedId;
             return (
-              <li key={a.id}>
+              <li key={a.id} className="group">
                 <button
                   type="button"
                   aria-pressed={on}
                   onClick={() => onSelect(a.id)}
                   className={clsx(
-                    'grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-l-2 border-b-hairline-soft px-4 py-3.5 text-left transition-colors hover:bg-[rgba(255,255,255,0.03)] md:grid-cols-12',
+                    'grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-l-2 border-b-hairline-soft px-4 py-3.5 text-left transition-colors group-last:border-b-0 hover:bg-[rgba(255,255,255,0.03)] focus-visible:-outline-offset-2 md:grid-cols-12',
                     on
                       ? 'border-l-cyan bg-[rgba(34,193,220,0.06)]'
                       : 'border-l-transparent bg-transparent',

@@ -22,6 +22,6 @@ STORY: the operator lands, reads four rows, filters or searches, selects one, an
 
 FIRST VIEWPORT: eyebrow THE FLOCK, h1 Agents, one-line description; right: search field and the white "+ Add a bird". Below: four filter pills with counts. Then two columns — list (header row Agent · Status · Model · Runs 7d; rows with avatar disc, name/role, status pill, mono model, mono count; selected row cyan-edged) at flex 1 1 520px, detail card at flex 1 1 380px (wide: 1200px / 680px) with name, role, Edit + Pause, description, three stat tiles, tool chips, memory scope, system prompt in a code block with Copy.
 
-FORM: the artboard's two-column roster, position 1 of 1 (composition pinned by the design canvas). seed: none (composition pinned by the Agents artboard).
+FORM: the artboard's two-column roster, position 1 of 1 (composition pinned by the design canvas). seed: none — waived: the hand-off spec names the design canvas as the source of truth and pins this screen's composition in the Agents / AgentsWide artboards (spec §3.3), so no concept roll was run.
 
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance.

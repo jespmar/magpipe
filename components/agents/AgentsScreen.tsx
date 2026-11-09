@@ -202,7 +202,7 @@ export function AgentsScreen({
           onChange={setFilter}
         />
         <p role="status" aria-live="polite" className="text-body-sm text-mute">
-          {notice}
+          {pending ? 'Updating…' : notice}
         </p>
       </div>
 
