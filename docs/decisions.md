@@ -179,6 +179,7 @@ in `.impeccable/critique/ignore.md` so later critiques skip them:
 | `kicker-above-heading` / `hero-eyebrow-chip` | The eyebrow ("THE FLOCK", "BEAKS & CLAWS") is part of the design canvas and spec §4.                                                                |
 | `gradient-text`                              | The eyebrow's sheen gradient is the brand's one gradient-on-text (spec §4). A single short word renders solid instead, so it never splits two-tone. |
 | `overused-font`                              | Inter is the only family by spec; an Operate surface needs no second face.                                                                          |
+| `dark-glow`                                  | The white primary button carries the sheen glow pinned by the Agents artboard (`0 0 22px rgba(34,193,220,.25)`); DESIGN.md "Light as State". Added with PR 2. |
 
 Two implementation lessons from the same pass, now conventions in `CLAUDE.md`: prose widths in
 `rem` (Inter is narrower than its `0`, so `ch` overshoots the 75-character measure), and no

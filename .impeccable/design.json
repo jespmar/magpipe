@@ -1,0 +1,521 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-09T11:46:59Z",
+  "title": "Design System: Magpipe",
+  "extensions": {
+    "colorMeta": {
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Canvas",
+        "canonical": "#101010",
+        "tonalRamp": [
+          "#262626",
+          "#434343",
+          "#616161",
+          "#7e7e7e",
+          "#9b9b9b",
+          "#b8b8b8",
+          "#d5d5d5",
+          "#f2f2f2"
+        ]
+      },
+      "canvas-soft": {
+        "role": "neutral",
+        "displayName": "Canvas Soft",
+        "canonical": "#1a1a1a",
+        "tonalRamp": [
+          "#262626",
+          "#434343",
+          "#616161",
+          "#7e7e7e",
+          "#9b9b9b",
+          "#b8b8b8",
+          "#d5d5d5",
+          "#f2f2f2"
+        ]
+      },
+      "canvas-raised": {
+        "role": "neutral",
+        "displayName": "Canvas Raised",
+        "canonical": "#181818",
+        "tonalRamp": [
+          "#262626",
+          "#434343",
+          "#616161",
+          "#7e7e7e",
+          "#9b9b9b",
+          "#b8b8b8",
+          "#d5d5d5",
+          "#f2f2f2"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#3d3a39",
+        "tonalRamp": [
+          "#282625",
+          "#464241",
+          "#645f5d",
+          "#827c79",
+          "#9e9997",
+          "#bab7b6",
+          "#d7d4d4",
+          "#f3f2f2"
+        ]
+      },
+      "hairline-soft": {
+        "role": "neutral",
+        "displayName": "Hairline Soft",
+        "canonical": "#1f1f1f",
+        "tonalRamp": [
+          "#262626",
+          "#434343",
+          "#616161",
+          "#7e7e7e",
+          "#9b9b9b",
+          "#b8b8b8",
+          "#d5d5d5",
+          "#f2f2f2"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#f2f2f2",
+        "tonalRamp": [
+          "#262626",
+          "#434343",
+          "#616161",
+          "#7e7e7e",
+          "#9b9b9b",
+          "#b8b8b8",
+          "#d5d5d5",
+          "#f2f2f2"
+        ]
+      },
+      "ink-strong": {
+        "role": "neutral",
+        "displayName": "Ink Strong",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#262626",
+          "#434343",
+          "#616161",
+          "#7e7e7e",
+          "#9b9b9b",
+          "#b8b8b8",
+          "#d5d5d5",
+          "#f2f2f2"
+        ]
+      },
+      "body": {
+        "role": "neutral",
+        "displayName": "Body",
+        "canonical": "#bdbdbd",
+        "tonalRamp": [
+          "#262626",
+          "#434343",
+          "#616161",
+          "#7e7e7e",
+          "#9b9b9b",
+          "#b8b8b8",
+          "#d5d5d5",
+          "#f2f2f2"
+        ]
+      },
+      "mute": {
+        "role": "neutral",
+        "displayName": "Mute",
+        "canonical": "#8b949e",
+        "tonalRamp": [
+          "#242628",
+          "#3f4348",
+          "#596068",
+          "#737d89",
+          "#939aa3",
+          "#b3b8bd",
+          "#d3d5d7",
+          "#f2f2f3"
+        ]
+      },
+      "code": {
+        "role": "neutral",
+        "displayName": "Code",
+        "canonical": "#f5f6f7",
+        "tonalRamp": [
+          "#242629",
+          "#3e4349",
+          "#57616a",
+          "#707e8c",
+          "#919ba5",
+          "#b2b8be",
+          "#d2d5d8",
+          "#f2f2f3"
+        ]
+      },
+      "accent-white": {
+        "role": "primary",
+        "displayName": "Accent White",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#262626",
+          "#434343",
+          "#616161",
+          "#7e7e7e",
+          "#9b9b9b",
+          "#b8b8b8",
+          "#d5d5d5",
+          "#f2f2f2"
+        ]
+      },
+      "ghost": {
+        "role": "neutral",
+        "displayName": "Ghost",
+        "canonical": "#d1d5db",
+        "tonalRamp": [
+          "#242629",
+          "#3d4249",
+          "#565f6b",
+          "#6e7b8d",
+          "#9099a5",
+          "#b2b7be",
+          "#d2d4d8",
+          "#f2f2f3"
+        ]
+      },
+      "sheen-cyan": {
+        "role": "secondary",
+        "displayName": "Sheen Cyan",
+        "canonical": "#22c1dc",
+        "tonalRamp": [
+          "#163236",
+          "#205d67",
+          "#248b9d",
+          "#22bed9",
+          "#5bc8db",
+          "#92d3de",
+          "#c3e2e7",
+          "#eef5f7"
+        ]
+      },
+      "sheen-teal": {
+        "role": "secondary",
+        "displayName": "Sheen Teal",
+        "canonical": "#0e9aa8",
+        "tonalRamp": [
+          "#133639",
+          "#1a656c",
+          "#1b9aa6",
+          "#14d4e7",
+          "#51d7e5",
+          "#8cdce4",
+          "#c0e6ea",
+          "#edf6f7"
+        ]
+      },
+      "sheen-emerald": {
+        "role": "secondary",
+        "displayName": "Sheen Emerald",
+        "canonical": "#16a35e",
+        "tonalRamp": [
+          "#153727",
+          "#1f6844",
+          "#229f62",
+          "#1fdd80",
+          "#58dd9c",
+          "#90e0b9",
+          "#c2e8d6",
+          "#eef7f2"
+        ]
+      },
+      "sheen-cyan-soft": {
+        "role": "secondary",
+        "displayName": "Soft Cyan",
+        "canonical": "#66d9e8",
+        "tonalRamp": [
+          "#163337",
+          "#205f67",
+          "#248f9d",
+          "#22c4da",
+          "#5accdb",
+          "#91d6de",
+          "#c3e3e8",
+          "#eef6f7"
+        ]
+      },
+      "sheen-tint": {
+        "role": "primary",
+        "displayName": "Paper Tint",
+        "canonical": "#d6f5f7",
+        "tonalRamp": [
+          "#173335",
+          "#236064",
+          "#299198",
+          "#2ac7d2",
+          "#60ced6",
+          "#95d7db",
+          "#c4e4e6",
+          "#eef6f6"
+        ]
+      },
+      "warn": {
+        "role": "tertiary",
+        "displayName": "Warn Amber",
+        "canonical": "#fbbf24",
+        "tonalRamp": [
+          "#3c3011",
+          "#725815",
+          "#b08411",
+          "#f6b306",
+          "#efc047",
+          "#eace86",
+          "#ede0bd",
+          "#f8f5ed"
+        ]
+      },
+      "danger": {
+        "role": "tertiary",
+        "displayName": "Danger Red",
+        "canonical": "#f87171",
+        "tonalRamp": [
+          "#3a1212",
+          "#6f1818",
+          "#ab1616",
+          "#ef0d0d",
+          "#ea4c4c",
+          "#e78989",
+          "#ecbebe",
+          "#f8eded"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "The page title; 48/52 px at ≥1600."
+      },
+      "display-xl": {
+        "displayName": "Display XL",
+        "purpose": "Home hero only."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "One per section at most."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Card and panel titles."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Prose at ≈72 characters (max-width 34rem)."
+      },
+      "body-sm": {
+        "displayName": "Body Small",
+        "purpose": "Descriptions, controls, table cells."
+      },
+      "caption": {
+        "displayName": "Caption",
+        "purpose": "Roles, timestamps, hints."
+      },
+      "eyebrow": {
+        "displayName": "Eyebrow",
+        "purpose": "Tracked uppercase above the page title; sheen gradient clipped to text, solid Soft Cyan when ≤8 characters."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Table headers and section labels, uppercase, Mute."
+      },
+      "code": {
+        "displayName": "Code",
+        "purpose": "Ids, counts, models, paths; 550 for emphasis."
+      },
+      "button": {
+        "displayName": "Button",
+        "purpose": "Controls; 16/24 on the Run button."
+      }
+    },
+    "shadows": [
+      {
+        "name": "glow-cyan",
+        "value": "0 0 22px rgba(34,193,220,.3)",
+        "purpose": "The primary Run button and the orb’s disc."
+      },
+      {
+        "name": "glow-soft",
+        "value": "0 0 22px rgba(34,193,220,.25)",
+        "purpose": "Other primary buttons."
+      },
+      {
+        "name": "card-hover",
+        "value": "0 0 28px rgba(34,193,220,.12)",
+        "purpose": "With border-color rgba(34,193,220,.45): any card under the pointer."
+      }
+    ],
+    "motion": [
+      {
+        "name": "transition-state",
+        "value": "150ms ease",
+        "purpose": "Colour, border and shadow changes on state."
+      },
+      {
+        "name": "blink",
+        "value": "1.6s ease-in-out infinite (opacity 1 → .35)",
+        "purpose": "The live dot and a running status dot; motion-safe only."
+      },
+      {
+        "name": "orbit",
+        "value": "16s linear infinite",
+        "purpose": "The orb’s dashed orbit; motion-safe only."
+      },
+      {
+        "name": "orbit-reverse",
+        "value": "26s linear infinite reverse",
+        "purpose": "The orb’s conic arc; motion-safe only."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "md",
+        "value": "768px"
+      },
+      {
+        "name": "wide",
+        "value": "1600px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one white action on a screen; glows softly because it is the thing to press.",
+      "html": "<button class=\"ds-btn-primary\">+ Add a bird</button>",
+      "css": ".ds-btn-primary{background:var(--accent,#ffffff);color:var(--on-accent,#101010);font:600 14px/20px Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;padding:10px 16px;border:0;border-radius:6px;box-shadow:0 0 22px rgba(34,193,220,.25);transition:background-color 150ms ease;cursor:pointer} .ds-btn-primary:hover{background:var(--sheen-tint,#d6f5f7)} .ds-btn-primary:focus-visible{outline:2px solid #ffffff;outline-offset:2px} .ds-btn-primary:disabled{opacity:.5;box-shadow:none;cursor:not-allowed}"
+    },
+    {
+      "name": "Outline button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Secondary actions: canvas fill, hairline border.",
+      "html": "<button class=\"ds-btn-outline\">Settings</button>",
+      "css": ".ds-btn-outline{background:var(--canvas,#101010);color:var(--ink,#f2f2f2);font:600 14px/20px Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;padding:10px 16px;border:1px solid var(--hairline,#3d3a39);border-radius:6px;transition:border-color 150ms ease;cursor:pointer} .ds-btn-outline:hover{border-color:var(--ghost,#d1d5db)} .ds-btn-outline:focus-visible{outline:2px solid #ffffff;outline-offset:2px}"
+    },
+    {
+      "name": "Ghost button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Tertiary action beside a primary; text only.",
+      "html": "<button class=\"ds-btn-ghost\">Cancel</button>",
+      "css": ".ds-btn-ghost{background:var(--canvas,#101010);color:var(--ghost,#d1d5db);font:600 14px/20px Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;padding:10px 16px;border:1px solid transparent;border-radius:6px;transition:color 150ms ease;cursor:pointer} .ds-btn-ghost:hover{color:#ffffff} .ds-btn-ghost:focus-visible{outline:2px solid #ffffff;outline-offset:2px}"
+    },
+    {
+      "name": "Status pill",
+      "kind": "chip",
+      "refersTo": "pill-status",
+      "description": "A word, a dot and a 1px border in the status colour; the dot blinks only when running.",
+      "html": "<span class=\"ds-pill ds-pill--running\"><i class=\"ds-pill__dot\"></i>running</span> <span class=\"ds-pill ds-pill--done\"><i class=\"ds-pill__dot\"></i>done</span> <span class=\"ds-pill ds-pill--failed\"><i class=\"ds-pill__dot\"></i>failed</span>",
+      "css": ".ds-pill{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border:1px solid var(--hairline,#3d3a39);border-radius:9999px;font:500 12px/16px Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;color:var(--ink,#f2f2f2);white-space:nowrap;margin-right:8px} .ds-pill__dot{width:6px;height:6px;border-radius:9999px;background:currentColor;display:inline-block} .ds-pill--running{color:#22c1dc;border-color:rgba(34,193,220,.45)} .ds-pill--running .ds-pill__dot{animation:ds-blink 1.6s ease-in-out infinite} .ds-pill--done{color:#16a35e;border-color:rgba(22,163,94,.45)} .ds-pill--failed{color:#f87171;border-color:rgba(248,113,113,.45)} @keyframes ds-blink{0%,100%{opacity:1}50%{opacity:.35}} @media (prefers-reduced-motion:reduce){.ds-pill--running .ds-pill__dot{animation:none}}"
+    },
+    {
+      "name": "Mono chip",
+      "kind": "chip",
+      "refersTo": "chip-mono",
+      "description": "Tool names, scopes and models in mono on Canvas Soft.",
+      "html": "<span class=\"ds-chip\">web.search</span> <span class=\"ds-chip\">memory.write</span> <span class=\"ds-chip\">claude-sonnet-5-5</span>",
+      "css": ".ds-chip{display:inline-block;background:var(--canvas-soft,#1a1a1a);color:var(--code-text,#f5f6f7);font:400 13px/18px SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;padding:2px 8px;border-radius:6px;margin-right:8px}"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Hairline plane on a raised-to-canvas gradient; no shadow at rest, cyan edge and glow on hover.",
+      "html": "<article class=\"ds-card\"><div class=\"ds-card__head\"><span class=\"ds-avatar\">RS</span><div><div class=\"ds-card__title\">Researcher</div><div class=\"ds-card__role\">Gathers context &amp; sources</div></div></div><p class=\"ds-card__body\">Reads API docs, changelogs and tickets, then writes what matters into the nest.</p></article>",
+      "css": ".ds-card{background:linear-gradient(180deg,#181818 0%,#101010 100%);border:1px solid var(--hairline,#3d3a39);border-radius:8px;padding:24px;color:var(--ink,#f2f2f2);max-width:360px;transition:border-color 150ms ease,box-shadow 150ms ease;font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif} .ds-card:hover{border-color:rgba(34,193,220,.45);box-shadow:0 0 28px rgba(34,193,220,.12)} .ds-card__head{display:flex;align-items:center;gap:12px;margin-bottom:16px} .ds-avatar{width:40px;height:40px;border-radius:9999px;border:1px solid var(--hairline,#3d3a39);background:var(--canvas-soft,#1a1a1a);display:inline-flex;align-items:center;justify-content:center;font:550 13px/18px SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;color:#ffffff} .ds-card__title{font:600 20px/28px Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;color:#ffffff} .ds-card__role{font:400 12px/16px Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;color:var(--mute,#8b949e)} .ds-card__body{margin:0;font:400 14px/20px Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;color:var(--body,#bdbdbd)}"
+    },
+    {
+      "name": "Search input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Canvas Soft field with a hairline; the border turns white on focus, the caret is cyan.",
+      "html": "<label class=\"ds-label\" for=\"ds-search\">Search agents</label><input id=\"ds-search\" class=\"ds-input\" type=\"text\" placeholder=\"Search agents…\">",
+      "css": ".ds-label{display:block;font:600 12px/16px Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;letter-spacing:1.2px;text-transform:uppercase;color:var(--mute,#8b949e);margin-bottom:8px} .ds-input{width:220px;max-width:100%;background:var(--canvas-soft,#1a1a1a);color:var(--ink,#f2f2f2);border:1px solid var(--hairline,#3d3a39);border-radius:6px;padding:10px 16px;font:400 14px/20px Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;caret-color:#22c1dc} .ds-input::placeholder{color:var(--mute,#8b949e)} .ds-input:focus{outline:none;border-color:#ffffff}"
+    },
+    {
+      "name": "Navigation",
+      "kind": "nav",
+      "refersTo": "nav",
+      "description": "Frosted bar with a cyan hairline beneath; the active link carries a 2px cyan underline.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Main\"><a class=\"ds-nav__brand\" href=\"#\"><span class=\"ds-nav__disc\"></span>Magpipe <small>agent orchestrator</small></a><a class=\"ds-nav__link ds-nav__link--active\" href=\"#\" aria-current=\"page\">Agents</a><a class=\"ds-nav__link\" href=\"#\">Runs</a><a class=\"ds-nav__link\" href=\"#\">Tools</a><a class=\"ds-nav__link\" href=\"#\">Memory</a><span class=\"ds-live\"><i></i>2 agents active</span></nav>",
+      "css": ".ds-nav{display:flex;align-items:center;gap:24px;padding:12px 32px;background:rgba(16,16,16,.72);backdrop-filter:blur(14px);border-bottom:1px solid rgba(34,193,220,.28);font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif} .ds-nav__brand{display:flex;align-items:center;gap:10px;color:#ffffff;font:600 16px/24px Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;text-decoration:none;margin-right:auto} .ds-nav__brand small{font:500 12px/16px Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;color:var(--mute,#8b949e)} .ds-nav__disc{width:36px;height:36px;border-radius:9999px;background:#ffffff;display:inline-block} .ds-nav__link{font:400 14px/20px Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;color:var(--body,#bdbdbd);text-decoration:none;border-bottom:2px solid transparent;padding:6px 0;transition:color 150ms ease} .ds-nav__link:hover{color:#ffffff} .ds-nav__link--active{color:#ffffff;font-weight:600;border-bottom-color:#22c1dc} .ds-live{display:inline-flex;align-items:center;gap:8px;padding:4px 12px;border:1px solid var(--hairline,#3d3a39);border-radius:9999px;font:400 14px/20px Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;color:var(--ink,#f2f2f2)} .ds-live i{width:8px;height:8px;border-radius:9999px;background:#ffffff;display:inline-block;animation:ds-blink 1.6s ease-in-out infinite} @keyframes ds-blink{0%,100%{opacity:1}50%{opacity:.35}} @media (prefers-reduced-motion:reduce){.ds-live i{animation:none}}"
+    },
+    {
+      "name": "Eyebrow + page title",
+      "kind": "custom",
+      "refersTo": "eyebrow",
+      "description": "The brand’s one flourish: a tracked uppercase line with the sheen gradient clipped to its letters, over a light display title.",
+      "html": "<div class=\"ds-head\"><span class=\"ds-eyebrow\">The flock</span><h1 class=\"ds-h1\">Birds on the wire</h1></div>",
+      "css": ".ds-head{display:flex;flex-direction:column;gap:6px;font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif} .ds-eyebrow{font:600 14px/20px Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;letter-spacing:2.52px;text-transform:uppercase;background:linear-gradient(90deg,#ffffff 0%,#66d9e8 45%,#22c1dc 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;width:max-content} .ds-h1{margin:0;font:400 36px/40px Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;letter-spacing:-0.9px;color:#ffffff}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Night Aviary",
+    "overview": "Magpipe is a dark, quiet enclosure in which a few bright birds are always visible. The ground is near-black and stays that way; the only light on it is the white of the things you can act on (the logo on its disc, the primary button, the live dot) and one sheen — cyan running to teal and emerald — that marks what is alive, current or identifying (eyebrows, the active underline, the wing, a glow around a running thing). Everything else is drawn with hairlines so the birds carry the picture.\n\nThe surface is an operator's tool, so familiarity is a feature: one sans for everything, mono where numbers and identifiers live, fixed sizes rather than fluid ones, a stable top nav. Brand shows in precise details — the gradient-clipped eyebrow, the cyan hairline under the frosted nav, mono fact lines, the magpie — never in decoration. Copy is short and plain; the bird metaphor is allowed in headings and prose and kept out of any label that must be precise. There is no light theme and no second accent: green, purple and blue as UI colours are rejected.",
+    "keyCharacteristics": [
+      "Near-black canvas with a faint dot grid and one ambient cyan glow; depth from hairlines, not shadows.",
+      "White is the only solid accent; the cyan→teal→emerald sheen appears only as a signal.",
+      "Inter at fixed sizes, light display weights, mono for data; eyebrows in tracked uppercase.",
+      "Small radii (6–8 px), pills only for status and filters, 1 px hairlines, 2 px active underline.",
+      "Motion is a state, not a texture: a pulsing dot, a glow on hover, nothing on page load."
+    ],
+    "rules": [
+      {
+        "name": "The White Acts Rule",
+        "body": "White fills nothing that cannot be pressed. The primary button, the logo disc and the live dot are white; a decorative white surface is a mistake.",
+        "section": "colors"
+      },
+      {
+        "name": "The Sheen Signals Rule",
+        "body": "Cyan, teal and emerald never fill a control or a panel. They appear as text (eyebrows), as a 1–2 px line (active underline, hover border, nav hairline), as a glow on a live or hovered thing, and as the wing. Their rarity is what makes \"running\" legible.",
+        "section": "colors"
+      },
+      {
+        "name": "The Two Semantics Rule",
+        "body": "Amber means \"needs you\", red means \"failed\". No other colour carries meaning; status otherwise reads from a word, a dot and position.",
+        "section": "colors"
+      },
+      {
+        "name": "The Measured Column Rule",
+        "body": "Prose widths are set in rem, not ch — Inter is narrower than its zero, so ch overshoots the 65–75 character measure.",
+        "section": "typography"
+      },
+      {
+        "name": "The Numbers Are Mono Rule",
+        "body": "Anything the operator might copy or compare — an id, a count, a token total, a model name, a path — is set in the mono stack, often in Mute.",
+        "section": "typography"
+      },
+      {
+        "name": "The Light as State Rule",
+        "body": "Nothing glows at rest except the one primary action and the orb. Glow means \"live\", \"hovered\" or \"press me\"; a decorative glow is a lapse.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do make white mean action: primary buttons, the disc, the live dot — nothing decorative.",
+      "Do keep the sheen to lines, text, glows and the wing; signal, never fill.",
+      "Do set ids, counts, models and paths in mono, usually Mute, often select-all.",
+      "Do give every disabled control a visible reason, every empty state a real next step, and every error its remedy.",
+      "Do hold prose to ≈72 characters with rem widths (34 rem at 16 px, 31 rem at 14 px).",
+      "Do opt motion in with motion-safe:; keep state transitions at 150 ms."
+    ],
+    "donts": [
+      "Don't introduce a light theme, a blue, a purple or any second accent.",
+      "Don't add drop shadows at rest or glow anything that is not live, hovered or the primary action.",
+      "Don't use the bird metaphor in status pills, fact lines, table cells or Settings rows.",
+      "Don't nest cards, widen radii past 8 px (pills excepted), or use ch for measure.",
+      "Don't let gradient text appear anywhere but the eyebrow; a single short eyebrow word renders solid."
+    ]
+  }
+}
