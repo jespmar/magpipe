@@ -164,3 +164,56 @@ describe('splitCommand', () => {
     expect(splitCommand('')).toEqual([]);
   });
 });
+
+describe('connectMcp', () => {
+  it('keeps a session open to list and call tools', async () => {
+    const server = http.createServer((req, res) => {
+      if (req.method === 'DELETE') return void res.writeHead(200).end();
+      let body = '';
+      req.on('data', (c) => (body += c));
+      req.on('end', () => {
+        const msg = JSON.parse(body) as Rpc & {
+          params?: { name?: string; arguments?: { text?: string } };
+        };
+        if (msg.id === undefined) return void res.writeHead(202).end();
+        const result =
+          msg.method === 'initialize'
+            ? {
+                protocolVersion: '2025-06-18',
+                capabilities: { tools: {} },
+                serverInfo: { name: 'echo', version: '1' },
+              }
+            : msg.method === 'tools/list'
+              ? {
+                  tools: [
+                    {
+                      name: 'echo',
+                      description: 'Echo',
+                      inputSchema: { type: 'object', properties: { text: { type: 'string' } } },
+                    },
+                  ],
+                }
+              : msg.params?.name === 'echo'
+                ? { content: [{ type: 'text', text: `echo: ${msg.params.arguments?.text}` }] }
+                : { content: [{ type: 'text', text: 'no such tool' }], isError: true };
+        res
+          .writeHead(200, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result }));
+      });
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
+    cleanups.push(() => server.close());
+    const { port } = server.address() as { port: number };
+    const { connectMcp } = await import('@/lib/mcp');
+    const conn = await connectMcp({ transport: 'http', url: `http://127.0.0.1:${port}/mcp` });
+    expect(conn.server).toEqual({ name: 'echo', version: '1' });
+    const tools = await conn.listTools();
+    expect(tools[0]).toMatchObject({ name: 'echo', inputSchema: { type: 'object' } });
+    expect(await conn.callTool('echo', { text: 'hi' })).toEqual({
+      content: [{ type: 'text', text: 'echo: hi' }],
+      isError: false,
+    });
+    expect((await conn.callTool('nope', {})).isError).toBe(true);
+    await conn.close();
+  });
+});

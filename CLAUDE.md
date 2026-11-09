@@ -54,6 +54,14 @@ engine and no sign-in on desktop.
   params, and the next `router.refresh()` lands in the wrong slot and is silently dropped. Use
   `router.replace(url, { scroll: false })` for a changed address and `router.refresh()` for the
   same one; keep transient selection in state and read `?agent=`-style params only at load.
+- **Model calls go through `lib/engine/model.ts`.** `ModelClient` is the one seam (tests script
+  it); requests carry `fallbackParams(model)`, never a forced `tool_choice` (400 on the 5.5
+  family), and structured outputs for JSON. Retries are the engine's (`withRetries`), not the
+  SDK's. Tool names on the wire are `wireName(...)` and every tool schema sets
+  `additionalProperties: false`.
+- **Runs are durable by their plan.** Write `runs.plan` before and after each step, append to
+  `run_events` through `emitEvent`, and never hold run state only in memory: a restart resumes
+  from the plan (`resumeInterrupted`).
 - New public routes must be added to the matcher in `middleware.ts`; everything else is behind
   the desktop token (desktop) or a session (hosted).
 

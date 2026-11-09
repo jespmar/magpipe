@@ -174,11 +174,11 @@ The first `$impeccable critique` of the shell (22/40, snapshot in `.impeccable/c
 the shell-fix pass. Three detector rules fire on every page by design and are accepted, recorded
 in `.impeccable/critique/ignore.md` so later critiques skip them:
 
-| Rule                                         | Why it is intentional                                                                                                                               |
-| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `kicker-above-heading` / `hero-eyebrow-chip` | The eyebrow ("THE FLOCK", "BEAKS & CLAWS") is part of the design canvas and spec §4.                                                                |
-| `gradient-text`                              | The eyebrow's sheen gradient is the brand's one gradient-on-text (spec §4). A single short word renders solid instead, so it never splits two-tone. |
-| `overused-font`                              | Inter is the only family by spec; an Operate surface needs no second face.                                                                          |
+| Rule                                         | Why it is intentional                                                                                                                                         |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kicker-above-heading` / `hero-eyebrow-chip` | The eyebrow ("THE FLOCK", "BEAKS & CLAWS") is part of the design canvas and spec §4.                                                                          |
+| `gradient-text`                              | The eyebrow's sheen gradient is the brand's one gradient-on-text (spec §4). A single short word renders solid instead, so it never splits two-tone.           |
+| `overused-font`                              | Inter is the only family by spec; an Operate surface needs no second face.                                                                                    |
 | `dark-glow`                                  | The white primary button carries the sheen glow pinned by the Agents artboard (`0 0 22px rgba(34,193,220,.25)`); DESIGN.md "Light as State". Added with PR 2. |
 
 Two implementation lessons from the same pass, now conventions in `CLAUDE.md`: prose widths in
@@ -200,7 +200,7 @@ than the demo's `eu-north-1`, and the footer shows `desktop` when no region is c
   and the API never returns a token.
 - **No OAuth flows yet.** `POST /tools/[id]/auth/start|callback` need a registered client and a
   redirect URL per provider, which a desktop install does not have. On desktop a tool that
-  "needs auth" takes a pasted access token or API key through *Re-authorise*; the hosted mode
+  "needs auth" takes a pasted access token or API key through _Re-authorise_; the hosted mode
   adds the OAuth routes. `oauth2` stays the recorded auth type so the switch is a no-op later.
 - **"Connect & test" is one press.** `POST /api/tools` saves the tool with the status the probe
   found (`connected`, `needs_auth`, `error` with `stats.lastError`), so the registry is honest
@@ -224,3 +224,45 @@ than the demo's `eu-north-1`, and the footer shows `desktop` when no region is c
 - **Search.** `GET /api/memory?q=` combines the tsvector index (`websearch_to_tsquery`) with a
   substring match on key and value, so dotted keys and partial words both hit; the screen
   filters the loaded list client-side for instant narrowing.
+
+## D15 · The run engine as built (PR 5)
+
+Carries D5 into code. `lib/engine/` runs inside the Next server; `instrumentation.ts` boots it
+once per server start.
+
+- **Model calls** go through `@anthropic-ai/sdk`'s beta Messages API behind a one-method
+  `ModelClient` interface (tests script it). Thinking stays adaptive (the default on the 5.5
+  family); effort is `high` for planning and steps, `medium` for the merge; `max_tokens` 16k,
+  non-streaming. Every request on an Opus/Sonnet/Fable model carries the server-side refusal
+  fallback (`fallbacks: "default"`, beta `server-side-fallback-2026-07-01`); Haiku has none.
+  The SDK's own retries are off: the engine retries twice with backoff for network, rate-limit
+  and 5xx errors and logs each attempt as an `error` event; refusals, 400s, limits and
+  validation are never retried.
+- **Planning** uses structured outputs (`output_config.format`, a JSON schema) instead of a
+  forced tool call, which the 5.5 models reject. The orchestrator sees the registry of
+  non-paused agents and the relevant memory (all `decisions` plus a text search on the task);
+  an invalid plan is retried as a transport error would be. The merge step is always the
+  orchestrator's own and carries id `merge`.
+- **Steps** get the agent's prompt, the orchestrator's instructions, upstream results and the
+  memory it may read; tools are the agent's built-ins (`web.search`/`web.fetch` as Anthropic
+  server tools, `files.read` over the run's attachments), scoped memory tools (`memory_search`,
+  `memory_get`, `memory_write`; a write outside scope is rejected and logged as an `error`
+  event), the `workspace-fs` sandbox and every granted MCP server, connected once per step and
+  exposed as `<slug>__<tool>`. `agents.status` flips to `running` for the step's duration and
+  `memory.readBy` records what an agent read.
+- **Limits.** `maxSteps` caps tool rounds, `maxTokens` the step's total tokens, `timeoutSec`
+  the wall clock; a breach fails the step with `limit_steps` / `limit_tokens` / `timeout`.
+- **Sandbox (D6 confirmed).** `shell.run` is the allow-list stub: read-only commands
+  (`ls`, `cat`, `grep`, `find`, …) run without a shell in `<data>/runs/<id>/sandbox`, paths
+  must stay inside it, output is capped, the environment holds only PATH, and the folder is
+  wiped when the run ends.
+- **Events.** `run_events` rows are the trail; an in-process bus feeds `GET /api/runs/[id]/events`
+  (SSE: replay the last 200 or everything after a cursor, then tail, with a two-second poll as
+  a safety net and a heartbeat). Event text uses plain nouns ("Run finished"); the demo's
+  "Flight landed" is illustrative.
+- **Uploads** live under `<data>/uploads/<id>/` with a JSON sidecar (`POST /api/uploads`,
+  25 MB each, ten per run) and become `run.input.attachments`.
+- **Housekeeping.** The nightly job marks facts stale at start-up and every 24 h; expired facts
+  are kept and labelled (D14).
+- **Not yet:** streaming tokens into the log (events are per message and tool call), spend caps
+  (`settings.spendCapUsd` is recorded, not enforced), and artifacts produced by runs.

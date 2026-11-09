@@ -341,6 +341,30 @@ export type MemoryInput = z.infer<typeof memoryInput>;
 export type MemoryPatch = z.infer<typeof memoryPatch>;
 export type NamespaceInput = z.infer<typeof namespaceInput>;
 
+/** POST /api/runs — the prompt window's submission (spec §3.2, §8). */
+export const runCreateInput = z.object({
+  text: z.string().trim().min(1, 'Give Magpipe a task').max(20_000),
+  attachmentIds: z
+    .array(z.string().regex(/^upl_[0-9a-z]+$/))
+    .max(10)
+    .default([]),
+});
+
+/** An uploaded file's record, kept as a JSON sidecar next to the file (desktop, D3). */
+export const upload = z.object({
+  id: z.string().regex(/^upl_[0-9a-z]+$/),
+  name: z.string().min(1),
+  size: z.number().int().nonnegative(),
+  mime: z.string(),
+  /** Where the bytes live: a path under the data dir on desktop. */
+  url: z.string(),
+  createdAt: isoDate,
+});
+
+export type RunCreateInput = z.infer<typeof runCreateInput>;
+export type Upload = z.infer<typeof upload>;
+export type Usage = z.infer<typeof usage>;
+
 export type ToolAuthInput = z.infer<typeof toolAuthInput>;
 export type ToolConnectInput = z.infer<typeof toolConnectInput>;
 export type ToolPatch = z.infer<typeof toolPatch>;
@@ -384,6 +408,7 @@ export type ToolGrant = z.infer<typeof toolGrant>;
 export type Step = z.infer<typeof step>;
 export type StepStatus = z.infer<typeof stepStatus>;
 export type Run = z.infer<typeof run>;
+export type Attachment = z.infer<typeof attachment>;
 export type RunStatus = z.infer<typeof runStatus>;
 export type RunEvent = z.infer<typeof runEvent>;
 export type NewRunEvent = z.infer<typeof newRunEvent>;
