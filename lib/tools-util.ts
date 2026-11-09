@@ -57,8 +57,10 @@ export function parseConnectJson(text: string): ParsedConnect {
   const parsed = toolConnectInput.safeParse(json);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
-    const where = issue?.path.length ? `${issue.path.join('.')}: ` : '';
-    return { ok: false, error: `${where}${issue?.message ?? 'invalid'}` };
+    const message = issue?.message ?? 'Invalid input';
+    const field = issue?.path.join('.') ?? '';
+    const names = field && !message.toLowerCase().includes(field.toLowerCase());
+    return { ok: false, error: names ? `${message} (${field})` : message };
   }
   return { ok: true, data: parsed.data };
 }

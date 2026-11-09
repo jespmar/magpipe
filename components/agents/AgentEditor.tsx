@@ -421,13 +421,7 @@ export function AgentEditor({
                 confirmDelete ? (
                   <span className="flex flex-wrap items-center gap-2 text-body-sm text-ink">
                     Remove {agent.name} from the flock?
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={remove}
-                      disabled={busy}
-                      className="border-danger/50 text-danger"
-                    >
+                    <Button variant="danger" size="sm" onClick={remove} disabled={busy}>
                       {busy ? 'Removing…' : 'Remove'}
                     </Button>
                     <Button

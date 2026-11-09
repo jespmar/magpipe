@@ -50,7 +50,7 @@ test('connect a local MCP server, test it, grant it, remove it', async ({ page }
   await expect(panel).toBeVisible();
   const editor = panel.getByLabel('Connection JSON');
   await editor.fill('{"name": "x", "transport": "http"}');
-  await expect(panel.getByText('url: An http server needs a url')).toBeVisible();
+  await expect(panel.getByText('An http server needs a url')).toBeVisible();
   await expect(panel.getByRole('button', { name: 'Connect & test' })).toBeDisabled();
 
   await editor.fill(
@@ -95,7 +95,7 @@ test('connect a local MCP server, test it, grant it, remove it', async ({ page }
     page.getByRole('status').filter({ hasText: `${name} connected · 2 tools found.` }),
   ).toBeVisible();
   await card.getByRole('button', { name: 'Remove', exact: true }).click();
-  await expect(card.getByText(`Remove ${name} and every bird’s grant to it?`)).toBeVisible();
+  await expect(card.getByText(`Remove ${name} and every agent’s grant to it?`)).toBeVisible();
   await card.getByRole('button', { name: 'Remove', exact: true }).last().click();
   await expect(page.getByRole('status').filter({ hasText: `${name} removed.` })).toBeVisible();
   await expect(card).toHaveCount(0);

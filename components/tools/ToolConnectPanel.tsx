@@ -44,7 +44,11 @@ export function ToolConnectPanel({ onClose, onConnected, secretsReady }: Props) 
   }
 
   return (
-    <section aria-labelledby={`${ids}-title`} className="flex flex-col gap-3 panel p-5">
+    <section
+      id="connect-panel"
+      aria-labelledby={`${ids}-title`}
+      className="flex flex-col gap-3 panel p-5"
+    >
       <div className="flex items-center justify-between gap-3">
         <h2 id={`${ids}-title`} className="text-body-md font-semibold text-ink-strong">
           Connect an MCP server
@@ -82,7 +86,7 @@ export function ToolConnectPanel({ onClose, onConnected, secretsReady }: Props) 
           aria-invalid={!parsed.ok}
           aria-describedby={`${ids}-hint`}
           className={clsx(
-            'min-h-40 w-full resize-y rounded-md border bg-canvas p-4 font-mono text-code text-code-ink focus:outline-none',
+            'min-h-40 w-full resize-none rounded-md border bg-canvas p-4 font-mono text-code text-code-ink focus:outline-none',
             parsed.ok ? 'border-hairline focus:border-ink-strong' : 'border-danger/60',
           )}
         />

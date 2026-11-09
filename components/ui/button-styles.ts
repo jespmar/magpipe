@@ -1,6 +1,6 @@
 import { clsx } from 'clsx';
 
-export type ButtonVariant = 'primary' | 'run' | 'outline' | 'soft' | 'ghost';
+export type ButtonVariant = 'primary' | 'run' | 'outline' | 'soft' | 'ghost' | 'danger';
 export type ButtonSize = 'sm' | 'md';
 
 /**
@@ -21,6 +21,8 @@ export function buttonClass(variant: ButtonVariant = 'outline', size: ButtonSize
       outline: 'border border-hairline bg-canvas text-ink hover:border-ghost',
       soft: 'border border-hairline bg-canvas-soft text-ink hover:border-ghost',
       ghost: 'border border-transparent bg-canvas text-ghost hover:text-ink-strong',
+      /** Destructive confirms only: Danger Red text and 1 px border (DESIGN.md). */
+      danger: 'border border-danger/50 bg-canvas text-danger hover:border-danger',
     }[variant],
   );
 }
