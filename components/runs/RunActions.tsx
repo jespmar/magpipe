@@ -12,10 +12,12 @@ type Props = {
   size?: 'sm' | 'md';
   /** Also offer "Open log", the link to the flight's own page. */
   showOpen?: boolean;
+  /** Ghost beside Open log; outline where Re-fly is the page's own action (DESIGN.md Buttons). */
+  reflyVariant?: 'ghost' | 'outline';
 };
 
 /** Re-fly (a new run with the same input) and, while the run is live, Cancel (spec §3.4). */
-export function RunActions({ run, size = 'md', showOpen = false }: Props) {
+export function RunActions({ run, size = 'md', showOpen = false, reflyVariant = 'ghost' }: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState<'refly' | 'cancel' | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -56,7 +58,7 @@ export function RunActions({ run, size = 'md', showOpen = false }: Props) {
           Open log
         </ButtonLink>
       ) : null}
-      <Button variant="ghost" size={size} onClick={refly} disabled={busy !== null}>
+      <Button variant={reflyVariant} size={size} onClick={refly} disabled={busy !== null}>
         {busy === 'refly' ? 'Starting…' : 'Re-fly'}
       </Button>
       {live ? (

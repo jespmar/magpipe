@@ -12,18 +12,33 @@ function omitNode<T extends { node?: unknown }>(props: T): Omit<T, 'node'> {
 
 /** The merged result in the system's own type: Inter at body sizes, mono for code, cyan links. */
 const components: Components = {
-  h1: (p) => <h3 className="text-display-sm text-ink-strong" {...omitNode(p)} />,
-  h2: (p) => <h3 className="text-display-sm text-ink-strong" {...omitNode(p)} />,
-  h3: (p) => <h4 className="text-body-lg font-semibold text-ink-strong" {...omitNode(p)} />,
-  h4: (p) => <h5 className="text-body-md font-semibold text-ink-strong" {...omitNode(p)} />,
-  h5: (p) => <h6 className="text-body-md font-semibold text-ink-strong" {...omitNode(p)} />,
-  h6: (p) => <h6 className="text-body-sm font-semibold text-ink-strong" {...omitNode(p)} />,
-  p: (p) => <p className="text-body-md text-body" {...omitNode(p)} />,
+  // Prose keeps the reading measure (≈72 characters, CLAUDE.md); code and tables take the width.
+  h1: (p) => <h3 className="max-w-[34rem] text-display-sm text-ink-strong" {...omitNode(p)} />,
+  h2: (p) => <h3 className="max-w-[34rem] text-display-sm text-ink-strong" {...omitNode(p)} />,
+  h3: (p) => (
+    <h4 className="max-w-[34rem] text-body-lg font-semibold text-ink-strong" {...omitNode(p)} />
+  ),
+  h4: (p) => (
+    <h5 className="max-w-[34rem] text-body-md font-semibold text-ink-strong" {...omitNode(p)} />
+  ),
+  h5: (p) => (
+    <h6 className="max-w-[34rem] text-body-md font-semibold text-ink-strong" {...omitNode(p)} />
+  ),
+  h6: (p) => (
+    <h6 className="max-w-[34rem] text-body-sm font-semibold text-ink-strong" {...omitNode(p)} />
+  ),
+  p: (p) => <p className="max-w-[34rem] text-body-md text-body" {...omitNode(p)} />,
   ul: (p) => (
-    <ul className="flex list-disc flex-col gap-1 pl-5 text-body-md text-body" {...omitNode(p)} />
+    <ul
+      className="flex max-w-[34rem] list-disc flex-col gap-1 pl-5 text-body-md text-body"
+      {...omitNode(p)}
+    />
   ),
   ol: (p) => (
-    <ol className="flex list-decimal flex-col gap-1 pl-5 text-body-md text-body" {...omitNode(p)} />
+    <ol
+      className="flex max-w-[34rem] list-decimal flex-col gap-1 pl-5 text-body-md text-body"
+      {...omitNode(p)}
+    />
   ),
   li: (p) => <li className="pl-1 [&>p]:inline" {...omitNode(p)} />,
   a: (p) => (
@@ -49,7 +64,7 @@ const components: Components = {
   ),
   blockquote: (p) => (
     <blockquote
-      className="border-l-2 border-hairline pl-4 text-body-md text-body"
+      className="max-w-[34rem] border-l-2 border-hairline pl-4 text-body-md text-body"
       {...omitNode(p)}
     />
   ),

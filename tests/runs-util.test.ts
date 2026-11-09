@@ -104,7 +104,19 @@ describe('steps and queries', () => {
           usage: { inputTokens: 11_000, outputTokens: 1_000, costUsd: 0 },
         }),
       ),
-    ).toBe('12k tok · 01:20');
+    ).toBe('01:20 · 12k tok');
+    expect(
+      stepMeta(
+        step({
+          agentId: null,
+          status: 'done',
+          startedAt: '2026-11-09T11:00:00Z',
+          finishedAt: '2026-11-09T11:00:02Z',
+          usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
+        }),
+      ),
+    ).toBe('00:02 · plan');
+    expect(stepMeta(step({ status: 'done' }))).toBe('done');
     expect(stepMeta(step({ status: 'live', startedAt: '2026-11-09T11:59:18' }), now)).toBe(
       'running · 00:42',
     );

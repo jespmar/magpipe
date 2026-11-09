@@ -43,8 +43,9 @@ export function RunTable({
       aria-label="Runs"
       className={clsx(
         // `relative` keeps the rows' visually hidden labels inside this scroll box; otherwise
-        // they position against the document and widen the page on narrow screens.
-        'relative min-w-0 overflow-x-auto rounded-md border border-hairline bg-(image:--g-card)',
+        // they position against the document and widen the page on narrow screens. Below 1600 px
+        // the ledger scrolls inside its own height so the selected flight stays within reach.
+        'relative max-h-[28rem] min-w-0 overflow-auto rounded-md border border-hairline bg-(image:--g-card) wide:max-h-none',
         className,
       )}
     >
@@ -52,7 +53,7 @@ export function RunTable({
         <p className="px-4 py-8 text-body-sm text-body">{emptyMessage}</p>
       ) : (
         <div className="min-w-[900px]">
-          <div className="grid grid-cols-12 gap-3 border-b border-hairline bg-canvas-soft px-4 py-3 label-caps">
+          <div className="sticky top-0 z-10 grid grid-cols-12 gap-3 border-b border-hairline bg-canvas-soft px-4 py-3 label-caps">
             <span className="col-span-2">Flight</span>
             <span className="col-span-4">Task</span>
             <span className="col-span-2">Agents</span>

@@ -2,143 +2,143 @@
 name: Magpipe
 description: A dark, quiet aviary where the few bright things are the ones that act or are alive.
 colors:
-  canvas: "#101010"
-  canvas-soft: "#1a1a1a"
-  canvas-raised: "#181818"
-  hairline: "#3d3a39"
-  hairline-soft: "#1f1f1f"
-  ink: "#f2f2f2"
-  ink-strong: "#ffffff"
-  body: "#bdbdbd"
-  mute: "#8b949e"
-  code: "#f5f6f7"
-  accent-white: "#ffffff"
-  ghost: "#d1d5db"
-  sheen-cyan: "#22c1dc"
-  sheen-teal: "#0e9aa8"
-  sheen-emerald: "#16a35e"
-  sheen-cyan-soft: "#66d9e8"
-  sheen-tint: "#d6f5f7"
-  warn: "#fbbf24"
-  danger: "#f87171"
+  canvas: '#101010'
+  canvas-soft: '#1a1a1a'
+  canvas-raised: '#181818'
+  hairline: '#3d3a39'
+  hairline-soft: '#1f1f1f'
+  ink: '#f2f2f2'
+  ink-strong: '#ffffff'
+  body: '#bdbdbd'
+  mute: '#8b949e'
+  code: '#f5f6f7'
+  accent-white: '#ffffff'
+  ghost: '#d1d5db'
+  sheen-cyan: '#22c1dc'
+  sheen-teal: '#0e9aa8'
+  sheen-emerald: '#16a35e'
+  sheen-cyan-soft: '#66d9e8'
+  sheen-tint: '#d6f5f7'
+  warn: '#fbbf24'
+  danger: '#f87171'
 typography:
   display-xl:
     fontFamily: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
-    fontSize: "60px"
+    fontSize: '60px'
     fontWeight: 400
-    lineHeight: "60px"
-    letterSpacing: "-0.65px"
+    lineHeight: '60px'
+    letterSpacing: '-0.65px'
   display:
     fontFamily: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
-    fontSize: "36px"
+    fontSize: '36px'
     fontWeight: 400
-    lineHeight: "40px"
-    letterSpacing: "-0.9px"
+    lineHeight: '40px'
+    letterSpacing: '-0.9px'
   headline:
     fontFamily: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
-    fontSize: "24px"
+    fontSize: '24px'
     fontWeight: 700
-    lineHeight: "32px"
-    letterSpacing: "-0.6px"
+    lineHeight: '32px'
+    letterSpacing: '-0.6px'
   title:
     fontFamily: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
-    fontSize: "20px"
+    fontSize: '20px'
     fontWeight: 600
-    lineHeight: "28px"
+    lineHeight: '28px'
   body:
     fontFamily: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
-    fontSize: "16px"
+    fontSize: '16px'
     fontWeight: 400
-    lineHeight: "26px"
+    lineHeight: '26px'
   body-sm:
     fontFamily: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
-    fontSize: "14px"
+    fontSize: '14px'
     fontWeight: 400
-    lineHeight: "20px"
+    lineHeight: '20px'
   caption:
     fontFamily: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
-    fontSize: "12px"
+    fontSize: '12px'
     fontWeight: 400
-    lineHeight: "16px"
+    lineHeight: '16px'
   eyebrow:
     fontFamily: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
-    fontSize: "14px"
+    fontSize: '14px'
     fontWeight: 600
-    lineHeight: "20px"
-    letterSpacing: "2.52px"
+    lineHeight: '20px'
+    letterSpacing: '2.52px'
   label:
     fontFamily: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
-    fontSize: "12px"
+    fontSize: '12px'
     fontWeight: 600
-    lineHeight: "16px"
-    letterSpacing: "1.2px"
+    lineHeight: '16px'
+    letterSpacing: '1.2px'
   code:
     fontFamily: "SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace"
-    fontSize: "13px"
+    fontSize: '13px'
     fontWeight: 400
-    lineHeight: "18px"
+    lineHeight: '18px'
   button:
     fontFamily: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
-    fontSize: "14px"
+    fontSize: '14px'
     fontWeight: 600
-    lineHeight: "20px"
+    lineHeight: '20px'
 rounded:
-  xs: "4px"
-  sm: "6px"
-  md: "8px"
-  pill: "9999px"
+  xs: '4px'
+  sm: '6px'
+  md: '8px'
+  pill: '9999px'
 spacing:
-  xs: "4px"
-  sm: "8px"
-  md: "12px"
-  lg: "16px"
-  xl: "24px"
-  2xl: "32px"
-  3xl: "48px"
+  xs: '4px'
+  sm: '8px'
+  md: '12px'
+  lg: '16px'
+  xl: '24px'
+  2xl: '32px'
+  3xl: '48px'
 components:
   button-primary:
-    backgroundColor: "{colors.accent-white}"
-    textColor: "{colors.canvas}"
-    typography: "{typography.button}"
-    rounded: "{rounded.sm}"
-    padding: "10px 16px"
+    backgroundColor: '{colors.accent-white}'
+    textColor: '{colors.canvas}'
+    typography: '{typography.button}'
+    rounded: '{rounded.sm}'
+    padding: '10px 16px'
   button-primary-hover:
-    backgroundColor: "{colors.sheen-tint}"
+    backgroundColor: '{colors.sheen-tint}'
   button-outline:
-    backgroundColor: "{colors.canvas}"
-    textColor: "{colors.ink}"
-    typography: "{typography.button}"
-    rounded: "{rounded.sm}"
-    padding: "10px 16px"
+    backgroundColor: '{colors.canvas}'
+    textColor: '{colors.ink}'
+    typography: '{typography.button}'
+    rounded: '{rounded.sm}'
+    padding: '10px 16px'
   button-ghost:
-    backgroundColor: "{colors.canvas}"
-    textColor: "{colors.ghost}"
-    typography: "{typography.button}"
-    rounded: "{rounded.sm}"
-    padding: "10px 16px"
+    backgroundColor: '{colors.canvas}'
+    textColor: '{colors.ghost}'
+    typography: '{typography.button}'
+    rounded: '{rounded.sm}'
+    padding: '10px 16px'
   pill-status:
-    backgroundColor: "{colors.canvas}"
-    textColor: "{colors.ink}"
-    typography: "{typography.caption}"
-    rounded: "{rounded.pill}"
-    padding: "2px 10px"
+    backgroundColor: '{colors.canvas}'
+    textColor: '{colors.ink}'
+    typography: '{typography.caption}'
+    rounded: '{rounded.pill}'
+    padding: '2px 10px'
   chip-mono:
-    backgroundColor: "{colors.canvas-soft}"
-    textColor: "{colors.code}"
-    typography: "{typography.code}"
-    rounded: "{rounded.sm}"
-    padding: "2px 8px"
+    backgroundColor: '{colors.canvas-soft}'
+    textColor: '{colors.code}'
+    typography: '{typography.code}'
+    rounded: '{rounded.sm}'
+    padding: '2px 8px'
   card:
-    backgroundColor: "{colors.canvas-raised}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.md}"
-    padding: "24px"
+    backgroundColor: '{colors.canvas-raised}'
+    textColor: '{colors.ink}'
+    rounded: '{rounded.md}'
+    padding: '24px'
   input:
-    backgroundColor: "{colors.canvas-soft}"
-    textColor: "{colors.ink}"
-    typography: "{typography.body-sm}"
-    rounded: "{rounded.sm}"
-    padding: "10px 16px"
+    backgroundColor: '{colors.canvas-soft}'
+    textColor: '{colors.ink}'
+    typography: '{typography.body-sm}'
+    rounded: '{rounded.sm}'
+    padding: '10px 16px'
 ---
 
 # Design System: Magpipe
@@ -326,7 +326,16 @@ white disc.
   prompt window, the connect panel, holding states.
 - **Stat strip:** three mono 20/28 550 values over Caption labels, divided by 1 px Hairline Soft
   verticals and framed by Hairline Soft rules above and below; flat on the card surface, never
-  boxed (no card inside a card).
+  boxed (no card inside a card). On a page of its own (the Runs screen) the strip becomes four
+  stat tiles: a mono 24/32 550 value over its caption in a 16 px card, one per column. A value
+  with nothing behind it reads "—", never a false zero.
+- **Step chain:** a run's plan as 196 px step cards (`AGENT` label in tracked caps · what · mono
+  meta `mm:ss · tokens`), joined by hairline arrows — a horizontal chain at desktop, a vertical
+  timeline from 1600 px. State lives in the dot and the edge: done an emerald dot on a hairline
+  card, live a cyan dot (blinking under `motion-safe:`) with a cyan edge and an 8% cyan fill,
+  failed a red dot and edge, waiting grey, skipped grey on a dashed card.
+- **Status word:** inside a table cell the status is a 6 px dot and the lowercase word in the
+  status colour, no border — the pill's content without its frame, so dense rows stay quiet.
 - **Glyph tile:** 40 px square, 8 px radius, Hairline on Canvas Soft, a mono 12/550 two-letter
   glyph — a tool's face, as the avatar disc is an agent's. Inside a card it is the one square
   among discs.

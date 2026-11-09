@@ -87,7 +87,7 @@ export function RunFlightPath({ plan, agents, now, emptyMessage }: Props) {
                 strokeWidth="1.5"
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                className="mx-1 shrink-0 text-mute wide:mx-0 wide:my-1 wide:rotate-90 wide:self-center"
+                className="mx-1 shrink-0 text-hairline wide:my-1 wide:ml-5 wide:rotate-90 wide:self-start"
               >
                 <path d="M4 12h14M13 7l5 5-5 5" />
               </svg>
