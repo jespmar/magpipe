@@ -14,6 +14,17 @@ type Props = {
   now: Date;
 };
 
+/** A key wraps at its own separators (`.`, `_`) first, and only then anywhere. */
+function breakableKey(key: string) {
+  const parts = key.split(/(?<=[._])/);
+  return parts.map((part, i) => (
+    <span key={i}>
+      {i > 0 ? <wbr /> : null}
+      {part}
+    </span>
+  ));
+}
+
 /** The nest as a ledger: key · value · by · updated (spec §3.6). */
 export function MemoryTable({ entries, agents, selectedId, onSelect, emptyMessage, now }: Props) {
   return (
@@ -74,7 +85,7 @@ export function MemoryTable({ entries, agents, selectedId, onSelect, emptyMessag
                     ) : null}
                     <span className="flex min-w-0 flex-col">
                       <span className="font-mono text-code [overflow-wrap:anywhere] text-code-ink">
-                        {e.key}
+                        {breakableKey(e.key)}
                       </span>
                       <span className="truncate text-caption text-body md:hidden">{e.value}</span>
                     </span>
