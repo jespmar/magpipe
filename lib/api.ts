@@ -1,6 +1,7 @@
 import 'server-only';
 import { NextResponse } from 'next/server';
 import type { z } from 'zod';
+import { DbLockedError } from './db';
 import { currentUser, type CurrentUser } from './session';
 
 /** Error envelope for every route handler (spec §8). */
@@ -34,4 +35,17 @@ export async function parseBody<T extends z.ZodType>(
     };
   }
   return { ok: true, data: parsed.data };
+}
+
+/** The database could not be opened or the write failed: a 503 the UI can explain. */
+export function dbError(err: unknown) {
+  console.error('[api] database error:', err);
+  if (err instanceof DbLockedError) {
+    return apiError(
+      'db_locked',
+      'Another Magpipe window is using the data folder. Close it, then try again.',
+      503,
+    );
+  }
+  return apiError('db_unavailable', 'Magpipe can’t open its database right now.', 503);
 }

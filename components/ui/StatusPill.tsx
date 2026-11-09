@@ -3,12 +3,21 @@ import type { RunStatus } from '@/lib/schemas';
 
 /** Spec §5: running (cyan), waiting (white), idle (mute), done (emerald), failed (red), needs-auth (amber). */
 export type StatusVariant =
-  'running' | 'waiting' | 'idle' | 'done' | 'failed' | 'needs-auth' | 'queued' | 'cancelled';
+  | 'running'
+  | 'waiting'
+  | 'idle'
+  | 'paused'
+  | 'done'
+  | 'failed'
+  | 'needs-auth'
+  | 'queued'
+  | 'cancelled';
 
 const STYLE: Record<StatusVariant, string> = {
   running: 'border-cyan/45 text-cyan',
   waiting: 'border-hairline text-ink',
   idle: 'border-hairline text-mute',
+  paused: 'border-hairline text-mute',
   done: 'border-emerald/45 text-emerald',
   failed: 'border-danger/45 text-danger',
   'needs-auth': 'border-warn/45 text-warn',
