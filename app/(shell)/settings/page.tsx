@@ -54,7 +54,7 @@ export default async function SettingsPage() {
       <ScrollToHash />
 
       <div className="grid gap-6 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] md:items-start wide:max-w-[1600px]">
-        <Section id="workspace" title="Workspace" className="md:row-span-3">
+        <Section id="workspace" title="Workspace" className="md:row-span-2">
           <p className="text-body-sm text-body">
             Read-only for now — editing these lands with the screens that need them.
           </p>
@@ -120,23 +120,24 @@ export default async function SettingsPage() {
           ) : null}
         </Section>
 
-        <Section id="keyboard" title="Keyboard">
+        <Section id="keyboard" title="Keyboard" className="md:col-span-2">
           <p className="text-body-sm text-body">
             Single keys work anywhere outside a text field; press <Kbd>?</Kbd> on any screen to see
             this list.
           </p>
-          <dl className="flex flex-col gap-2.5">
+          {/* Keys first in a fixed column, their action beside them; two abreast from tablet up. */}
+          <dl className="grid grid-cols-[9.5rem_minmax(0,1fr)] gap-x-4 gap-y-2.5 md:grid-cols-[9.5rem_minmax(0,1fr)_9.5rem_minmax(0,1fr)] md:gap-x-6">
             {SHORTCUTS.map((s) => (
-              <div key={s.label} className="flex items-baseline justify-between gap-6">
-                <dt className="text-body-sm text-body">{s.label}</dt>
-                <dd className="flex shrink-0 items-center gap-1 font-mono text-code text-ink">
+              <div key={s.label} className="contents">
+                <dt className="flex items-center gap-1 font-mono text-code text-ink">
                   {s.keys.map((k, i) => (
                     <span key={k} className="inline-flex items-center gap-1">
                       {i > 0 ? <span className="text-mute">{s.chord ? 'then' : '+'}</span> : null}
                       <Kbd>{k}</Kbd>
                     </span>
                   ))}
-                </dd>
+                </dt>
+                <dd className="self-center text-body-sm text-body">{s.label}</dd>
               </div>
             ))}
           </dl>
