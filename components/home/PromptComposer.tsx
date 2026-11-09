@@ -170,8 +170,15 @@ export function PromptComposer() {
             }
           }}
           onInput={() => problem && setProblem(null)}
+          aria-describedby={problem ? `${id}-problem` : undefined}
+          aria-invalid={problem ? true : undefined}
           className="w-full resize-y rounded-sm border border-hairline bg-canvas px-4 py-3 text-body-md text-ink focus:border-ink-strong focus:outline-none wide:px-[18px] wide:py-3.5 wide:text-body-lg"
         />
+        {problem ? (
+          <p id={`${id}-problem`} role="alert" className="-mt-1 text-body-sm text-danger">
+            {problem}
+          </p>
+        ) : null}
         {chips.length > 0 ? (
           <ul aria-label="Attachments" className="flex flex-wrap gap-2">
             {chips.map((c) => (
@@ -227,7 +234,7 @@ export function PromptComposer() {
             </Button>
             <span className="text-caption text-mute">PDF, CSV, images, code · up to 25 MB</span>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 max-md:ml-auto">
             <kbd className="font-mono text-code text-mute">{mac ? '⌘' : 'Ctrl'} + Enter</kbd>
             <Button type="submit" variant="run" disabled={sending} aria-busy={sending}>
               {sending ? 'Starting…' : 'Run'}
@@ -235,11 +242,6 @@ export function PromptComposer() {
             </Button>
           </div>
         </div>
-        {problem ? (
-          <p role="alert" className="text-body-sm text-danger">
-            {problem}
-          </p>
-        ) : null}
       </form>
     </section>
   );

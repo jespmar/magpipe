@@ -102,7 +102,7 @@ export function FlightLog({ latest, agentNames, className }: Props) {
           All flights
         </ButtonLink>
       </div>
-      <div className="flex min-h-0 flex-1 flex-col rounded-md border border-hairline bg-(image:--g-card) p-5">
+      <div className="flex min-w-0 flex-col rounded-md border border-hairline bg-(image:--g-card) p-5">
         {latest ? (
           <>
             <div className="mb-1 flex items-center justify-between gap-4 border-b border-hairline pb-3">

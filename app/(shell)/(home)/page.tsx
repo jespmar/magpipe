@@ -31,19 +31,19 @@ export default async function HomePage() {
 
   return (
     <div className="flex flex-col gap-14 wide:gap-10">
-      <div className="flex flex-col gap-14 wide:grid wide:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)] wide:items-stretch wide:gap-x-12">
+      <div className="flex flex-col gap-14 wide:grid wide:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)] wide:items-stretch wide:gap-x-12">
         <section aria-label="The flock" className="flex min-w-0 flex-col gap-5">
           <PageHead
             eyebrow="The flock"
             title="Birds on the wire"
             actions={
-              <ButtonLink href="/agents?new=1" variant="ghost">
+              <ButtonLink href="/agents?new=1" variant="ghost" className="max-md:-ml-4">
                 + Add a bird
               </ButtonLink>
             }
           />
           {data.agents.length > 0 ? (
-            <ul className="grid grid-cols-1 gap-5 md:grid-cols-2 wide:grid-cols-[repeat(auto-fill,minmax(300px,1fr))]">
+            <ul className="grid grid-cols-1 gap-5 md:grid-cols-2">
               {data.agents.map((card) => (
                 <li key={card.id} className="flex min-w-0">
                   <AgentCard card={card} now={now} />

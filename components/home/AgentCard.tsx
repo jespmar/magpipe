@@ -21,13 +21,21 @@ export function AgentCard({ card, now }: { card: AgentCardData; now: Date }) {
             >
               {card.name}
             </Link>
-            <span className="truncate text-caption text-mute">{card.role}</span>
+            <span className="min-h-4 truncate text-caption text-mute">{card.role}</span>
           </div>
         </div>
         <StatusPill variant={card.status} />
       </div>
       <p className="line-clamp-2 min-h-10 text-body-sm text-body">
-        {card.live ? card.task : card.task ? `Last: ${card.task}` : 'Ready for a first task.'}
+        {card.live ? (
+          card.task
+        ) : card.task ? (
+          <>
+            <span className="text-mute">Last step ·</span> {card.task}
+          </>
+        ) : (
+          'Ready for a first task.'
+        )}
       </p>
       {card.progress !== null ? (
         <div
@@ -43,9 +51,7 @@ export function AgentCard({ card, now }: { card: AgentCardData; now: Date }) {
             style={{ width: `${pct}%` }}
           />
         </div>
-      ) : (
-        <div aria-hidden className="h-1 rounded-pill bg-canvas-soft" />
-      )}
+      ) : null}
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-hairline pt-3">
         <span className="rounded-sm bg-canvas-soft px-2 py-0.5 font-mono text-code text-code-ink">
           {card.model}
