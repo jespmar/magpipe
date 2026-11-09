@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { clsx } from 'clsx';
 import { ButtonLink } from '@/components/ui/Button';
 import { DemoLink } from '@/components/ui/DemoLink';
@@ -46,11 +46,34 @@ export function RunsScreen({ runs, counts, agents, stats, fresh, initialId, now 
     () => runs.find((r) => r.displayId === initialId)?.id ?? runs[0]?.id ?? null,
   );
 
-  const visible = useMemo(
-    () =>
-      runs.filter((r) => matchesRunFilter(r.status, filter) && matchesRunQuery(r, query, agents)),
-    [runs, filter, query, agents],
+  // A search narrows the pill counts with it; without one the server's whole-ledger counts stand.
+  const queried = useMemo(
+    () => (query.trim() ? runs.filter((r) => matchesRunQuery(r, query, agents)) : null),
+    [runs, query, agents],
   );
+  const pillCounts = useMemo(() => {
+    if (!queried) return counts;
+    const next = Object.fromEntries(RUN_FILTERS.map((f) => [f.key, 0])) as Record<
+      RunFilter,
+      number
+    >;
+    for (const r of queried) {
+      next.all += 1;
+      if (r.status in next) next[r.status as RunFilter] += 1;
+    }
+    return next;
+  }, [queried, counts]);
+  const visible = useMemo(
+    () => (queried ?? runs).filter((r) => matchesRunFilter(r.status, filter)),
+    [queried, runs, filter],
+  );
+
+  // Picking a row brings the flight's card into view when it sits below the fold.
+  const card = useRef<HTMLElement>(null);
+  const [picks, setPicks] = useState(0);
+  useEffect(() => {
+    if (picks > 0) card.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [picks]);
   // Keep the selection valid as the list narrows: fall back to the first visible flight.
   const selected = runs.find((r) => r.id === selectedId) ?? null;
   const shown =
@@ -102,7 +125,11 @@ export function RunsScreen({ runs, counts, agents, stats, fresh, initialId, now 
       <StatStrip stats={stats} />
       <FilterPills
         label="Filter runs"
-        options={RUN_FILTERS.map((f) => ({ key: f.key, label: f.label, count: counts[f.key] }))}
+        options={RUN_FILTERS.map((f) => ({
+          key: f.key,
+          label: f.label,
+          count: pillCounts[f.key],
+        }))}
         value={filter}
         onChange={setFilter}
       />
@@ -111,7 +138,10 @@ export function RunsScreen({ runs, counts, agents, stats, fresh, initialId, now 
           runs={visible}
           agents={agents}
           selectedId={shown?.id ?? null}
-          onSelect={setSelectedId}
+          onSelect={(id) => {
+            setSelectedId(id);
+            setPicks((n) => n + 1);
+          }}
           emptyMessage={
             query.trim() ? `No runs match “${query.trim()}”.` : 'No runs with this status.'
           }
@@ -119,7 +149,13 @@ export function RunsScreen({ runs, counts, agents, stats, fresh, initialId, now 
           className="wide:flex-[1_1_1200px]"
         />
         {shown ? (
-          <SelectedRun run={shown} agents={agents} now={now} className="wide:flex-[0_1_640px]" />
+          <SelectedRun
+            ref={card}
+            run={shown}
+            agents={agents}
+            now={now}
+            className="wide:flex-[0_1_640px]"
+          />
         ) : null}
       </div>
     </>
@@ -128,11 +164,13 @@ export function RunsScreen({ runs, counts, agents, stats, fresh, initialId, now 
 
 /** The selected flight: id, task, Open log · Re-fly (· Cancel while live) and its path. */
 function SelectedRun({
+  ref,
   run,
   agents,
   now,
   className,
 }: {
+  ref: React.Ref<HTMLElement>;
   run: Run;
   agents: AgentChip[];
   now: Date;
@@ -140,6 +178,7 @@ function SelectedRun({
 }) {
   return (
     <section
+      ref={ref}
       aria-labelledby="selected-run-title"
       className={clsx('flex min-w-0 flex-col gap-5 card p-6', className)}
     >

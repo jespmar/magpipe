@@ -123,7 +123,11 @@ export function stepMeta(step: Step, now: Date = new Date()): string {
         step.startedAt && step.finishedAt
           ? formatDuration(Date.parse(step.finishedAt) - Date.parse(step.startedAt))
           : null;
-      return [`${formatTokens(tokensOf(step))} tok`, dur].filter(Boolean).join(' · ');
+      const tokens = tokensOf(step);
+      // No false zero: a step without usage says what it was instead of "0 tok".
+      const spend =
+        tokens > 0 ? `${formatTokens(tokens)} tok` : step.agentId === null ? 'plan' : null;
+      return [dur, spend].filter(Boolean).join(' · ') || 'done';
     }
     case 'live':
       return `running · ${

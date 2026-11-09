@@ -49,14 +49,27 @@ export function RunDetailScreen({ run, events, agents, now }: Props) {
         meta={
           <>
             <StatusPill variant={runStatusVariant(run.status)} />
-            <span>{run.displayId}</span>
-            {run.durationMs !== null ? <span>took {formatDuration(run.durationMs)}</span> : null}
-            <span>{formatTokens(tokens)} tokens</span>
-            {run.usage.costUsd > 0 ? <span>{formatUsd(run.usage.costUsd)}</span> : null}
-            {run.startedAt ? <span>started {relativeTime(run.startedAt, now)}</span> : null}
+            {[
+              run.displayId,
+              run.durationMs !== null ? `took ${formatDuration(run.durationMs)}` : null,
+              `${formatTokens(tokens)} tokens`,
+              run.usage.costUsd > 0 ? formatUsd(run.usage.costUsd) : null,
+              run.startedAt ? `started ${relativeTime(run.startedAt, now)}` : null,
+            ]
+              .filter((fact): fact is string => fact !== null)
+              .map((fact, i) => (
+                <span key={fact} className="inline-flex items-center gap-3">
+                  {i > 0 ? (
+                    <span aria-hidden className="text-hairline">
+                      ·
+                    </span>
+                  ) : null}
+                  {fact}
+                </span>
+              ))}
           </>
         }
-        actions={<RunActions run={run} />}
+        actions={<RunActions run={run} reflyVariant="outline" />}
       />
       <div className="flex flex-col gap-7 wide:grid wide:grid-cols-[minmax(0,1fr)_minmax(0,34rem)] wide:items-start">
         <section
@@ -114,7 +127,7 @@ export function RunDetailScreen({ run, events, agents, now }: Props) {
             <h2 id="input-title" className="text-display-sm text-ink-strong">
               Input
             </h2>
-            <p className="text-body-md [overflow-wrap:anywhere] whitespace-pre-wrap text-body">
+            <p className="max-w-[34rem] text-body-md [overflow-wrap:anywhere] whitespace-pre-wrap text-body">
               {run.input.text}
             </p>
             {run.input.attachments.length > 0 ? (
