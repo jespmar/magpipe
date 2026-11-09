@@ -357,3 +357,93 @@ describe('run engine', () => {
     expect(client.calls.some((p) => isPlan(p))).toBe(false); // the existing plan was kept
   });
 });
+
+describe('run engine with a granted MCP server', () => {
+  let db: Db;
+  let close: () => Promise<void>;
+  beforeAll(async () => {
+    ({ db, close } = await openDb('memory://'));
+  }, 30_000);
+  afterAll(() => close());
+
+  it('exposes the server’s tools under wire names, calls them and counts the call', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'magpipe-engine-mcp-'));
+    const script = path.join(dir, 'server.js');
+    fs.writeFileSync(
+      script,
+      `let buf='';process.stdin.on('data',(c)=>{buf+=c;let i;while((i=buf.indexOf('\\n'))!==-1){const line=buf.slice(0,i);buf=buf.slice(i+1);if(!line.trim())continue;const m=JSON.parse(line);if(m.id===undefined)continue;
+      const result=m.method==='initialize'?{protocolVersion:'2025-06-18',capabilities:{},serverInfo:{name:'echo',version:'0'}}:m.method==='tools/list'?{tools:[{name:'echo.say',description:'Echo',inputSchema:{$schema:'x',type:'object',properties:{text:{type:'string'}},required:['text']}},{name:'hidden',inputSchema:{type:'object'}}]}:{content:[{type:'text',text:'echo: '+m.params.arguments.text}]};
+      process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');}});`,
+    );
+    const toolId = 'tool_echo';
+    await db.insert(t.tools).values({
+      id: toolId,
+      slug: 'echo-server',
+      name: 'Echo server',
+      glyph: 'EC',
+      kind: 'mcp',
+      category: 'Test',
+      description: 'A local echo',
+      transport: 'stdio',
+      url: null,
+      command: `"${process.execPath}" "${script}"`,
+      auth: { type: 'none' },
+      status: 'connected',
+      scopes: ['echo.say', 'hidden'],
+      grantedAgents: ['agt_operator'],
+      stats: { calls24h: 0, lastCallAt: null },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await db
+      .update(t.agents)
+      .set({ tools: [{ toolId, scopes: ['echo.say'] }] })
+      .where(eq(t.agents.slug, 'operator'));
+
+    const client = scripted((p) => {
+      if (isPlan(p))
+        return plan([
+          {
+            id: 's1',
+            agent: 'operator',
+            title: 'Say hi',
+            instructions: '',
+            dependsOn: [],
+            optional: false,
+          },
+        ]);
+      if (isMerge(p)) return text('merged');
+      const names = (p.tools ?? []).map((tool) => (tool as { name: string }).name);
+      expect(names).toContain('echo-server__echo_say');
+      expect(names).not.toContain('echo-server__hidden'); // not granted
+      const schema = (p.tools ?? []).find(
+        (tool) => (tool as { name: string }).name === 'echo-server__echo_say',
+      ) as { input_schema: Record<string, unknown> };
+      expect(schema.input_schema).not.toHaveProperty('$schema');
+      const last = p.messages[p.messages.length - 1]!;
+      if (
+        Array.isArray(last.content) &&
+        last.content.some((b) => (b as { type: string }).type === 'tool_result')
+      ) {
+        expect(JSON.stringify(last.content)).toContain('echo: hi');
+        return text('said hi');
+      }
+      return toolUse('echo-server__echo_say', { text: 'hi' });
+    });
+    const engine = new Engine({ client, getDb: async () => db });
+    const run = await createRun(db, { text: 'use the echo server', attachments: [] });
+    engine.enqueue(run.id);
+    await engine.whenIdle();
+    expect((await getRun(db, run.id))!.status).toBe('done');
+    const events = await listEvents(db, run.id);
+    expect(
+      events.some((e) => e.kind === 'tool_call' && e.text.startsWith('Echo server · echo.say')),
+    ).toBe(true);
+    const [tool] = await db.select().from(t.tools).where(eq(t.tools.id, toolId));
+    expect(tool!.stats.calls24h).toBe(1);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }, 20_000);
+});

@@ -22,6 +22,11 @@ describe('sandbox', () => {
     await expect(shellRun(dir, 'rm -rf notes')).rejects.toThrow(/allow-list/);
     await expect(shellRun(dir, 'cat ../secret')).rejects.toThrow(/inside the workspace/);
     await expect(shellRun(dir, 'cat /etc/hostname')).rejects.toThrow(/inside the workspace/);
+    await expect(shellRun(dir, 'find . -exec sh -c id ;')).rejects.toThrow(/only read/);
+    await expect(shellRun(dir, 'find . -delete')).rejects.toThrow(/only read/);
+    await expect(shellRun(dir, 'sort -o out.txt notes/a.txt')).rejects.toThrow(/only read/);
+    await expect(shellRun(dir, 'sort --output=out.txt notes/a.txt')).rejects.toThrow(/only read/);
+    expect((await shellRun(dir, 'find notes -name a.txt')).stdout.trim()).toBe('notes/a.txt');
     expect(splitArgs(`grep -n "two words" a.txt`)).toEqual(['grep', '-n', 'two words', 'a.txt']);
   });
 });

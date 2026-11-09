@@ -4,14 +4,15 @@
  * app's own MCP client. Tool names must match /^[a-zA-Z0-9_-]{1,64}$/ on the wire.
  */
 import fs from 'node:fs/promises';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import type { Db } from '../db';
 import * as t from '../db/schema';
 import { connectMcp, type McpConnection, type McpTarget } from '../mcp';
 import { listMemory, markRead, writeMemory } from '../memory';
 import { formatConfidence } from '../memory-util';
-import { memoryInput, type Agent, type Attachment, type Tool } from '../schemas';
+import { memoryInput, type Agent, type Attachment } from '../schemas';
 import { readSecret } from '../secrets';
+import { authHeaders } from '../tools';
 import { fsRead, fsWrite, shellRun } from './sandbox';
 import type { ModelTool } from './model';
 
@@ -69,11 +70,6 @@ function clientTool(
   strict = true,
 ): ModelTool {
   return { name, description, input_schema: schema, ...(strict ? { strict: true } : {}) };
-}
-
-function authHeaders(type: Tool['auth']['type'], token: string | null): Record<string, string> {
-  if (!token || type === 'none') return {};
-  return type === 'apikey' ? { 'x-api-key': token } : { authorization: `Bearer ${token}` };
 }
 
 function str(input: Record<string, unknown>, key: string): string {
@@ -199,7 +195,7 @@ export async function setupTools(setup: ToolSetup): Promise<ToolRuntime> {
     tools.push(
       clientTool(
         'memory_write',
-        `Record a durable fact for every bird to read later. Namespaces you may write: ${writable.join(', ')}. Use a dotted, stable key; say where it came from.`,
+        `Record a durable fact for every agent to read later. Namespaces you may write: ${writable.join(', ')}. Use a dotted, stable key; say where it came from.`,
         objectSchema(
           {
             ns: { type: 'string' },
@@ -236,122 +232,137 @@ export async function setupTools(setup: ToolSetup): Promise<ToolRuntime> {
     ? await db
         .select()
         .from(t.tools)
-        .where(eq(t.tools.id, grants[0]!.toolId))
-        .then(async (first) => {
-          const all = await db.select().from(t.tools);
-          return all.filter((row) => grants.some((g) => g.toolId === row.id)) ?? first;
-        })
+        .where(
+          inArray(
+            t.tools.id,
+            grants.map((g) => g.toolId),
+          ),
+        )
     : [];
+  const closeAll = async () => {
+    await Promise.all(connections.map((c) => c.close().catch(() => {})));
+  };
 
-  for (const tool of rows) {
-    const grant = grants.find((g) => g.toolId === tool.id)!;
-    const allowed = (scope: string) => grant.scopes.length === 0 || grant.scopes.includes(scope);
+  try {
+    for (const tool of rows) {
+      const grant = grants.find((g) => g.toolId === tool.id)!;
+      const allowed = (scope: string) => grant.scopes.length === 0 || grant.scopes.includes(scope);
 
-    if (tool.kind === 'builtin') {
-      if (allowed('fs:r') || allowed('fs:rw')) {
-        tools.push(
-          clientTool(
-            'fs_read',
-            'Read a file or list a folder in this run’s workspace.',
-            objectSchema({ path: { type: 'string' } }, ['path']),
-          ),
-        );
-        dispatch.set('fs_read', async (input) => ({
-          text: await fsRead(setup.sandboxDir, str(input, 'path')),
-        }));
-        labels.set('fs_read', tool.name);
-      }
-      if (allowed('fs:rw')) {
-        tools.push(
-          clientTool(
-            'fs_write',
-            'Write a text file in this run’s workspace.',
-            objectSchema({ path: { type: 'string' }, contents: { type: 'string' } }, [
-              'path',
-              'contents',
-            ]),
-          ),
-        );
-        dispatch.set('fs_write', async (input) => ({
-          text: await fsWrite(setup.sandboxDir, str(input, 'path'), str(input, 'contents')),
-        }));
-        labels.set('fs_write', tool.name);
-      }
-      if (allowed('shell:run')) {
-        tools.push(
-          clientTool(
-            'shell_run',
-            'Run a read-only command in the workspace (ls, cat, grep, find, head, tail, wc, diff, sort, uniq, stat, echo, pwd).',
-            objectSchema({ command: { type: 'string' } }, ['command']),
-          ),
-        );
-        dispatch.set('shell_run', async (input) => {
-          const res = await shellRun(setup.sandboxDir, str(input, 'command'), {
-            signal: setup.signal,
+      if (tool.kind === 'builtin') {
+        if (allowed('fs:r') || allowed('fs:rw')) {
+          tools.push(
+            clientTool(
+              'fs_read',
+              'Read a file or list a folder in this run’s workspace.',
+              objectSchema({ path: { type: 'string' } }, ['path']),
+            ),
+          );
+          dispatch.set('fs_read', async (input) => ({
+            text: await fsRead(setup.sandboxDir, str(input, 'path')),
+          }));
+          labels.set('fs_read', tool.name);
+        }
+        if (allowed('fs:rw')) {
+          tools.push(
+            clientTool(
+              'fs_write',
+              'Write a text file in this run’s workspace.',
+              objectSchema({ path: { type: 'string' }, contents: { type: 'string' } }, [
+                'path',
+                'contents',
+              ]),
+            ),
+          );
+          dispatch.set('fs_write', async (input) => ({
+            text: await fsWrite(setup.sandboxDir, str(input, 'path'), str(input, 'contents')),
+          }));
+          labels.set('fs_write', tool.name);
+        }
+        if (allowed('shell:run')) {
+          tools.push(
+            clientTool(
+              'shell_run',
+              'Run a read-only command in the workspace (ls, cat, grep, find, head, tail, wc, diff, sort, uniq, stat, echo, pwd).',
+              objectSchema({ command: { type: 'string' } }, ['command']),
+            ),
+          );
+          dispatch.set('shell_run', async (input) => {
+            const res = await shellRun(setup.sandboxDir, str(input, 'command'), {
+              signal: setup.signal,
+            });
+            return {
+              text: [res.stdout, res.stderr && `stderr:\n${res.stderr}`, `exit ${res.code ?? '?'}`]
+                .filter(Boolean)
+                .join('\n'),
+              isError: res.code !== 0,
+            };
           });
-          return {
-            text: [res.stdout, res.stderr && `stderr:\n${res.stderr}`, `exit ${res.code ?? '?'}`]
-              .filter(Boolean)
-              .join('\n'),
-            isError: res.code !== 0,
-          };
-        });
-        labels.set('shell_run', tool.name);
+          labels.set('shell_run', tool.name);
+        }
+        continue;
       }
-      continue;
-    }
 
-    // MCP server: connect once per step, list its tools, expose the granted ones.
-    const token = tool.auth.secretRef ? await readSecret(db, tool.auth.secretRef) : null;
-    const target: McpTarget | null =
-      tool.transport === 'http' && tool.url
-        ? { transport: 'http', url: tool.url, headers: authHeaders(tool.auth.type, token) }
-        : tool.transport === 'stdio' && tool.command
-          ? { transport: 'stdio', command: tool.command }
-          : null;
-    if (!target) continue;
-    const conn = await connectMcp(target);
-    connections.push(conn);
-    const defs = (await conn.listTools()).filter((d) => allowed(d.name));
-    for (const def of defs) {
-      const name = wireName(tool.slug, def.name);
-      const schema = (def.inputSchema ?? {
-        type: 'object',
-        properties: {},
-      }) as ModelTool extends infer _ ? Record<string, unknown> : never;
-      tools.push({
-        name,
-        description: `${tool.name}: ${def.description ?? def.name}`.slice(0, 1024),
-        input_schema: { type: 'object', ...schema } as never,
-      });
-      labels.set(name, `${tool.name} · ${def.name}`);
-      dispatch.set(name, async (input) => {
-        const res = await conn.callTool(def.name, input);
-        void db
-          .update(t.tools)
-          .set({
-            stats: {
-              ...tool.stats,
-              calls24h: tool.stats.calls24h + 1,
-              lastCallAt: new Date().toISOString(),
-            },
-          })
-          .where(eq(t.tools.id, tool.id))
-          .catch(() => {});
-        const text = res.content
-          .map((c) => (c.type === 'text' && typeof c.text === 'string' ? c.text : `[${c.type}]`))
-          .join('\n');
-        return { text: text || '(empty result)', isError: res.isError };
-      });
+      // MCP server: connect once per step, list its tools, expose the granted ones.
+      const token = tool.auth.secretRef ? await readSecret(db, tool.auth.secretRef) : null;
+      const target: McpTarget | null =
+        tool.transport === 'http' && tool.url
+          ? { transport: 'http', url: tool.url, headers: authHeaders(tool.auth.type, token) }
+          : tool.transport === 'stdio' && tool.command
+            ? { transport: 'stdio', command: tool.command }
+            : null;
+      if (!target) continue;
+      const conn = await connectMcp(target);
+      connections.push(conn);
+      const defs = (await conn.listTools()).filter((d) => allowed(d.name));
+      for (const def of defs) {
+        const name = wireName(tool.slug, def.name);
+        tools.push({
+          name,
+          description: `${tool.name}: ${def.description ?? def.name}`.slice(0, 1024),
+          input_schema: toolInputSchema(def.inputSchema),
+        });
+        labels.set(name, `${tool.name} · ${def.name}`);
+        dispatch.set(name, async (input) => {
+          const res = await conn.callTool(def.name, input);
+          void db
+            .update(t.tools)
+            .set({
+              stats: {
+                ...tool.stats,
+                calls24h: tool.stats.calls24h + 1,
+                lastCallAt: new Date().toISOString(),
+              },
+            })
+            .where(eq(t.tools.id, tool.id))
+            .catch(() => {});
+          const text = res.content
+            .map((c) => (c.type === 'text' && typeof c.text === 'string' ? c.text : `[${c.type}]`))
+            .join('\n');
+          return { text: text || '(empty result)', isError: res.isError };
+        });
+      }
     }
+  } catch (err) {
+    // A server that fails to connect or list must not leave the ones before it running.
+    await closeAll();
+    throw err;
   }
 
-  return {
-    tools,
-    dispatch,
-    labels,
-    close: async () => {
-      await Promise.all(connections.map((c) => c.close().catch(() => {})));
-    },
-  };
+  return { tools, dispatch, labels, close: closeAll };
+}
+
+type ClientToolSchema = Extract<ModelTool, { input_schema: unknown }>['input_schema'];
+
+/**
+ * An MCP server's JSON Schema, trimmed to what the Messages API accepts: the object shape, its
+ * properties and required list. Draft markers (`$schema`, `$id`), titles and the rest are dropped.
+ */
+export function toolInputSchema(schema: Record<string, unknown> | undefined): ClientToolSchema {
+  const src = schema ?? {};
+  const out: Record<string, unknown> = { type: 'object' };
+  out.properties = src.properties && typeof src.properties === 'object' ? src.properties : {};
+  if (Array.isArray(src.required)) out.required = src.required;
+  if (typeof src.description === 'string') out.description = src.description;
+  if (src.additionalProperties === false) out.additionalProperties = false;
+  return out as ClientToolSchema;
 }

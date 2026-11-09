@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { dataDir } from '../db';
+import { splitCommand } from '../mcp';
 
 export const SHELL_ALLOW_LIST = [
   'ls',
@@ -25,6 +26,21 @@ export const SHELL_ALLOW_LIST = [
 ] as const;
 
 export const SANDBOX_OUTPUT_CAP = 20_000;
+
+/** Flags that turn a read-only command into a writer or an executor; refused for every command. */
+export const DENIED_ARGS = [
+  '-exec',
+  '-execdir',
+  '-ok',
+  '-okdir',
+  '-delete',
+  '-fprint',
+  '-fprint0',
+  '-fprintf',
+  '-fls',
+  '-o',
+  '--output',
+] as const;
 
 export function sandboxDir(runId: string): string {
   return path.join(dataDir(), 'runs', runId, 'sandbox');
@@ -71,27 +87,7 @@ export async function fsWrite(dir: string, relative: string, contents: string): 
 }
 
 /** `ls -la src` → ['ls', '-la', 'src']; quotes are honoured, nothing is interpreted. */
-export function splitArgs(command: string): string[] {
-  const out: string[] = [];
-  let cur = '';
-  let quote: '"' | "'" | null = null;
-  let has = false;
-  for (const ch of command) {
-    if (quote) {
-      if (ch === quote) quote = null;
-      else cur += ch;
-    } else if (ch === '"' || ch === "'") {
-      quote = ch;
-      has = true;
-    } else if (/\s/.test(ch)) {
-      if (has || cur) out.push(cur);
-      cur = '';
-      has = false;
-    } else cur += ch;
-  }
-  if (has || cur) out.push(cur);
-  return out;
-}
+export const splitArgs = splitCommand;
 
 export async function shellRun(
   dir: string,
@@ -106,6 +102,8 @@ export async function shellRun(
   if (args.some((a) => a.includes('..') || path.isAbsolute(a))) {
     throw new Error('Arguments may only name paths inside the workspace');
   }
+  const denied = args.find((a) => (DENIED_ARGS as readonly string[]).includes(a.split('=')[0]!));
+  if (denied) throw new Error(`"${denied}" is not allowed in the sandbox: commands here only read`);
   return new Promise((resolve, reject) => {
     const child = spawn(file, args, {
       cwd: dir,
