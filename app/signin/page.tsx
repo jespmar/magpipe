@@ -22,7 +22,9 @@ export default async function SignInPage({ searchParams }: Props) {
   if (await currentUser()) redirect(redirectTo);
 
   return (
-    <main className="flex min-h-dvh items-center justify-center ambient px-4" data-titlebar>
+    <main className="flex min-h-dvh items-center justify-center ambient px-4">
+      {/* macOS desktop: a drag strip for the window, without padding the whole page. */}
+      <div data-titlebar aria-hidden className="fixed inset-x-0 top-0 h-10" />
       <div className="flex w-full max-w-sm flex-col gap-6 panel p-8">
         <div className="flex flex-col items-center gap-3 text-center">
           <Logo onDisc size={34} discSize={56} id="mp-wing-signin" label="Magpipe" />

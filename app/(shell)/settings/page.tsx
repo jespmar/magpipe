@@ -1,14 +1,15 @@
 import type { Metadata } from 'next';
-import { revalidatePath } from 'next/cache';
+import type { ReactNode } from 'react';
 import { signOut } from '@/auth';
 import { PageHead } from '@/components/ui/PageHead';
 import { Button } from '@/components/ui/Button';
+import { DemoDataForm } from '@/components/settings/DemoDataForm';
 import { dataDir, getDb } from '@/lib/db';
 import { settings as settingsTable } from '@/lib/db/schema';
-import { loadDemo } from '@/lib/db/seed';
 import { env } from '@/lib/env';
 import { accessMode } from '@/lib/auth-mode';
 import { currentUser } from '@/lib/session';
+import { getShellData } from '@/lib/shell-data';
 import type { Settings } from '@/lib/schemas';
 
 export const metadata: Metadata = { title: 'Settings' };
@@ -22,83 +23,138 @@ async function loadSettings(): Promise<Settings | null> {
   }
 }
 
-async function loadDemoAction() {
-  'use server';
-  await loadDemo(await getDb());
-  revalidatePath('/', 'layout');
-}
-
 const MODE_LABEL = {
-  desktop: 'Desktop app · no sign-in',
-  open: 'Sign-in disabled (development)',
-  signin: 'Signed in with GitHub',
+  desktop: 'desktop app, no sign-in',
+  open: 'sign-in disabled for development',
+  signin: 'signed in with GitHub',
 } as const;
 
-/** Read-only for now (spec §3.7) — editing lands with the screen that first needs it. */
+/** Read-only facts for now (spec §3.7); editing lands with the screen that first needs it. */
 export default async function SettingsPage() {
-  const [settings, user] = await Promise.all([loadSettings(), currentUser()]);
+  const [settings, user, shell] = await Promise.all([
+    loadSettings(),
+    currentUser(),
+    getShellData(),
+  ]);
   const mode = accessMode();
-
-  const rows: [string, string][] = [
-    ['Workspace', settings?.workspaceName ?? '—'],
-    ['Region label', env.MAGPIPE_REGION ?? settings?.region ?? '—'],
-    ['Spend cap / day', settings ? `$${settings.spendCapUsd.toFixed(2)}` : '—'],
-    ['Orchestrator model', settings?.models.orchestrator ?? '—'],
-    ['Default agent model', settings?.models.default ?? '—'],
-    ['Data folder', dataDir()],
-  ];
-  if (env.MAGPIPE_CONFIG_PATH) rows.push(['Config file', env.MAGPIPE_CONFIG_PATH]);
+  const dash = '—';
 
   return (
     <>
       <PageHead eyebrow="Workspace" title="Settings" />
-      <section className="max-w-3xl rounded-md border border-hairline bg-(image:--g-card) p-6">
-        <dl className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-[200px_1fr]">
-          {rows.map(([k, v]) => (
-            <div key={k} className="contents">
-              <dt className="self-center label-caps">{k}</dt>
-              <dd className="font-mono text-code break-all text-ink">{v}</dd>
-            </div>
-          ))}
-        </dl>
-      </section>
 
-      <section className="flex max-w-3xl flex-wrap items-center justify-between gap-4 rounded-md border border-hairline bg-(image:--g-card) p-6">
-        <div className="flex max-w-lg flex-col gap-0.5">
-          <span className="label-caps">Demo data</span>
-          <span className="text-body-sm text-body">
-            Adds the design&apos;s tools, memory and finished runs, and grants the agents their
-            tools. Running it again refreshes the demo rows and leaves your own data alone.
-          </span>
-        </div>
-        <form action={loadDemoAction}>
-          <Button type="submit" variant="outline">
-            Load demo data
-          </Button>
-        </form>
-      </section>
+      <div className="grid gap-6 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] md:items-start wide:max-w-[1600px]">
+        <Section id="workspace" title="Workspace" className="md:row-span-2">
+          <Facts
+            title="Identity"
+            rows={[
+              ['Name', settings?.workspaceName ?? dash],
+              ['Region label', env.MAGPIPE_REGION ?? settings?.region ?? dash],
+              ['Spend cap per day', settings ? `$${settings.spendCapUsd.toFixed(2)}` : dash],
+            ]}
+          />
+          <Facts
+            title="Models"
+            rows={[
+              ['Orchestrator', settings?.models.orchestrator ?? dash],
+              ['Default for new birds', settings?.models.default ?? dash],
+            ]}
+          />
+          <Facts
+            title="Storage"
+            rows={[
+              ['Data folder', dataDir()],
+              ...(env.MAGPIPE_CONFIG_PATH
+                ? [['Config file', env.MAGPIPE_CONFIG_PATH] as const]
+                : []),
+            ]}
+            note="Everything Magpipe knows lives in the data folder. To back up, copy it while Magpipe is closed."
+          />
+        </Section>
 
-      <section className="flex max-w-3xl flex-wrap items-center justify-between gap-4 rounded-md border border-hairline bg-(image:--g-card) p-6">
-        <div className="flex flex-col gap-0.5">
-          <span className="label-caps">Access</span>
-          <span className="text-body-md text-ink-strong">
+        <Section id="demo" title="Demo data">
+          <p className="text-body-sm text-body">
+            Example tools, memory and finished flights from the design, so every screen has
+            something to show. Loading it again refreshes the examples and leaves your own data
+            alone.
+          </p>
+          <DemoDataForm
+            disabledReason={
+              shell.dbError
+                ? 'Needs the database — see the notice at the top of the page.'
+                : undefined
+            }
+          />
+        </Section>
+
+        <Section id="access" title="Access">
+          <p className="text-body-md text-ink-strong">
             {user?.name ?? user?.email ?? 'Unknown'}
             <span className="text-mute"> · {MODE_LABEL[mode]}</span>
-          </span>
-        </div>
-        {mode === 'signin' ? (
-          <form
-            action={async () => {
-              'use server';
-              await signOut({ redirectTo: '/signin' });
-            }}
-          >
-            <Button type="submit" variant="outline">
-              Sign out
-            </Button>
-          </form>
-        ) : null}
-      </section>
+          </p>
+          {mode === 'signin' ? (
+            <form
+              action={async () => {
+                'use server';
+                await signOut({ redirectTo: '/signin' });
+              }}
+            >
+              <Button type="submit" variant="outline" size="sm">
+                Sign out
+              </Button>
+            </form>
+          ) : null}
+        </Section>
+      </div>
     </>
+  );
+}
+
+function Section({
+  id,
+  title,
+  className,
+  children,
+}: {
+  id: string;
+  title: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section
+      aria-labelledby={`${id}-title`}
+      className={`flex flex-col gap-5 rounded-md border border-hairline bg-(image:--g-card) p-6 ${className ?? ''}`}
+    >
+      <h2 id={`${id}-title`} className="text-display-sm text-ink-strong">
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
+function Facts({
+  title,
+  rows,
+  note,
+}: {
+  title: string;
+  rows: ReadonlyArray<readonly [string, string]>;
+  note?: string;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <h3 className="label-caps">{title}</h3>
+      <dl className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-[180px_minmax(0,1fr)]">
+        {rows.map(([k, v]) => (
+          <div key={k} className="contents">
+            <dt className="text-body-sm text-body">{k}</dt>
+            <dd className="font-mono text-code break-all text-ink select-all">{v}</dd>
+          </div>
+        ))}
+      </dl>
+      {note ? <p className="text-caption text-mute">{note}</p> : null}
+    </div>
   );
 }

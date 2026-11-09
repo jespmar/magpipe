@@ -1,13 +1,11 @@
-import Link from 'next/link';
+import { AppShell } from '@/components/AppShell';
+import { NotFoundBody } from '@/components/NotFoundBody';
 
-export default function NotFound() {
+/** Unmatched URLs keep the shell, so the nav is still there to leave by. */
+export default async function NotFound() {
   return (
-    <main className="flex min-h-dvh flex-col items-center justify-center gap-3 ambient px-4 text-center">
-      <span className="eyebrow">Off the map</span>
-      <h1 className="page-title">This bird flew off</h1>
-      <Link href="/" className="text-body-sm text-cyan hover:text-ghost">
-        Back to the nest
-      </Link>
-    </main>
+    <AppShell>
+      <NotFoundBody />
+    </AppShell>
   );
 }

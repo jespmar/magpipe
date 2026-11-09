@@ -7,3 +7,5 @@ public/brand/
 docs/spec.md
 .magpipe/
 drizzle/
+.claude/
+.impeccable/

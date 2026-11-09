@@ -130,6 +130,11 @@
 }
 
 /* ─── Composite utilities used across screens ─── */
+/*
+ * Eyebrow (spec §4): the brand's sheen gradient clipped to text. On a single short word the
+ * white→cyan ramp lands mid-word and reads as two-tone, so `data-solid` (set by PageHead for
+ * ≤8 characters) falls back to the ramp's soft-cyan end as one colour.
+ */
 @utility eyebrow {
   font-size: 14px;
   line-height: 20px;
@@ -140,6 +145,11 @@
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
+  &[data-solid] {
+    background: none;
+    -webkit-text-fill-color: currentColor;
+    color: var(--sheen-cyan-soft);
+  }
 }
 
 @utility label-caps {
@@ -227,13 +237,30 @@
     background: var(--canvas);
     color: var(--ink);
   }
+  html {
+    /* Browser-drawn surfaces carry the palette too. */
+    scrollbar-color: var(--hairline) transparent;
+    accent-color: var(--sheen-cyan);
+    caret-color: var(--sheen-cyan);
+  }
   body {
     font-family: var(--font-sans);
     font-feature-settings: 'calt', 'rlig';
     -webkit-font-smoothing: antialiased;
   }
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+  p {
+    text-wrap: pretty;
+  }
   button {
     cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
   }
   ::placeholder {
     color: var(--mute);
@@ -241,6 +268,8 @@
   :focus-visible {
     outline: 2px solid var(--ink-strong);
     outline-offset: 2px;
+    /* The ring must appear at once; a colour transition would fade it in. */
+    transition: none;
   }
   ::selection {
     background: rgba(34, 193, 220, 0.35);
@@ -259,12 +288,8 @@ html[data-desktop='darwin']
   -webkit-app-region: no-drag;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-}
+/*
+ * Reduced motion: decorative animation (the live dot, the orb's orbits) is opted in with the
+ * `motion-safe:` variant at the use site, so it simply does not run for people who asked for
+ * less motion. State transitions (150 ms colour changes) stay — they are feedback, not motion.
+ */

@@ -167,3 +167,21 @@ Next.js **15.5** (per spec), React 19, Tailwind 4, TypeScript 5.9, ESLint 9 with
 electron-builder 26, PGlite 0.5, Drizzle 0.45. npm, not pnpm (electron-builder and Next
 standalone both prefer a flat `node_modules`). Revisit TypeScript and ESLint majors together
 with a Next 16 upgrade.
+
+## D12 · Design-detector exceptions and the first critique
+
+The first `$impeccable critique` of the shell (22/40, snapshot in `.impeccable/critique/`) drove
+the shell-fix pass. Three detector rules fire on every page by design and are accepted, recorded
+in `.impeccable/critique/ignore.md` so later critiques skip them:
+
+| Rule                                         | Why it is intentional                                                                                                                               |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kicker-above-heading` / `hero-eyebrow-chip` | The eyebrow ("THE FLOCK", "BEAKS & CLAWS") is part of the design canvas and spec §4.                                                                |
+| `gradient-text`                              | The eyebrow's sheen gradient is the brand's one gradient-on-text (spec §4). A single short word renders solid instead, so it never splits two-tone. |
+| `overused-font`                              | Inter is the only family by spec; an Operate surface needs no second face.                                                                          |
+
+Two implementation lessons from the same pass, now conventions in `CLAUDE.md`: prose widths in
+`rem` (Inter is narrower than its `0`, so `ch` overshoots the 75-character measure), and no
+`revalidatePath('/', 'layout')` from server actions (it makes the production router fall back to
+a hard navigation; the form stays pending). Fresh workspaces now get `region: 'local'` rather
+than the demo's `eu-north-1`, and the footer shows `desktop` when no region is configured.

@@ -27,6 +27,22 @@ engine and no sign-in on desktop.
 - **Electron main stays dependency-free** (node + electron only) and keeps the security
   settings in `electron/main.ts`. New renderer capabilities go through named IPC channels in
   `electron/preload.ts`, never a raw `ipcRenderer`.
+- **Unbuilt screens use `EmptyState`** (components/ui): product voice, what will appear, the real
+  facts from `getOverview()`, and only links to places that exist. No PR numbers, no spec
+  references, no disabled controls without a stated reason.
+- **Motion is opt-in.** Decorative animation uses the `motion-safe:` variant (the live dot, the
+  orb). There is no global reduced-motion kill; 150 ms state transitions stay.
+- **Prose measure in rem, not `ch`.** Inter is narrower than its `0`, so `max-w-[31rem]` ≈ 75
+  characters at 14 px and `max-w-[34rem]` ≈ 72 at 16 px. The detector's `line-length` rule
+  counts real characters.
+- **Server actions never `revalidatePath('/', 'layout')`.** Every screen is `force-dynamic`
+  already, and revalidating the root layout from an action makes the production router hard-
+  navigate and leaves forms stuck pending. Return a result and `router.refresh()` from the
+  client when the current page must re-read server data.
+- **Eyebrows and the sheen gradient are the brand** (spec §4, PRODUCT.md): the detector flags
+  them as `kicker-above-heading` / `gradient-text` / `overused-font`; those three are accepted
+  (see `.impeccable/critique/ignore.md`). A single short eyebrow word renders solid
+  (`PageHead` sets `data-solid`).
 - New public routes must be added to the matcher in `middleware.ts`; everything else is behind
   the desktop token (desktop) or a session (hosted).
 
