@@ -22,10 +22,10 @@ test('add a bird, then pause, filter, edit and remove it', async ({ page }) => {
   await dialog.getByLabel('Role').fill('Finds things after dark');
   await dialog.getByLabel('Model').selectOption('claude-haiku-5-5');
   await dialog.getByRole('checkbox', { name: 'web.search' }).check();
-  await dialog.getByRole('button', { name: 'Add to the flock' }).click();
+  await dialog.getByRole('button', { name: 'Add agent' }).click();
 
   await expect(dialog).toBeHidden();
-  await expect(page.getByRole('status').filter({ hasText: 'Added to the flock.' })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'Agent added.' })).toBeVisible();
   const detail = page.getByRole('complementary', { name });
   await expect(detail).toBeVisible();
   await expect(detail.getByText('Finds things after dark')).toBeVisible();
@@ -69,13 +69,11 @@ test('add a bird, then pause, filter, edit and remove it', async ({ page }) => {
 
   // Removal asks once, then the bird is gone from the roster.
   await page.getByRole('button', { name: 'Edit', exact: true }).click();
-  await edit.getByRole('button', { name: 'Remove from the flock' }).click();
-  await expect(edit.getByText(`Remove ${name} from the flock?`)).toBeVisible();
+  await edit.getByRole('button', { name: 'Remove agent' }).click();
+  await expect(edit.getByText(`Remove ${name}?`)).toBeVisible();
   await edit.getByRole('button', { name: 'Remove', exact: true }).click();
   await expect(edit).toBeHidden();
-  await expect(
-    page.getByRole('status').filter({ hasText: 'Removed from the flock.' }),
-  ).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'Agent removed.' })).toBeVisible();
   await expect(row).toHaveCount(0);
 });
 
@@ -90,7 +88,7 @@ test('the editor names the problem when the server refuses a save', async ({ pag
     }),
   );
   await dialog.getByLabel('Name').fill('Ghost');
-  await dialog.getByRole('button', { name: 'Add to the flock' }).click();
+  await dialog.getByRole('button', { name: 'Add agent' }).click();
   await expect(dialog.getByRole('alert')).toHaveText('Unknown tool: tool_nope');
   await expect(dialog).toBeVisible();
 });

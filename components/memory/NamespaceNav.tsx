@@ -80,7 +80,7 @@ export function NamespaceNav({ namespaces, total, value, onChange, onCreate, bus
               maxLength={40}
               className="min-w-0 flex-1 rounded-sm border border-hairline bg-canvas-soft px-3 py-1.5 text-body-sm text-ink focus:border-ink-strong focus:outline-none"
             />
-            <Button type="submit" variant="primary" size="sm" disabled={busy || !label.trim()}>
+            <Button type="submit" variant="outline" size="sm" disabled={busy || !label.trim()}>
               Add
             </Button>
             <Button variant="ghost" size="sm" onClick={() => setAdding(false)} disabled={busy}>

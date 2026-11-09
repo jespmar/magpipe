@@ -27,7 +27,7 @@ export function SearchInput({
         placeholder={placeholder ?? label}
         onChange={(e) => onChange(e.target.value)}
         className={clsx(
-          'w-[220px] max-w-full rounded-sm border border-hairline bg-canvas-soft px-4 py-2.5 text-body-sm text-ink focus:border-ink-strong focus:outline-none',
+          'w-[220px] max-w-full rounded-sm border border-hairline bg-canvas-soft px-4 py-2.5 text-body-sm text-ink focus:border-ink-strong focus:outline-none [&::-webkit-search-cancel-button]:appearance-none',
           className,
         )}
       />

@@ -131,9 +131,10 @@ export function MemoryScreen({
     setEditor({ mode: 'closed' });
     if (ns !== null && ns !== entry.ns) setNs(entry.ns);
     setSelectedId(entry.id);
+    status.current?.focus();
     settle(
       { type: 'upsert', entry },
-      created ? 'Added to the nest.' : `${entry.key} now has a new version.`,
+      created ? 'Fact added.' : `${entry.key} now has a new version.`,
     );
   }
 
@@ -214,11 +215,7 @@ export function MemoryScreen({
               onChange={setQuery}
               className="w-[260px]"
             />
-            <Button
-              variant="primary"
-              onClick={() => setEditor({ mode: 'create' })}
-              disabled={namespaces.length === 0}
-            >
+            <Button variant="primary" onClick={() => setEditor({ mode: 'create' })}>
               + Add fact
             </Button>
           </>
@@ -230,7 +227,7 @@ export function MemoryScreen({
         tabIndex={-1}
         role="status"
         aria-live="polite"
-        className="min-h-5 text-body-sm text-mute focus:outline-none"
+        className="text-body-sm text-mute focus:outline-none"
       >
         {pending ? 'Updating…' : notice}
       </p>

@@ -72,7 +72,10 @@ export function MemoryTable({ entries, agents, selectedId, onSelect, emptyMessag
                         aria-label={flag}
                       />
                     ) : null}
-                    <span className="truncate font-mono text-code text-code-ink">{e.key}</span>
+                    <span className="flex min-w-0 flex-col">
+                      <span className="truncate font-mono text-code text-code-ink">{e.key}</span>
+                      <span className="truncate text-caption text-body md:hidden">{e.value}</span>
+                    </span>
                   </span>
                   <span className="hidden truncate text-body-sm text-body md:col-span-5 md:block">
                     {e.value}

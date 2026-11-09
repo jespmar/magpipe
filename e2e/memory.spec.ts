@@ -14,7 +14,7 @@ test('add a fact, browse, edit, verify and forget it', async ({ page }) => {
 
   // Validation speaks in the form, not in browser bubbles.
   await dialog.getByLabel('Value').fill('x');
-  await dialog.getByRole('button', { name: 'Add to the nest' }).click();
+  await dialog.getByRole('button', { name: 'Add fact' }).click();
   await expect(dialog.getByRole('alert')).toHaveText('Give the fact a key');
 
   await dialog.getByLabel('Namespace').selectOption('facts');
@@ -23,9 +23,9 @@ test('add a fact, browse, edit, verify and forget it', async ({ page }) => {
   await dialog.getByLabel('Confidence').fill('0.8');
   await dialog.getByLabel('Source').fill('ops runbook');
   await dialog.getByLabel('Expires').fill('2027-01-31');
-  await dialog.getByRole('button', { name: 'Add to the nest' }).click();
+  await dialog.getByRole('button', { name: 'Add fact' }).click();
   await expect(dialog).toBeHidden();
-  await expect(page.getByRole('status').filter({ hasText: 'Added to the nest.' })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'Fact added.' })).toBeVisible();
 
   const detail = page.getByRole('complementary', { name: 'Nightly SIE import runs at 02:00 UTC' });
   await expect(detail).toBeVisible();
@@ -64,7 +64,7 @@ test('add a fact, browse, edit, verify and forget it', async ({ page }) => {
 
   // Forget asks once.
   await updated.getByRole('button', { name: 'Forget', exact: true }).click();
-  await expect(updated.getByText(`Forget ${key}? Every bird stops reading it.`)).toBeVisible();
+  await expect(updated.getByText(`Forget ${key}? Every agent stops reading it.`)).toBeVisible();
   await updated
     .getByRole('group', { name: 'Forget this memory' })
     .getByRole('button', { name: 'Forget' })

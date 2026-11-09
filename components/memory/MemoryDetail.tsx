@@ -6,7 +6,6 @@ import { CodeBlock } from '@/components/ui/CodeBlock';
 import { StatusPill } from '@/components/ui/StatusPill';
 import {
   authorLabel,
-  authorName,
   formatConfidence,
   formatExpires,
   isExpired,
@@ -71,7 +70,7 @@ export function MemoryDetail({ entry, agents, now, onEdit, onVerify, onForget, b
       <dl className="flex flex-wrap gap-x-6 gap-y-3">
         <Fact label="Confidence" value={formatConfidence(entry.confidence)} />
         <Fact label="Source" value={entry.source} />
-        <Fact label="Written by" value={authorName(entry.writtenBy, agents)} />
+        <Fact label="Written by" value={authorLabel(entry.writtenBy, agents)} />
         <Fact label="Read by" value={readBy.length ? readBy.join(', ') : '—'} />
         <Fact label="Expires" value={formatExpires(entry.expiresAt)} />
         <Fact label="Verified" value={shortWhen(entry.verifiedAt, now)} />
@@ -96,7 +95,7 @@ export function MemoryDetail({ entry, agents, now, onEdit, onVerify, onForget, b
           aria-label="Forget this memory"
           className="flex flex-wrap items-center gap-2 border-t border-hairline-soft pt-3 text-body-sm text-ink"
         >
-          Forget {entry.key}? Every bird stops reading it.
+          Forget {entry.key}? Every agent stops reading it.
           <Button variant="danger" size="sm" onClick={onForget} disabled={busy}>
             Forget
           </Button>
@@ -110,7 +109,7 @@ export function MemoryDetail({ entry, agents, now, onEdit, onVerify, onForget, b
         heading={<span className="label-caps">Raw</span>}
         code={rawJson(entry, agents)}
         label={`Copy ${entry.key} as JSON`}
-        maxHeight={260}
+        maxHeight={320}
       />
     </aside>
   );

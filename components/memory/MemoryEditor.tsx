@@ -70,6 +70,13 @@ export function MemoryEditor({ entry, namespaces, defaultNs, onClose, onSaved }:
     d.querySelector<HTMLElement>('[data-autofocus]')?.focus();
   }, []);
 
+  /** Close through the element: the `close` event fires `onClose`, and the browser restores focus. */
+  function dismiss() {
+    const d = ref.current;
+    if (d?.open) d.close();
+    else onClose();
+  }
+
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft((prev) => ({ ...prev, [key]: value }));
 
@@ -109,12 +116,14 @@ export function MemoryEditor({ entry, namespaces, defaultNs, onClose, onSaved }:
             expiresAt: parsed.data.expiresAt,
           }),
         });
+        dismiss();
         onSaved(reviveEntry(saved), false);
       } else {
         const res = await api<{ entry: MemoryEntryJson; created: boolean }>('/api/memory', {
           method: 'POST',
           body: JSON.stringify(parsed.data),
         });
+        dismiss();
         onSaved(reviveEntry(res.entry), res.created);
       }
     } catch (err) {
@@ -142,7 +151,7 @@ export function MemoryEditor({ entry, namespaces, defaultNs, onClose, onSaved }:
             </h2>
             <button
               type="button"
-              onClick={onClose}
+              onClick={dismiss}
               aria-label="Close"
               className="inline-flex size-8 shrink-0 items-center justify-center rounded-pill border border-hairline text-mute hover:text-ink-strong"
             >
@@ -194,7 +203,11 @@ export function MemoryEditor({ entry, namespaces, defaultNs, onClose, onSaved }:
             <Field
               id={`${ids}-key`}
               label="Key"
-              hint={entry ? undefined : 'Dotted and stable, e.g. visma.salesorder.rpm'}
+              hint={
+                entry
+                  ? 'Fixed for an existing fact — add a new fact to move it.'
+                  : 'Dotted and stable, e.g. visma.salesorder.rpm'
+              }
             >
               <input
                 id={`${ids}-key`}
@@ -226,7 +239,10 @@ export function MemoryEditor({ entry, namespaces, defaultNs, onClose, onSaved }:
                 min={0}
                 max={1}
                 step={0.01}
-                className={clsx(field, 'font-mono')}
+                className={clsx(
+                  field,
+                  'font-mono [-moz-appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none',
+                )}
                 value={draft.confidence}
                 onChange={(e) => set('confidence', e.target.value)}
               />
@@ -259,11 +275,11 @@ export function MemoryEditor({ entry, namespaces, defaultNs, onClose, onSaved }:
             </p>
           ) : null}
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <Button variant="ghost" onClick={onClose} disabled={busy}>
+            <Button variant="ghost" onClick={dismiss} disabled={busy}>
               Cancel
             </Button>
             <Button type="submit" variant="primary" disabled={busy} aria-busy={busy}>
-              {busy ? 'Saving…' : entry ? 'Save changes' : 'Add to the nest'}
+              {busy ? 'Saving…' : entry ? 'Save changes' : 'Add fact'}
             </Button>
           </div>
         </div>
