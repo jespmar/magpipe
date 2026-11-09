@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
 import { clsx } from 'clsx';
 import { Avatar } from '@/components/ui/Avatar';
 import { formatDuration, formatTokens, shortWhen } from '@/lib/format';
@@ -38,8 +39,29 @@ export function RunTable({
   now,
   className,
 }: Props) {
+  // A clipped ledger says so: a fade over its last line, only while there is more to scroll to.
+  const box = useRef<HTMLElement>(null);
+  const [clipped, setClipped] = useState(false);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const measure = () =>
+      setClipped(
+        el.scrollHeight > el.clientHeight && el.scrollTop + el.clientHeight < el.scrollHeight - 1,
+      );
+    measure();
+    el.addEventListener('scroll', measure, { passive: true });
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => {
+      el.removeEventListener('scroll', measure);
+      observer.disconnect();
+    };
+  }, [runs.length]);
+
   return (
     <section
+      ref={box}
       aria-label="Runs"
       className={clsx(
         // `relative` keeps the rows' visually hidden labels inside this scroll box; otherwise
@@ -132,6 +154,12 @@ export function RunTable({
               );
             })}
           </ul>
+          {clipped ? (
+            <div
+              aria-hidden
+              className="pointer-events-none sticky bottom-0 -mt-6 h-6 bg-gradient-to-t from-canvas to-transparent wide:hidden"
+            />
+          ) : null}
         </div>
       )}
     </section>

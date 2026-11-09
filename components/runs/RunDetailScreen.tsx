@@ -64,7 +64,7 @@ export function RunDetailScreen({ run, events, agents, now }: Props) {
                       ·
                     </span>
                   ) : null}
-                  {fact}
+                  <span>{fact}</span>
                 </span>
               ))}
           </>
