@@ -125,22 +125,34 @@ export default async function SettingsPage() {
             Single keys work anywhere outside a text field; press <Kbd>?</Kbd> on any screen to see
             this list.
           </p>
-          {/* Keys first in a fixed column, their action beside them; two abreast from tablet up. */}
-          <dl className="grid grid-cols-[9.5rem_minmax(0,1fr)] gap-x-4 gap-y-2.5 md:grid-cols-[9.5rem_minmax(0,1fr)_9.5rem_minmax(0,1fr)] md:gap-x-6">
-            {SHORTCUTS.map((s) => (
-              <div key={s.label} className="contents">
-                <dt className="flex items-center gap-1 font-mono text-code text-ink">
-                  {s.keys.map((k, i) => (
-                    <span key={k} className="inline-flex items-center gap-1">
-                      {i > 0 ? <span className="text-mute">{s.chord ? 'then' : '+'}</span> : null}
-                      <Kbd>{k}</Kbd>
-                    </span>
+          {/* Single keys and the `g then …` chords as two groups, keys in a fixed left column. */}
+          <div className="grid gap-6 md:grid-cols-2 md:gap-x-10">
+            {[
+              { title: 'Keys', items: SHORTCUTS.filter((s) => !s.chord) },
+              { title: 'Go to a screen', items: SHORTCUTS.filter((s) => s.chord) },
+            ].map((group) => (
+              <div key={group.title} className="flex flex-col gap-3">
+                <h3 className="label-caps">{group.title}</h3>
+                <dl className="grid grid-cols-[9.5rem_minmax(0,1fr)] gap-x-4 gap-y-2.5">
+                  {group.items.map((s) => (
+                    <div key={s.label} className="contents">
+                      <dt className="flex items-center gap-1 font-mono text-code text-ink">
+                        {s.keys.map((k, i) => (
+                          <span key={k} className="inline-flex items-center gap-1">
+                            {i > 0 ? (
+                              <span className="text-mute">{s.chord ? 'then' : '+'}</span>
+                            ) : null}
+                            <Kbd>{k}</Kbd>
+                          </span>
+                        ))}
+                      </dt>
+                      <dd className="self-center text-body-sm text-body">{s.label}</dd>
+                    </div>
                   ))}
-                </dt>
-                <dd className="self-center text-body-sm text-body">{s.label}</dd>
+                </dl>
               </div>
             ))}
-          </dl>
+          </div>
         </Section>
       </div>
     </>
