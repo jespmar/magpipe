@@ -1,31 +1,52 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { eq } from 'drizzle-orm';
+import { asc } from 'drizzle-orm';
+import { RunDetailScreen } from '@/components/runs/RunDetailScreen';
 import { PageHead } from '@/components/ui/PageHead';
-import { EmptyState, UnavailableState } from '@/components/ui/EmptyState';
-import { runStatusVariant, StatusPill } from '@/components/ui/StatusPill';
+import { UnavailableState } from '@/components/ui/EmptyState';
 import { getDb } from '@/lib/db';
-import { runs } from '@/lib/db/schema';
-import { formatDuration, formatTokens, plural, relativeTime } from '@/lib/format';
+import * as t from '@/lib/db/schema';
+import { listEvents } from '@/lib/engine/events';
+import { toFlightEvent, type FlightEvent } from '@/lib/home-util';
+import { getRun } from '@/lib/runs';
+import { headTitle, type AgentChip } from '@/lib/runs-util';
 import type { Run } from '@/lib/schemas';
 
 type Props = { params: Promise<{ id: string }> };
 
+type Loaded = { run: Run; events: FlightEvent[]; agents: AgentChip[] };
+
 /** `undefined` = no such flight; `null` = the database is unavailable. */
-async function loadRun(displayId: string): Promise<Run | null | undefined> {
+async function load(displayId: string): Promise<Loaded | null | undefined> {
   try {
-    const [run] = await (await getDb()).select().from(runs).where(eq(runs.displayId, displayId));
-    return run;
-  } catch {
+    const db = await getDb();
+    const run = await getRun(db, displayId);
+    if (!run) return undefined;
+    const [events, agents] = await Promise.all([
+      listEvents(db, run.id, { limit: 200 }),
+      db
+        .select({
+          id: t.agents.id,
+          name: t.agents.name,
+          initials: t.agents.initials,
+          slug: t.agents.slug,
+        })
+        .from(t.agents)
+        .orderBy(asc(t.agents.name)),
+    ]);
+    const names = new Map(agents.map((a) => [a.id, a.name]));
+    return { run, events: events.map((e) => toFlightEvent(e, names)), agents };
+  } catch (err) {
+    console.error('[runs/[id]] unavailable:', err);
     return null;
   }
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
-  const run = await loadRun(id);
-  if (run === undefined) return { title: 'Flight not found' };
-  return { title: run ? `${run.input.text} · ${id}` : id };
+  const loaded = await load(id);
+  if (loaded === undefined) return { title: 'Flight not found' };
+  return { title: loaded ? `${headTitle(loaded.run.input.text, 60)} · ${id}` : id };
 }
 
 /**
@@ -34,10 +55,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
  */
 export default async function RunDetailPage({ params }: Props) {
   const { id } = await params;
-  const run = await loadRun(id);
-  if (run === undefined) notFound();
+  const loaded = await load(id);
+  if (loaded === undefined) notFound();
 
-  if (run === null) {
+  if (loaded === null) {
     return (
       <>
         <PageHead eyebrow="Flight" title={id} />
@@ -46,31 +67,12 @@ export default async function RunDetailPage({ params }: Props) {
     );
   }
 
-  const agents = new Set(run.plan.map((s) => s.agentId).filter(Boolean)).size;
   return (
-    <>
-      <PageHead
-        eyebrow="Flight"
-        title={run.input.text}
-        meta={
-          <>
-            <StatusPill variant={runStatusVariant(run.status)} />
-            <span>{run.displayId}</span>
-            {run.durationMs !== null ? <span>took {formatDuration(run.durationMs)}</span> : null}
-            <span>{formatTokens(run.usage.inputTokens + run.usage.outputTokens)} tokens</span>
-            {run.startedAt ? <span>started {relativeTime(run.startedAt)}</span> : null}
-          </>
-        }
-      />
-      <EmptyState
-        title="Flight path and log land here"
-        facts={[plural(run.plan.length, 'step'), plural(agents, 'agent')]}
-      >
-        <p>
-          Each step this flight took — which bird, what it did, with which tool, how many tokens —
-          with the live log beside it and the merged output and any files below.
-        </p>
-      </EmptyState>
-    </>
+    <RunDetailScreen
+      run={loaded.run}
+      events={loaded.events}
+      agents={loaded.agents}
+      now={new Date()}
+    />
   );
 }

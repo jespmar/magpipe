@@ -3,27 +3,19 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { clsx } from 'clsx';
+import { EventRow } from '@/components/runs/EventRow';
 import { ButtonLink } from '@/components/ui/Button';
 import { runStatusVariant, StatusPill } from '@/components/ui/StatusPill';
 import type { LatestFlight } from '@/lib/home';
-import {
-  clockTime,
-  LIVE_RUN_STATUSES,
-  mergeEvents,
-  toFlightEvent,
-  type FlightEvent,
-} from '@/lib/home-util';
+import { LIVE_RUN_STATUSES, mergeEvents, toFlightEvent, type FlightEvent } from '@/lib/home-util';
 import type { RunStatus } from '@/lib/schemas';
-import { useRunEvents } from '@/lib/use-run-events';
+import { useRunEvents, useThrottledRefresh } from '@/lib/use-run-events';
 
 type Props = {
   latest: LatestFlight | null;
   agentNames: Record<string, string>;
   className?: string;
 };
-
-/** How often the rest of the screen re-reads the server while events stream in. */
-const REFRESH_EVERY_MS = 2500;
 
 /**
  * The flight log (spec §3.2 zone 3): the latest run's trail, `time · agent · text`, streaming
@@ -43,27 +35,7 @@ export function FlightLog({ latest, agentNames, className }: Props) {
   const lastSeq = events.length > 0 ? events[events.length - 1]!.seq : 0;
 
   // Cards and counters re-read the server at most every few seconds while the trail streams.
-  const lastRefresh = useRef(0);
-  const pending = useRef<ReturnType<typeof setTimeout> | null>(null);
-  function scheduleRefresh() {
-    const wait = lastRefresh.current + REFRESH_EVERY_MS - Date.now();
-    if (wait <= 0) {
-      lastRefresh.current = Date.now();
-      router.refresh();
-    } else if (!pending.current) {
-      pending.current = setTimeout(() => {
-        pending.current = null;
-        lastRefresh.current = Date.now();
-        router.refresh();
-      }, wait);
-    }
-  }
-  useEffect(
-    () => () => {
-      if (pending.current) clearTimeout(pending.current);
-    },
-    [],
-  );
+  const scheduleRefresh = useThrottledRefresh();
 
   useRunEvents({
     runId: latest?.run.id ?? null,
@@ -135,33 +107,7 @@ export function FlightLog({ latest, agentNames, className }: Props) {
                 className="max-h-[36rem] overflow-y-auto"
               >
                 {events.map((e) => (
-                  <li
-                    key={e.seq}
-                    className="flex items-start gap-4 border-b border-hairline-soft py-2.5 last:border-b-0"
-                  >
-                    <time
-                      dateTime={e.ts}
-                      className="w-16 shrink-0 font-mono text-code text-mute tabular-nums"
-                    >
-                      {clockTime(new Date(e.ts))}
-                    </time>
-                    <span
-                      className={clsx(
-                        'w-24 shrink-0 truncate font-mono text-code font-[550]',
-                        e.agentId === null ? 'text-cyan' : 'text-ink-strong',
-                      )}
-                    >
-                      {e.agent}
-                    </span>
-                    <span
-                      className={clsx(
-                        'min-w-0 flex-1 text-body-sm [overflow-wrap:anywhere]',
-                        e.kind === 'error' ? 'text-danger' : 'text-body',
-                      )}
-                    >
-                      {e.text}
-                    </span>
-                  </li>
+                  <EventRow key={e.seq} event={e} />
                 ))}
               </ol>
             )}

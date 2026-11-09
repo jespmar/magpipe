@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useRef } from 'react';
 import type { RunEventLike } from './home-util';
 import type { RunStatus } from './schemas';
 
@@ -40,4 +41,52 @@ export function useRunEvents({ runId, enabled, afterSeq, onEvent, onEnd }: Optio
     });
     return () => source.close();
   }, [runId, enabled]);
+}
+
+/** How often a screen re-reads the server while a run's events stream in. */
+export const REFRESH_EVERY_MS = 2500;
+
+/**
+ * `router.refresh()` at most once per `everyMs`; a call inside the window lands once it closes,
+ * so the last event is never missed.
+ */
+export function useThrottledRefresh(everyMs = REFRESH_EVERY_MS): () => void {
+  const router = useRouter();
+  const last = useRef(0);
+  const pending = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (pending.current) clearTimeout(pending.current);
+    },
+    [],
+  );
+  return useCallback(() => {
+    const wait = last.current + everyMs - Date.now();
+    if (wait <= 0) {
+      last.current = Date.now();
+      router.refresh();
+    } else if (!pending.current) {
+      pending.current = setTimeout(() => {
+        pending.current = null;
+        last.current = Date.now();
+        router.refresh();
+      }, wait);
+    }
+  }, [router, everyMs]);
+}
+
+/**
+ * Keeps a screen that shows a run's state (but not its trail) current while the run is live:
+ * every event schedules a throttled refresh, the end frame refreshes once more.
+ */
+export function useLiveRefresh(runId: string | null, live: boolean) {
+  const router = useRouter();
+  const schedule = useThrottledRefresh();
+  useRunEvents({
+    runId,
+    enabled: live,
+    afterSeq: 0,
+    onEvent: schedule,
+    onEnd: () => router.refresh(),
+  });
 }

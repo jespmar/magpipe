@@ -5,6 +5,7 @@ import { nextRunDisplayId } from './db';
 import * as t from './db/schema';
 import { newId } from './ids';
 import { ZERO_USAGE } from './pricing';
+import { computeRunsStats, type RunsStats } from './runs-util';
 import { runStatuses, type Attachment, type Run, type RunStatus } from './schemas';
 
 export async function createRun(
@@ -70,6 +71,22 @@ export async function listRuns(
     counts.all += row.n;
   }
   return { runs: rows, counts };
+}
+
+/** The Runs screen's stats strip (spec §3.4): runs today · succeeded 7d · median duration · spend. */
+export async function runsStats(db: Db, now = new Date()): Promise<RunsStats> {
+  const since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const rows = await db
+    .select({
+      status: t.runs.status,
+      createdAt: t.runs.createdAt,
+      finishedAt: t.runs.finishedAt,
+      durationMs: t.runs.durationMs,
+      usage: t.runs.usage,
+    })
+    .from(t.runs)
+    .where(gte(t.runs.createdAt, since));
+  return computeRunsStats(rows, now);
 }
 
 export type HomeStats = {

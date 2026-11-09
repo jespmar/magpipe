@@ -63,7 +63,7 @@ test('settings loads the demo data after a confirm step and reports the result',
   await expect(page.getByRole('button', { name: 'Load it again' })).toBeFocused();
   await page.getByRole('link', { name: 'See the flights' }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'Runs' })).toBeVisible();
-  await expect(page.getByText(/The latest flight was “/)).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Runs' }).getByRole('listitem')).toHaveCount(4);
 
   await page.goto('/tools');
   await expect(page.getByRole('article', { name: 'Visma.net' })).toBeVisible();
@@ -81,10 +81,14 @@ test('settings loads the demo data after a confirm step and reports the result',
     12,
   );
   await page.goto('/runs');
-  await page.getByRole('link', { name: 'Open the latest flight' }).click();
+  // The latest flight is selected by default; its path and log open from the same card.
+  await page.getByRole('link', { name: 'Open log' }).click();
   await expect(page.getByRole('heading', { level: 1 })).not.toHaveText(/^flight_/);
   await expect(page.getByText(/^took \d\d:\d\d$/)).toBeVisible();
-  await expect(page.getByText('done', { exact: true })).toBeVisible();
+  await expect(page.getByText('done', { exact: true }).first()).toBeVisible();
+  await expect(
+    page.getByRole('list', { name: 'Flight path' }).getByRole('listitem'),
+  ).not.toHaveCount(0);
   // The demo never touches workspace settings: the footer keeps its own region label.
   await expect(page.locator('footer')).not.toContainText('eu-north-1');
 });
