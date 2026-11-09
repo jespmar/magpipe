@@ -125,17 +125,20 @@ describe('probeMcp over stdio', () => {
           const msg = JSON.parse(line);
           if (msg.id === undefined) continue;
           const result = msg.method === 'initialize'
-            ? { protocolVersion: '2025-06-18', capabilities: {}, serverInfo: { name: 'local', version: '0' } }
+            ? { protocolVersion: '2025-06-18', capabilities: {}, serverInfo: { name: 'local', version: process.env.ANTHROPIC_API_KEY ? 'leaked' : '0' } }
             : { tools: [{ name: 'fs_read' }, { name: 'fs_write' }] };
           process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result }) + '\\n');
         }
       });
       `,
     );
+    process.env.ANTHROPIC_API_KEY = 'sk-test-must-not-leak';
+    cleanups.push(() => delete process.env.ANTHROPIC_API_KEY);
     const probe = await probeMcp({
       transport: 'stdio',
       command: `"${process.execPath}" "${script}"`,
     });
+    // The child sees the user's environment minus the app's own secrets.
     expect(probe).toEqual({
       ok: true,
       server: { name: 'local', version: '0' },

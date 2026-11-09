@@ -326,13 +326,22 @@ export function splitCommand(command: string): string[] {
   return out;
 }
 
+/** The app's own secrets never reach a server process; everything else the user set does. */
+const PRIVATE_ENV = /^(ANTHROPIC_|MAGPIPE_|AUTH_|NEXTAUTH_|DATABASE_URL$)/;
+
+export function childEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return Object.fromEntries(
+    Object.entries(env).filter(([k]) => !PRIVATE_ENV.test(k)),
+  ) as NodeJS.ProcessEnv;
+}
+
 async function stdioSession(
   target: Extract<McpTarget, { transport: 'stdio' }>,
   timeoutMs: number,
 ): Promise<Session> {
   const [file, ...args] = splitCommand(target.command);
   if (!file) throw new Error('The command is empty');
-  const child = spawn(file, args, { stdio: ['pipe', 'pipe', 'pipe'], env: process.env });
+  const child = spawn(file, args, { stdio: ['pipe', 'pipe', 'pipe'], env: childEnv(process.env) });
   child.stdin.on('error', () => {});
 
   let stderr = '';
