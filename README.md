@@ -53,8 +53,18 @@ Installers land in `release/` — `.dmg`/`.zip` (macOS, arm64 + x64), `.exe` (Wi
 installers** workflow (Actions tab, or push a tag such as `v0.1.0`); each OS builds its own and
 the files appear as downloadable artifacts.
 
-The installers are **unsigned** for now: macOS needs right-click → Open the first time, and
-Windows SmartScreen will warn. Code signing is a later step.
+The installers carry **no developer certificate** yet. The macOS app is ad-hoc signed at
+packaging time (`scripts/adhoc-sign-mac.cjs`), so the first launch needs right-click → Open
+and a confirmation; Windows SmartScreen will warn. If macOS calls the app "damaged" (a build
+made before ad-hoc signing was added, or a copy whose signature was stripped), clear the
+download flag and sign it yourself, then open it normally:
+
+```bash
+xattr -cr /Applications/Magpipe.app
+codesign --force --deep --sign - /Applications/Magpipe.app
+```
+
+Signing with an Apple Developer certificate and notarizing is a later step.
 
 ## Where things live (desktop app)
 
