@@ -11,6 +11,8 @@ const schema = z.object({
   MAGPIPE_DESKTOP: bool,
   MAGPIPE_CONFIG_PATH: z.string().optional(),
   MAGPIPE_REGION: z.string().optional(),
+  /** base64url, 32 bytes: encrypts tool credentials (lib/secrets.ts). */
+  MAGPIPE_SECRET_KEY: z.string().optional(),
   AUTH_GITHUB_ID: z.string().optional(),
   AUTH_GITHUB_SECRET: z.string().optional(),
   VERCEL_REGION: z.string().optional(),

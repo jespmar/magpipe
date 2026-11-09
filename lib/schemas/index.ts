@@ -196,6 +196,19 @@ export const tool = z.object({
   updatedAt: z.date(),
 });
 
+// ─── secrets ───────────────────────────────────────────────────────────────
+
+export const secretId = id('sec');
+
+/** A tool credential at rest: AES-256-GCM under MAGPIPE_SECRET_KEY (lib/secrets.ts), base64 fields. */
+export const secret = z.object({
+  id: secretId,
+  ciphertext: z.string().min(1),
+  iv: z.string().min(1),
+  tag: z.string().min(1),
+  createdAt: z.date(),
+});
+
 // ─── memory ────────────────────────────────────────────────────────────────
 
 export const memoryAuthor = z.union([agentId, z.literal('user')]);
@@ -252,6 +265,53 @@ export const settings = z.object({
 
 // ─── API bodies ────────────────────────────────────────────────────────────
 
+/** Credentials as the operator types them: the token is stored encrypted and never returned. */
+export const toolAuthInput = z.object({
+  type: z.enum(['none', 'bearer', 'oauth2', 'apikey']).default('none'),
+  scopes: z.array(z.string()).optional(),
+  token: z.string().trim().min(1).optional(),
+});
+
+const toolFields = z.object({
+  name: z.string().trim().min(1, 'Give the tool a name').max(64),
+  transport: z.enum(['http', 'stdio']),
+  url: z.url('The url must be a full http(s) address').optional(),
+  command: z.string().trim().min(1).optional(),
+  auth: toolAuthInput,
+  /** Agent slugs that may use every tool the server exposes. */
+  grant: z.array(slug),
+  category: z.string().trim().max(40).optional(),
+  description: z.string().trim().max(500).optional(),
+  glyph: z.string().trim().min(1).max(3).optional(),
+});
+
+const needsTarget = (
+  v: { transport?: 'http' | 'stdio'; url?: string; command?: string },
+  ctx: z.RefinementCtx,
+) => {
+  if (v.transport === 'http' && !v.url) {
+    ctx.addIssue({ code: 'custom', path: ['url'], message: 'An http server needs a url' });
+  }
+  if (v.transport === 'stdio' && !v.command) {
+    ctx.addIssue({ code: 'custom', path: ['command'], message: 'A stdio server needs a command' });
+  }
+};
+
+/** POST /api/tools and /api/tools/test — the Connect panel's JSON (spec §3.5). */
+export const toolConnectInput = toolFields
+  .extend({
+    auth: toolAuthInput.default({ type: 'none' }),
+    grant: toolFields.shape.grant.default([]),
+  })
+  .superRefine(needsTarget);
+
+/** PATCH /api/tools/[id]: any subset; a new token re-tests the connection. */
+export const toolPatch = toolFields.partial();
+
+export type ToolAuthInput = z.infer<typeof toolAuthInput>;
+export type ToolConnectInput = z.infer<typeof toolConnectInput>;
+export type ToolPatch = z.infer<typeof toolPatch>;
+
 /** The editable fields of an agent, without defaults, so a PATCH never resets what it omits. */
 const agentFields = z.object({
   name: z.string().trim().min(1, 'Give the bird a name').max(64),
@@ -300,3 +360,4 @@ export type ToolStatus = z.infer<typeof toolStatus>;
 export type MemoryEntry = z.infer<typeof memoryEntry>;
 export type MemoryNamespace = z.infer<typeof memoryNamespace>;
 export type Settings = z.infer<typeof settings>;
+export type Secret = z.infer<typeof secret>;

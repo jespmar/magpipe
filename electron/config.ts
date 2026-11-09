@@ -59,6 +59,9 @@ export function loadDesktopConfig(userData: string): DesktopConfig {
       // Auth.js is mounted even though the desktop app has no sign-in; give it a secret so its
       // routes never error.
       AUTH_SECRET: fromFile.AUTH_SECRET ?? readOrCreateSecret(path.join(userData, 'auth-secret')),
+      // Encrypts tool credentials at rest (lib/secrets.ts); generated once, never leaves userData.
+      MAGPIPE_SECRET_KEY:
+        fromFile.MAGPIPE_SECRET_KEY ?? readOrCreateSecret(path.join(userData, 'secret-key')),
       AUTH_TRUST_HOST: 'true',
       MAGPIPE_DESKTOP: '1',
       MAGPIPE_CONFIG_PATH: configPath,

@@ -10,6 +10,7 @@ export type StatusVariant =
   | 'done'
   | 'failed'
   | 'needs-auth'
+  | 'connected'
   | 'queued'
   | 'cancelled';
 
@@ -21,6 +22,7 @@ const STYLE: Record<StatusVariant, string> = {
   done: 'border-emerald/45 text-emerald',
   failed: 'border-danger/45 text-danger',
   'needs-auth': 'border-warn/45 text-warn',
+  connected: 'border-cyan/45 text-cyan',
   queued: 'border-hairline text-mute',
   cancelled: 'border-hairline text-mute',
 };

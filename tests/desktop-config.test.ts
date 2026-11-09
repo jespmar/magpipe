@@ -29,11 +29,15 @@ describe('loadDesktopConfig', () => {
     });
   });
 
-  it('generates AUTH_SECRET once and keeps it across launches', () => {
+  it('generates AUTH_SECRET and MAGPIPE_SECRET_KEY once and keeps them across launches', () => {
     const dir = tmp();
-    const first = loadDesktopConfig(dir).env.AUTH_SECRET;
-    expect(first).toMatch(/^[\w-]{40,}$/);
-    expect(loadDesktopConfig(dir).env.AUTH_SECRET).toBe(first);
+    const first = loadDesktopConfig(dir).env;
+    expect(first.AUTH_SECRET).toMatch(/^[\w-]{40,}$/);
+    expect(first.MAGPIPE_SECRET_KEY).toMatch(/^[\w-]{40,}$/);
+    expect(first.MAGPIPE_SECRET_KEY).not.toBe(first.AUTH_SECRET);
+    const again = loadDesktopConfig(dir).env;
+    expect(again.AUTH_SECRET).toBe(first.AUTH_SECRET);
+    expect(again.MAGPIPE_SECRET_KEY).toBe(first.MAGPIPE_SECRET_KEY);
   });
 
   it('prefers values from magpipe.env', () => {
