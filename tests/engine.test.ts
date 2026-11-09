@@ -447,3 +447,71 @@ describe('run engine with a granted MCP server', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }, 20_000);
 });
+
+describe('run engine with a tool server that is down', () => {
+  let db: Db;
+  let close: () => Promise<void>;
+  beforeAll(async () => {
+    ({ db, close } = await openDb('memory://'));
+  }, 30_000);
+  afterAll(() => close());
+
+  it('logs the loss on the step and finishes the run without that server (D19)', async () => {
+    const toolId = 'tool_down';
+    await db.insert(t.tools).values({
+      id: toolId,
+      slug: 'down-server',
+      name: 'Down server',
+      glyph: 'DN',
+      kind: 'mcp',
+      category: 'Test',
+      description: 'A server that is not installed',
+      transport: 'stdio',
+      url: null,
+      command: 'no-such-mcp-binary --serve',
+      auth: { type: 'none' },
+      status: 'connected',
+      scopes: ['anything'],
+      grantedAgents: ['agt_operator'],
+      stats: { calls24h: 0, lastCallAt: null },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await db
+      .update(t.agents)
+      .set({ tools: [{ toolId, scopes: ['anything'] }] })
+      .where(eq(t.agents.slug, 'operator'));
+
+    const client = scripted((p) => {
+      if (isPlan(p))
+        return plan([
+          {
+            id: 's1',
+            agent: 'operator',
+            title: 'Carry on',
+            instructions: '',
+            dependsOn: [],
+            optional: false,
+          },
+        ]);
+      if (isMerge(p)) return text('merged');
+      // The step still runs, with no tool from the server that is down.
+      const names = (p.tools ?? []).map((tool) => (tool as { name: string }).name);
+      expect(names.some((n) => n.startsWith('down-server__'))).toBe(false);
+      return text('carried on');
+    });
+    const engine = new Engine({ client, getDb: async () => db });
+    const run = await createRun(db, { text: 'keep going', attachments: [] });
+    engine.enqueue(run.id);
+    await engine.whenIdle();
+    const after = (await getRun(db, run.id))!;
+    expect(after.status).toBe('done');
+    expect(after.plan.find((s) => s.id === 's1')!.status).toBe('done');
+    const events = await listEvents(db, run.id);
+    const loss = events.find(
+      (e) => e.kind === 'error' && e.text.startsWith('Down server is unreachable'),
+    );
+    expect(loss?.stepId).toBe('s1');
+    expect(loss?.text).toContain('the step runs without its tools');
+  }, 20_000);
+});

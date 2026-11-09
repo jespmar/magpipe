@@ -39,6 +39,8 @@ export type ToolSetup = {
   signal: AbortSignal;
   /** Called when the agent tries to write outside its memory scope (rejected and logged, §7.3). */
   onRejectedWrite: (text: string) => Promise<void>;
+  /** Called when a granted tool server cannot be reached: the step goes on without it (D19). */
+  onToolUnavailable: (text: string) => Promise<void>;
 };
 
 export function wireName(...parts: string[]): string {
@@ -311,9 +313,21 @@ export async function setupTools(setup: ToolSetup): Promise<ToolRuntime> {
             ? { transport: 'stdio', command: tool.command }
             : null;
       if (!target) continue;
-      const conn = await connectMcp(target);
-      connections.push(conn);
-      const defs = (await conn.listTools()).filter((d) => allowed(d.name));
+      // A server that is down loses the step its tools, not the step itself: the trail says so
+      // and the agent works with what remains (D19).
+      let conn: McpConnection;
+      let defs: Awaited<ReturnType<McpConnection['listTools']>>;
+      try {
+        conn = await connectMcp(target);
+        connections.push(conn);
+        defs = (await conn.listTools()).filter((d) => allowed(d.name));
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        await setup.onToolUnavailable(
+          `${tool.name} is unreachable (${reason}); the step runs without its tools.`,
+        );
+        continue;
+      }
       for (const def of defs) {
         const name = wireName(tool.slug, def.name);
         tools.push({
