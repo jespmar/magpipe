@@ -47,7 +47,7 @@ export function AgentList({
                   aria-pressed={on}
                   onClick={() => onSelect(a.id)}
                   className={clsx(
-                    'grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-l-2 border-b-hairline-soft px-4 py-3.5 text-left transition-colors group-last:border-b-0 hover:bg-[rgba(255,255,255,0.03)] focus-visible:-outline-offset-2 md:grid-cols-12',
+                    'grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-l-2 border-b-hairline-soft px-4 py-3.5 text-left transition-colors group-last:border-b-0 hover:bg-[rgba(255,255,255,0.03)] focus-visible:-outline-offset-3 md:grid-cols-12',
                     on
                       ? 'border-l-cyan bg-[rgba(34,193,220,0.06)]'
                       : 'border-l-transparent bg-transparent',
