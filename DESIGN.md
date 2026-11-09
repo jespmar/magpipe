@@ -324,8 +324,9 @@ white disc.
   hover per Card Hover. Content cards only — never nested.
 - **Panel:** `linear-gradient(180deg, #141a1a, #141414)` with a 1 px cyan border at 28%: the
   prompt window, the connect panel, holding states.
-- **Stat tile:** Hairline border, 8 px radius, 12 px padding; a mono 20/28 550 value over a
-  Caption label.
+- **Stat strip:** three mono 20/28 550 values over Caption labels, divided by 1 px Hairline Soft
+  verticals and framed by Hairline Soft rules above and below; flat on the card surface, never
+  boxed (no card inside a card).
 
 ### Inputs / Fields
 

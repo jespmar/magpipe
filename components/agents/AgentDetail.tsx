@@ -64,7 +64,7 @@ export function AgentDetail({
         <p className="max-w-[31rem] text-body-sm text-body">{agent.description}</p>
       ) : null}
 
-      <dl className="grid grid-cols-3 divide-x divide-hairline border-y border-hairline-soft">
+      <dl className="grid grid-cols-3 divide-x divide-hairline-soft border-y border-hairline-soft">
         <StatTile value={String(agent.stats.runs7d)} label="runs · 7d" />
         <StatTile value={formatPercent(agent.stats.successPct)} label="success" />
         <StatTile
