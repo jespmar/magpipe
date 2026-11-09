@@ -21,7 +21,7 @@ export function AgentCard({ card, now }: { card: AgentCardData; now: Date }) {
             >
               {card.name}
             </Link>
-            <span className="min-h-4 truncate text-caption text-mute">{card.role}</span>
+            <span className="min-h-4 text-caption text-mute">{card.role}</span>
           </div>
         </div>
         <StatusPill variant={card.status} />
