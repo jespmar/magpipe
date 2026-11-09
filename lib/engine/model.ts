@@ -45,8 +45,8 @@ const NO_KEY_MESSAGE =
   'No model credentials: set ANTHROPIC_API_KEY in magpipe.env (File → Open Config File) and restart Magpipe.';
 
 export function describeFailure(err: unknown): ModelFailure {
-  // The SDK throws its base error before any request when no credential source resolves.
-  if (err instanceof Anthropic.AnthropicError && /authentication method/i.test(err.message)) {
+  // Before any request, the SDK throws a plain Error when no credential source resolves.
+  if (err instanceof Error && /authentication method/i.test(err.message)) {
     return { code: 'no_api_key', message: NO_KEY_MESSAGE, retryable: false };
   }
   if (err instanceof Anthropic.AuthenticationError) {
