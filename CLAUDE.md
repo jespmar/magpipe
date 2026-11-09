@@ -49,6 +49,11 @@ engine and no sign-in on desktop.
 - **Precise lines use plain nouns.** Status pills, fact lines, table cells and Settings rows say
   agent / run / step / memory / tool, and a run is "running", never "flying". The metaphor
   (birds, flights, the nest, shiny bits) lives in headings, eyebrows and empty-state prose only.
+- **Address changes go through the router.** Client components never call
+  `history.replaceState`/`pushState`: Next treats them as a navigation keyed on the old search
+  params, and the next `router.refresh()` lands in the wrong slot and is silently dropped. Use
+  `router.replace(url, { scroll: false })` for a changed address and `router.refresh()` for the
+  same one; keep transient selection in state and read `?agent=`-style params only at load.
 - New public routes must be added to the matcher in `middleware.ts`; everything else is behind
   the desktop token (desktop) or a session (hosted).
 
