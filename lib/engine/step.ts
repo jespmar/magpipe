@@ -55,6 +55,7 @@ export async function runStep(opts: {
         sandboxDir: opts.sandboxDir,
         signal,
         onRejectedWrite: async (text) => void (await emit('error', text)),
+        onToolUnavailable: async (text) => void (await emit('error', text)),
       }),
     { signal, onRetry: (f, n) => void emit('error', `Retry ${n}: ${f.message}`) },
   );

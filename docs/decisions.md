@@ -314,6 +314,21 @@ once per server start.
 - **Re-fly and Cancel** call the PR 5 routes: Re-fly lands on the new flight, Cancel refreshes
   and quotes the server's 409 reason when the run already ended.
 
+## D19 · A tool server that is down costs the step its tools, not the step
+
+- **Before:** `setupTools` connected every granted MCP server at the start of a step and a
+  server that could not be reached (DNS, refused, a stdio command that is not installed) failed
+  the step before the agent had said a word; a required step then failed the run.
+- **Now:** the connection or tool listing that fails is logged as an `error` event on the step
+  — "<tool> is unreachable (<reason>); the step runs without its tools." — and the step goes on
+  with the built-ins, the memory tools and every server that did answer. The trail keeps the
+  loss visible (PRODUCT.md: nothing happens unseen); the operator sees the red line in the log
+  and the tool's own card still says what is wrong with it.
+- **Still fails the step:** a server that answers and then errors on a call (the model sees the
+  tool result's error and decides), limits, refusals and the model's own failures.
+- **Why not retry:** an unreachable server is usually unreachable for the whole step; the
+  engine's retries stay for the model provider. The next run tries the server again.
+
 ## D18 · Wide, motion, keys and the smoke flows (PR 8)
 
 - **Wide (≥1600 px) is one set of `wide:` classes per screen**, not a second layout: Home and
