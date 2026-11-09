@@ -327,6 +327,9 @@ white disc.
 - **Stat strip:** three mono 20/28 550 values over Caption labels, divided by 1 px Hairline Soft
   verticals and framed by Hairline Soft rules above and below; flat on the card surface, never
   boxed (no card inside a card).
+- **Glyph tile:** 40 px square, 8 px radius, Hairline on Canvas Soft, a mono 12/550 two-letter
+  glyph — a tool's face, as the avatar disc is an agent's. Inside a card it is the one square
+  among discs.
 
 ### Inputs / Fields
 

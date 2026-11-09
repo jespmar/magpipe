@@ -31,6 +31,11 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     // Smoke tests exercise the shell, not sign-in.
-    env: { MAGPIPE_AUTH_DISABLED: 'true', MAGPIPE_DATA_DIR: '.magpipe/e2e' },
+    env: {
+      MAGPIPE_AUTH_DISABLED: 'true',
+      MAGPIPE_DATA_DIR: '.magpipe/e2e',
+      // A throwaway key so the connect flow can store a pasted token.
+      MAGPIPE_SECRET_KEY: 'ZTJlLXRlc3Qta2V5LWUyZS10ZXN0LWtleS1lMmUtdHM',
+    },
   },
 });

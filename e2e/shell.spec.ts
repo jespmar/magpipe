@@ -64,7 +64,10 @@ test('settings loads the demo data after a confirm step and reports the result',
   await expect(page.getByText(/The latest flight was “/)).toBeVisible();
 
   await page.goto('/tools');
-  await expect(page.getByRole('heading', { level: 2, name: '9 tools in the kit' })).toBeVisible();
+  await expect(page.getByRole('article', { name: 'Visma.net' })).toBeVisible();
+  await expect(
+    page.getByRole('article', { name: 'Younium' }).getByText('Needs auth'),
+  ).toBeVisible();
   await expect(page.getByRole('link', { name: 'Load demo data' })).toHaveCount(0);
   await page.goto('/memory');
   await expect(page.getByRole('heading', { level: 2, name: /holds 12 memories/ })).toBeVisible();

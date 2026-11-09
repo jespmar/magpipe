@@ -145,6 +145,15 @@ export const tools = pgTable(
 
 // ─── memory ────────────────────────────────────────────────────────────────
 
+/** Tool credentials at rest, AES-256-GCM under MAGPIPE_SECRET_KEY (lib/secrets.ts). */
+export const secrets = pgTable('secrets', {
+  id: text().primaryKey(),
+  ciphertext: text().notNull(),
+  iv: text().notNull(),
+  tag: text().notNull(),
+  createdAt: timestamptz().notNull().defaultNow(),
+});
+
 export const memoryNamespaces = pgTable('memory_namespaces', {
   id: text().primaryKey(),
   label: text().notNull(),

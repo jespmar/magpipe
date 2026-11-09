@@ -37,3 +37,8 @@ export function formatTokens(n: number): string {
 export function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
 }
+
+/** `1,284` — whole numbers with thousands separators, for counts in mono. */
+export function formatCount(n: number): string {
+  return Math.round(n).toLocaleString('en-US');
+}

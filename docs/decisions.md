@@ -186,3 +186,23 @@ Two implementation lessons from the same pass, now conventions in `CLAUDE.md`: p
 `revalidatePath('/', 'layout')` from server actions (it makes the production router fall back to
 a hard navigation; the form stays pending). Fresh workspaces now get `region: 'local'` rather
 than the demo's `eu-north-1`, and the footer shows `desktop` when no region is configured.
+
+## D13 · Tool registry on desktop: own MCP client, pasted tokens, encrypted at rest
+
+- **MCP client.** `lib/mcp.ts` speaks enough of the protocol (Streamable HTTP and stdio;
+  `initialize`, `notifications/initialized`, `tools/list` with cursors) to test a connection and
+  discover tool names, with no SDK dependency. Discovered names become the tool's `scopes`.
+  Running a stdio server runs that command as the operator, with the app's environment.
+- **Credentials.** `bearer` and `oauth2` tokens travel as `Authorization: Bearer …`; `apikey`
+  as `X-API-Key`. Values are AES-256-GCM encrypted in the `secrets` table under
+  `MAGPIPE_SECRET_KEY` (32 random bytes, base64url), which the desktop app generates once per
+  install next to `auth-secret`; web dev sets it in `.env.local`. Rows carry a `secretRef` only
+  and the API never returns a token.
+- **No OAuth flows yet.** `POST /tools/[id]/auth/start|callback` need a registered client and a
+  redirect URL per provider, which a desktop install does not have. On desktop a tool that
+  "needs auth" takes a pasted access token or API key through *Re-authorise*; the hosted mode
+  adds the OAuth routes. `oauth2` stays the recorded auth type so the switch is a no-op later.
+- **"Connect & test" is one press.** `POST /api/tools` saves the tool with the status the probe
+  found (`connected`, `needs_auth`, `error` with `stats.lastError`), so the registry is honest
+  from the first second. `POST /api/tools/test` probes without saving; `POST /api/tools/[id]/test`
+  probes a saved tool again.

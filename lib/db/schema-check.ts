@@ -9,6 +9,7 @@ import type {
   MemoryNamespace,
   Run,
   RunEvent,
+  Secret,
   Settings,
   Tool,
 } from '../schemas';
@@ -26,4 +27,5 @@ export type SchemaChecks = [
   Assert<Equals<Omit<typeof t.memory.$inferSelect, 'search'>, MemoryEntry>>,
   Assert<Equals<typeof t.memoryNamespaces.$inferSelect, MemoryNamespace>>,
   Assert<Equals<typeof t.settings.$inferSelect, Settings>>,
+  Assert<Equals<typeof t.secrets.$inferSelect, Secret>>,
 ];
