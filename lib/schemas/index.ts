@@ -250,6 +250,41 @@ export const settings = z.object({
   updatedAt: z.date(),
 });
 
+// ─── API bodies ────────────────────────────────────────────────────────────
+
+/** The editable fields of an agent, without defaults, so a PATCH never resets what it omits. */
+const agentFields = z.object({
+  name: z.string().trim().min(1, 'Give the bird a name').max(64),
+  role: z.string().trim().max(120),
+  description: z.string().trim().max(2000),
+  initials: z.string().trim().min(1).max(3).optional(),
+  model: z.string().min(1, 'Pick a model'),
+  systemPrompt: z.string().max(20_000),
+  tools: z.array(toolGrant),
+  builtins: z.array(z.enum(builtinTools)),
+  memoryScope,
+  limits: agentLimits,
+});
+
+/** POST /api/agents. Slug and (unless given) initials are derived from the name. */
+export const agentInput = agentFields.extend({
+  role: agentFields.shape.role.default(''),
+  description: agentFields.shape.description.default(''),
+  systemPrompt: agentFields.shape.systemPrompt.default(''),
+  tools: agentFields.shape.tools.default([]),
+  builtins: agentFields.shape.builtins.default([]),
+  memoryScope: memoryScope.default({ read: [], write: [] }),
+  limits: agentLimits.default({ maxTokens: 100_000, maxSteps: 30, timeoutSec: 600 }),
+});
+
+/** PATCH /api/agents/[id]: any subset of the fields, plus pause/resume. */
+export const agentPatch = agentFields.partial().extend({
+  status: z.enum(['idle', 'paused']).optional(),
+});
+
+export type AgentInput = z.infer<typeof agentInput>;
+export type AgentPatch = z.infer<typeof agentPatch>;
+
 export type Agent = z.infer<typeof agent>;
 export type AgentStatus = z.infer<typeof agentStatus>;
 export type ToolGrant = z.infer<typeof toolGrant>;
