@@ -70,7 +70,14 @@ test('settings loads the demo data after a confirm step and reports the result',
   ).toBeVisible();
   await expect(page.getByRole('link', { name: 'Load demo data' })).toHaveCount(0);
   await page.goto('/memory');
-  await expect(page.getByRole('heading', { level: 2, name: /holds 12 memories/ })).toBeVisible();
+  await expect(
+    page
+      .getByRole('navigation', { name: 'Namespaces' })
+      .getByRole('button', { name: /^Rate limits/ }),
+  ).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Memories' }).getByRole('listitem')).toHaveCount(
+    12,
+  );
   await page.goto('/runs');
   await page.getByRole('link', { name: 'Open the latest flight' }).click();
   await expect(page.getByRole('heading', { level: 1 })).not.toHaveText(/^flight_/);

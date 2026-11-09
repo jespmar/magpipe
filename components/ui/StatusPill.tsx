@@ -11,6 +11,9 @@ export type StatusVariant =
   | 'failed'
   | 'needs-auth'
   | 'connected'
+  | 'stale'
+  | 'conflict'
+  | 'expired'
   | 'queued'
   | 'cancelled';
 
@@ -23,6 +26,9 @@ const STYLE: Record<StatusVariant, string> = {
   failed: 'border-danger/45 text-danger',
   'needs-auth': 'border-warn/45 text-warn',
   connected: 'border-cyan/45 text-cyan',
+  stale: 'border-warn/45 text-warn',
+  conflict: 'border-danger/45 text-danger',
+  expired: 'border-hairline text-mute',
   queued: 'border-hairline text-mute',
   cancelled: 'border-hairline text-mute',
 };

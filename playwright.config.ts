@@ -4,8 +4,9 @@ const PORT = 3457;
 
 export default defineConfig({
   testDir: './e2e',
-  // Each spec runs in file order against one shared database; files still run in parallel.
+  // One shared database: specs run in file order, one file at a time, so exact counts hold.
   fullyParallel: false,
+  workers: 1,
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? 'github' : 'list',
   use: {
