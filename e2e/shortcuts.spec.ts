@@ -7,7 +7,7 @@ test('the shortcuts reach every screen and stay out of text fields', async ({ pa
   await page.goto('/agents');
 
   await page.keyboard.press('Shift+?');
-  const sheet = page.getByRole('dialog', { name: 'Keyboard' });
+  const sheet = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
   await expect(sheet).toBeVisible();
   await expect(sheet.getByText('Go to Runs')).toBeVisible();
   await page.keyboard.press('Escape');

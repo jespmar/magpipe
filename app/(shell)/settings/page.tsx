@@ -54,7 +54,7 @@ export default async function SettingsPage() {
       <ScrollToHash />
 
       <div className="grid gap-6 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] md:items-start wide:max-w-[1600px]">
-        <Section id="workspace" title="Workspace" className="md:row-span-2">
+        <Section id="workspace" title="Workspace" className="md:row-span-3">
           <p className="text-body-sm text-body">
             Read-only for now — editing these lands with the screens that need them.
           </p>
@@ -132,11 +132,7 @@ export default async function SettingsPage() {
                 <dd className="flex shrink-0 items-center gap-1 font-mono text-code text-ink">
                   {s.keys.map((k, i) => (
                     <span key={k} className="inline-flex items-center gap-1">
-                      {i > 0 ? (
-                        <span aria-hidden className="text-mute">
-                          {s.chord ? 'then' : '+'}
-                        </span>
-                      ) : null}
+                      {i > 0 ? <span className="text-mute">{s.chord ? 'then' : '+'}</span> : null}
                       <Kbd>{k}</Kbd>
                     </span>
                   ))}
