@@ -151,6 +151,16 @@ export function ToolsScreen({
         description="MCP servers and integrations the flock can use. Each tool is scoped per bird — nothing is reachable unless it is granted here."
         actions={
           <>
+            {/* Lives in the head so a notice never moves the columns below. */}
+            <p
+              ref={status}
+              tabIndex={-1}
+              role="status"
+              aria-live="polite"
+              className="text-body-sm text-mute focus:outline-none"
+            >
+              {pending ? 'Updating…' : notice}
+            </p>
             <SearchInput
               label="Search tools"
               placeholder="Search tools…"
@@ -176,16 +186,6 @@ export function ToolsScreen({
           secretsReady={secretsReady}
         />
       ) : null}
-
-      <p
-        ref={status}
-        tabIndex={-1}
-        role="status"
-        aria-live="polite"
-        className="text-body-sm text-mute focus:outline-none"
-      >
-        {pending ? 'Updating…' : notice}
-      </p>
 
       {tools.length === 0 ? (
         <EmptyState title="No tools connected yet" actions={fresh ? <DemoLink /> : undefined}>

@@ -208,6 +208,16 @@ export function MemoryScreen({
         description="The shiny bits the flock brings back — durable facts, decisions and limits every bird reads before it flies."
         actions={
           <>
+            {/* Lives in the head so a notice never moves the columns below. */}
+            <p
+              ref={status}
+              tabIndex={-1}
+              role="status"
+              aria-live="polite"
+              className="text-body-sm text-mute focus:outline-none"
+            >
+              {pending ? 'Updating…' : notice}
+            </p>
             <SearchInput
               label="Search memory"
               placeholder="Search the nest…"
@@ -221,16 +231,6 @@ export function MemoryScreen({
           </>
         }
       />
-
-      <p
-        ref={status}
-        tabIndex={-1}
-        role="status"
-        aria-live="polite"
-        className="text-body-sm text-mute focus:outline-none"
-      >
-        {pending ? 'Updating…' : notice}
-      </p>
 
       <div className="flex flex-wrap items-start gap-6">
         <aside className="flex min-w-0 flex-[1_1_240px] flex-col gap-4 md:max-w-[300px] wide:max-w-[340px] wide:flex-[0_1_340px]">
