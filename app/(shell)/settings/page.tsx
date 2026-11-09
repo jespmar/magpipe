@@ -12,6 +12,7 @@ import { env } from '@/lib/env';
 import { accessMode } from '@/lib/auth-mode';
 import { currentUser } from '@/lib/session';
 import { getShellData } from '@/lib/shell-data';
+import { SHORTCUTS } from '@/lib/shortcuts';
 import type { Settings } from '@/lib/schemas';
 
 export const metadata: Metadata = { title: 'Settings' };
@@ -118,8 +119,42 @@ export default async function SettingsPage() {
             </form>
           ) : null}
         </Section>
+
+        <Section id="keyboard" title="Keyboard">
+          <p className="text-body-sm text-body">
+            Single keys work anywhere outside a text field; press <Kbd>?</Kbd> on any screen to see
+            this list.
+          </p>
+          <dl className="flex flex-col gap-2.5">
+            {SHORTCUTS.map((s) => (
+              <div key={s.label} className="flex items-baseline justify-between gap-6">
+                <dt className="text-body-sm text-body">{s.label}</dt>
+                <dd className="flex shrink-0 items-center gap-1 font-mono text-code text-ink">
+                  {s.keys.map((k, i) => (
+                    <span key={k} className="inline-flex items-center gap-1">
+                      {i > 0 ? (
+                        <span aria-hidden className="text-mute">
+                          {s.chord ? 'then' : '+'}
+                        </span>
+                      ) : null}
+                      <Kbd>{k}</Kbd>
+                    </span>
+                  ))}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </Section>
       </div>
     </>
+  );
+}
+
+function Kbd({ children }: { children: ReactNode }) {
+  return (
+    <kbd className="rounded-xs border border-hairline bg-canvas-soft px-1.5 py-0.5 font-mono text-caption text-ink-strong">
+      {children}
+    </kbd>
   );
 }
 

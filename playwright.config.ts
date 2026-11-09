@@ -37,6 +37,8 @@ export default defineConfig({
       MAGPIPE_DATA_DIR: '.magpipe/e2e',
       // A throwaway key so the connect flow can store a pasted token.
       MAGPIPE_SECRET_KEY: 'ZTJlLXRlc3Qta2V5LWUyZS10ZXN0LWtleS1lMmUtdHM',
+      // No model credentials in CI: a scripted model lets a run go queued → running → done.
+      MAGPIPE_MODEL_STUB: 'scripted',
     },
   },
 });

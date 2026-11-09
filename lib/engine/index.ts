@@ -9,6 +9,7 @@ import { eq, inArray } from 'drizzle-orm';
 import type { Db } from '../db';
 import { getDb } from '../db';
 import * as t from '../db/schema';
+import { env } from '../env';
 import { listMemory } from '../memory';
 import { addUsage, ZERO_USAGE } from '../pricing';
 import type { Agent, MemoryEntry, Run, Step } from '../schemas';
@@ -25,6 +26,7 @@ import {
 import { MERGE_STEP_ID, planRun } from './plan';
 import { ensureSandbox, wipeSandbox } from './sandbox';
 import { runStep, setAgentStatus } from './step';
+import { scriptedModelClient } from './stub-model';
 
 export type EngineOptions = {
   client?: ModelClient;
@@ -48,7 +50,10 @@ export class Engine {
   }
 
   private client(): ModelClient {
-    this.clientInstance ??= anthropicModelClient();
+    this.clientInstance ??=
+      env.MAGPIPE_MODEL_STUB === 'scripted' && process.env.NODE_ENV !== 'production'
+        ? scriptedModelClient()
+        : anthropicModelClient();
     return this.clientInstance;
   }
 

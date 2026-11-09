@@ -40,6 +40,13 @@ export function PromptComposer() {
   useEffect(() => {
     setMac(/Mac|iPhone|iPad/.test(navigator.platform));
   }, []);
+  // `/?focus=prompt` (the `n` shortcut from another screen): land with the cursor in the prompt,
+  // then drop the flag from the address through the router.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('focus') !== 'prompt') return;
+    textarea.current?.focus();
+    router.replace('/', { scroll: false });
+  }, [router]);
 
   const uploading = chips.filter((c) => c.state === 'uploading').length;
 

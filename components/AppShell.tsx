@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { KeyboardShortcuts } from './KeyboardShortcuts';
 import { BrandLink, NavLinks } from './NavLinks';
 import { LivePill } from './ui/LivePill';
 import { ButtonLink } from './ui/Button';
@@ -42,6 +43,7 @@ export async function AppShell({ children }: { children: ReactNode }) {
       </header>
 
       {shell.dbError ? <DbBanner error={shell.dbError} /> : null}
+      <KeyboardShortcuts />
 
       <main
         id="main"

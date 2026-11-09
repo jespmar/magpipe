@@ -21,7 +21,7 @@ export function AgentList({
     <section
       aria-label="Agents"
       className={clsx(
-        'min-w-0 flex-[1_1_520px] overflow-hidden rounded-md border border-hairline bg-(image:--g-card) wide:flex-[1_1_1200px]',
+        'min-w-0 flex-[1_1_520px] overflow-hidden rounded-md border border-hairline bg-(image:--g-card) wide:flex-[1_1_760px]',
         // An empty roster keeps a roster's width instead of stretching across the vacated panel.
         agents.length === 0 && 'max-w-[46rem]',
       )}
