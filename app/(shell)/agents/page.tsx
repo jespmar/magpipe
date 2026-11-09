@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { PageHead } from '@/components/ui/PageHead';
-import { EmptyState } from '@/components/ui/EmptyState';
+import { EmptyState, UnavailableState } from '@/components/ui/EmptyState';
 import { listSentence } from '@/lib/text';
 import { getOverview } from '@/lib/overview';
 
@@ -8,18 +8,30 @@ export const metadata: Metadata = { title: 'Agents' };
 
 export default async function AgentsPage() {
   const ov = await getOverview();
-  const names = ov?.agents.names ?? [];
 
+  const head = (
+    <PageHead
+      eyebrow="The flock"
+      title="Agents"
+      description="Every bird Magpipe can send out — what it does, what it may touch, and how it has been flying."
+    />
+  );
+  if (!ov) {
+    return (
+      <>
+        {head}
+        <UnavailableState />
+      </>
+    );
+  }
+
+  const names = ov.agents.names;
   return (
     <>
-      <PageHead
-        eyebrow="The flock"
-        title="Agents"
-        description="Every bird Magpipe can send out — what it does, what it may touch, and how it has been flying."
-      />
+      {head}
       <EmptyState
         title={names.length > 0 ? 'Your flock is set up' : 'No birds in the flock'}
-        facts={ov ? [...names] : undefined}
+        facts={names}
       >
         <p>
           {names.length > 0

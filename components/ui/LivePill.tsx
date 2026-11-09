@@ -1,18 +1,15 @@
 import { clsx } from 'clsx';
-import { plural } from '@/lib/format';
 
 /**
  * How many agents are flying right now. `null` = the database is unavailable, so the pill says
- * so instead of claiming zero.
+ * so instead of claiming zero. On phones the noun is visually hidden but still read out.
  */
 export function LivePill({ count }: { count: number | null }) {
   const unknown = count === null;
   const live = (count ?? 0) > 0;
-  const full = unknown ? 'Agent status unavailable' : `${plural(count, 'agent')} active`;
   return (
     <span
       className="inline-flex items-center gap-2 rounded-pill border border-hairline px-3 py-1 text-body-sm whitespace-nowrap text-ink"
-      aria-label={full}
       title={unknown ? 'The database could not be opened' : undefined}
     >
       <span
@@ -30,7 +27,8 @@ export function LivePill({ count }: { count: number | null }) {
           'Status unavailable'
         ) : (
           <>
-            {count} <span className="hidden sm:inline">{count === 1 ? 'agent' : 'agents'} </span>
+            {count}{' '}
+            <span className="sr-only sm:not-sr-only">{count === 1 ? 'agent' : 'agents'} </span>
             active
           </>
         )}

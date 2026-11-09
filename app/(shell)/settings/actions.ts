@@ -16,12 +16,13 @@ export type DemoState = { status: 'idle' | 'done' | 'error'; message?: string };
 export async function loadDemoAction(_prev: DemoState, _formData: FormData): Promise<DemoState> {
   try {
     const n = await loadDemo(await getDb());
-    const summary = [
-      plural(n.tools, 'tool'),
-      plural(n.memory, 'shiny bit'),
-      plural(n.runs, 'finished flight'),
-    ];
-    return { status: 'done', message: `Loaded ${summary[0]}, ${summary[1]} and ${summary[2]}.` };
+    return {
+      status: 'done',
+      message: `Loaded ${plural(n.tools, 'tool')}, ${plural(n.memory, 'memory', 'memories')} and ${plural(
+        n.runs,
+        'finished flight',
+      )}.`,
+    };
   } catch (err) {
     console.error('[settings] load demo data failed:', err);
     return {
