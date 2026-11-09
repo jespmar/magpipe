@@ -29,15 +29,15 @@ describe('parseConnectJson', () => {
     expect(parseConnectJson('{"name":')).toMatchObject({ ok: false });
     expect(parseConnectJson('{"name":"x","transport":"http"}')).toEqual({
       ok: false,
-      error: 'url: An http server needs a url',
+      error: 'An http server needs a url',
     });
     expect(parseConnectJson('{"name":"x","transport":"http","url":"nope"}')).toMatchObject({
       ok: false,
-      error: expect.stringMatching(/^url: /),
+      error: 'The url must be a full http(s) address',
     });
     expect(parseConnectJson('{"transport":"http","url":"http://a"}')).toMatchObject({
       ok: false,
-      error: expect.stringMatching(/^name: /),
+      error: expect.stringMatching(/\(name\)$/),
     });
   });
 });

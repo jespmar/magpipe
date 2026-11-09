@@ -1,7 +1,7 @@
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useMemo, useOptimistic, useState, useTransition } from 'react';
+import { useEffect, useMemo, useOptimistic, useRef, useState, useTransition } from 'react';
 import { PageHead } from '@/components/ui/PageHead';
 import { Button } from '@/components/ui/Button';
 import { DemoLink } from '@/components/ui/DemoLink';
@@ -57,6 +57,7 @@ export function ToolsScreen({
   }, [openConnect]);
   const [openId, setOpenId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const status = useRef<HTMLParagraphElement>(null);
   const [pending, startTransition] = useTransition();
   const [tools, optimistic] = useOptimistic(serverTools, applyOptimistic);
 
@@ -130,6 +131,8 @@ export function ToolsScreen({
           optimistic({ type: 'remove', id: tool.id });
           setOpenId(null);
           setNotice(`${tool.name} removed.`);
+          // The card is gone; keyboard focus lands on the line that says so.
+          status.current?.focus();
           router.refresh();
         });
       } catch (err) {
@@ -154,7 +157,12 @@ export function ToolsScreen({
               value={query}
               onChange={setQuery}
             />
-            <Button variant="primary" onClick={() => setPanel((v) => !v)} aria-expanded={panel}>
+            <Button
+              variant="primary"
+              onClick={() => setPanel((v) => !v)}
+              aria-expanded={panel}
+              aria-controls="connect-panel"
+            >
               + Connect tool
             </Button>
           </>
@@ -169,7 +177,13 @@ export function ToolsScreen({
         />
       ) : null}
 
-      <p role="status" aria-live="polite" className="min-h-5 text-body-sm text-mute">
+      <p
+        ref={status}
+        tabIndex={-1}
+        role="status"
+        aria-live="polite"
+        className="min-h-5 text-body-sm text-mute focus:outline-none"
+      >
         {pending ? 'Updating…' : notice}
       </p>
 
@@ -185,7 +199,7 @@ export function ToolsScreen({
       ) : visible.length === 0 ? (
         <p className="text-body-sm text-body">No tools match “{query}”.</p>
       ) : (
-        <ul className="grid gap-5 md:grid-cols-2 lg:grid-cols-3 wide:grid-cols-4 wide:gap-6">
+        <ul className="grid items-start gap-5 md:grid-cols-2 lg:grid-cols-3 wide:grid-cols-4 wide:gap-6">
           {visible.map((tool) => (
             <li key={tool.id} className="flex min-w-0">
               <ToolCard

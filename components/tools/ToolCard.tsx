@@ -61,10 +61,7 @@ export function ToolCard({
   }
 
   return (
-    <article
-      aria-labelledby={`${ids}-name`}
-      className="flex min-w-0 flex-1 flex-col gap-3.5 card p-5"
-    >
+    <article aria-labelledby={`${ids}-name`} className="flex min-w-0 flex-col gap-3.5 card p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <span
@@ -105,7 +102,7 @@ export function ToolCard({
         <p className="text-caption text-mute">No tool names discovered yet.</p>
       )}
 
-      <div className="mt-auto flex items-center justify-between gap-3 border-t border-hairline pt-3">
+      <div className="flex items-center justify-between gap-3 border-t border-hairline pt-3">
         <ul aria-label="Granted to" className="flex gap-1">
           {holders.length === 0 ? (
             <li className="text-caption text-mute">No agent holds this</li>
@@ -205,14 +202,8 @@ export function ToolCard({
 
           {mode === 'confirm' ? (
             <div className="flex flex-wrap items-center gap-2 text-body-sm text-ink">
-              Remove {tool.name} and every bird’s grant to it?
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onRemove}
-                disabled={busy}
-                className="border-danger/50 text-danger"
-              >
+              Remove {tool.name} and every agent’s grant to it?
+              <Button variant="danger" size="sm" onClick={onRemove} disabled={busy}>
                 Remove
               </Button>
               <Button variant="ghost" size="sm" onClick={() => setMode('actions')} disabled={busy}>
