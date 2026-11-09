@@ -20,10 +20,9 @@ describe('model boundary', () => {
       describeFailure(new Anthropic.AuthenticationError(401, {}, 'nope', new Headers())),
     ).toMatchObject({ code: 'no_api_key', retryable: false });
     expect(
+      // What the SDK throws before any request: a plain Error, not one of its own classes.
       describeFailure(
-        new Anthropic.AnthropicError(
-          'Could not resolve authentication method. Expected one of apiKey…',
-        ),
+        new Error('Could not resolve authentication method. Expected one of apiKey…'),
       ),
     ).toMatchObject({ code: 'no_api_key', retryable: false });
     expect(describeFailure(new EngineError('limit_steps', 'too many'))).toMatchObject({
