@@ -30,3 +30,6 @@ playwright-report/
 
 # skill engines downloaded on first use (platform binaries)
 .claude/skills/*/scripts/bin/
+
+# design review captures (regenerated per build; evidence, not source)
+.impeccable/review/
