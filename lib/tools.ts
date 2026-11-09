@@ -40,7 +40,7 @@ export async function listAgentChips(db: Db): Promise<AgentChip[]> {
 // ─── connection ─────────────────────────────────────────────────────────────
 
 /** bearer and oauth2 tokens travel as `Authorization: Bearer`; API keys as `X-API-Key` (D13). */
-function authHeaders(type: Tool['auth']['type'], token: string | null): Record<string, string> {
+export function authHeaders(type: Tool['auth']['type'], token: string | null): Record<string, string> {
   if (!token || type === 'none') return {};
   return type === 'apikey' ? { 'x-api-key': token } : { authorization: `Bearer ${token}` };
 }

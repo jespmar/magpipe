@@ -3,13 +3,14 @@ import { apiError, dbError, requireUser } from '@/lib/api';
 import { getDb } from '@/lib/db';
 import { listEvents, subscribe } from '@/lib/engine/events';
 import { getRun } from '@/lib/runs';
-import type { RunEvent } from '@/lib/schemas';
+import type { Run, RunEvent } from '@/lib/schemas';
 
 export const dynamic = 'force-dynamic';
 
 type Ctx = { params: Promise<{ id: string }> };
 
 const encoder = new TextEncoder();
+const TERMINAL = new Set<Run['status']>(['done', 'failed', 'cancelled']);
 
 function frame(event: RunEvent): Uint8Array {
   return encoder.encode(`id: ${event.seq}\nevent: run_event\ndata: ${JSON.stringify(event)}\n\n`);
@@ -18,7 +19,8 @@ function frame(event: RunEvent): Uint8Array {
 /**
  * GET /api/runs/[id]/events — Server-Sent Events (spec §2, §8): replays the last 200 events
  * (or everything after `?after=` / `Last-Event-ID`), then tails the run until the client leaves.
- * A poll every two seconds catches anything the in-process bus missed.
+ * A poll every two seconds catches anything the in-process bus missed. Once the run is over
+ * and its trail is out, an `end` frame closes the stream.
  */
 export async function GET(req: Request, { params }: Ctx) {
   const user = await requireUser();
@@ -55,9 +57,24 @@ export async function GET(req: Request, { params }: Ctx) {
       for (const event of replay) send(event);
 
       const unsubscribe = subscribe(runId, send);
+      const catchUp = async () => {
+        for (const event of await listEvents(database, runId, { afterSeq: lastSeq })) send(event);
+      };
+      const finishIfTerminal = async () => {
+        const current = await getRun(database, runId);
+        if (!current || !TERMINAL.has(current.status)) return;
+        await catchUp();
+        if (!closed) {
+          controller.enqueue(
+            encoder.encode(`event: end\ndata: ${JSON.stringify({ status: current.status })}\n\n`),
+          );
+        }
+        close();
+      };
       const poll = setInterval(async () => {
         try {
-          for (const event of await listEvents(database, runId, { afterSeq: lastSeq })) send(event);
+          await catchUp();
+          await finishIfTerminal();
         } catch {
           /* the next tick retries */
         }
@@ -66,7 +83,7 @@ export async function GET(req: Request, { params }: Ctx) {
         if (!closed) controller.enqueue(encoder.encode(': ping\n\n'));
       }, 15_000);
 
-      const close = () => {
+      function close() {
         if (closed) return;
         closed = true;
         unsubscribe();
@@ -77,8 +94,9 @@ export async function GET(req: Request, { params }: Ctx) {
         } catch {
           /* already closed */
         }
-      };
+      }
       req.signal.addEventListener('abort', close, { once: true });
+      await finishIfTerminal().catch(() => {});
     },
   });
 

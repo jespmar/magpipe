@@ -152,6 +152,9 @@ export async function planRun(opts: {
   }
 
   const ids = new Set(parsed.data.steps.map((s) => s.id));
+  if (ids.size !== parsed.data.steps.length || ids.has(MERGE_STEP_ID)) {
+    throw new EngineError('plan_invalid', 'Step ids must be unique and may not be "merge".', true);
+  }
   const steps: Step[] = [];
   for (const s of parsed.data.steps) {
     const agent = available.find((a) => a.slug === s.agent);

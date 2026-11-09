@@ -379,7 +379,8 @@ export async function relevantMemory(db: Db, task: string): Promise<MemoryEntry[
     .slice(0, 8);
   const [decisions, matches] = await Promise.all([
     listMemory(db, { ns: 'decisions' }),
-    words.length ? listMemory(db, { q: words.join(' ') }) : Promise.resolve([] as MemoryEntry[]),
+    // `websearch_to_tsquery` ANDs words by default; any one matching word makes a fact relevant.
+    words.length ? listMemory(db, { q: words.join(' OR ') }) : Promise.resolve([] as MemoryEntry[]),
   ]);
   const seen = new Set<string>();
   return [...decisions, ...matches]
