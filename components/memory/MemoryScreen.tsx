@@ -260,7 +260,7 @@ export function MemoryScreen({
             </EmptyState>
           ) : (
             <>
-              <div className="min-w-0 wide:flex-[1_1_560px]">
+              <div className="min-w-0 wide:flex-[2_1_600px]">
                 <MemoryTable
                   entries={visible}
                   agents={agents}
@@ -275,7 +275,7 @@ export function MemoryScreen({
                 />
               </div>
               {selectedVisible ? (
-                <div className="min-w-0 wide:flex-[0_1_520px]">
+                <div className="min-w-0 wide:flex-[0_1_440px]">
                   <MemoryDetail
                     entry={selectedVisible}
                     agents={agents}

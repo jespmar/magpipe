@@ -105,7 +105,7 @@ export function ToolCard({
         <p className="text-caption text-mute">No tool names discovered yet.</p>
       )}
 
-      <div className="flex items-center justify-between gap-3 border-t border-hairline pt-3">
+      <div className="mt-auto flex items-center justify-between gap-3 border-t border-hairline pt-3">
         <ul aria-label="Granted to" className="flex gap-1">
           {holders.length === 0 ? (
             <li className="text-caption text-mute">No agent holds this</li>

@@ -199,7 +199,7 @@ export function ToolsScreen({
       ) : visible.length === 0 ? (
         <p className="text-body-sm text-body">No tools match “{query}”.</p>
       ) : (
-        <ul className="grid items-start gap-5 md:grid-cols-2 lg:grid-cols-3 wide:grid-cols-4 wide:gap-6">
+        <ul className="grid gap-5 md:grid-cols-2 lg:grid-cols-3 wide:grid-cols-4 wide:gap-6">
           {visible.map((tool) => (
             <li key={tool.id} className="flex min-w-0">
               <ToolCard

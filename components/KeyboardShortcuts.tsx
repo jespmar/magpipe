@@ -82,17 +82,14 @@ export function KeyboardShortcuts() {
     >
       <div className="flex flex-col gap-5 p-6">
         <div className="flex items-start justify-between gap-4">
-          <div className="flex flex-col gap-1">
-            <span className="eyebrow">Shortcuts</span>
-            <h2
-              id="shortcuts-title"
-              tabIndex={-1}
-              data-autofocus
-              className="text-display-sm text-ink-strong focus:outline-none"
-            >
-              Keyboard
-            </h2>
-          </div>
+          <h2
+            id="shortcuts-title"
+            tabIndex={-1}
+            data-autofocus
+            className="text-display-sm text-ink-strong focus:outline-none"
+          >
+            Keyboard shortcuts
+          </h2>
           <Button variant="ghost" size="sm" onClick={() => dialog.current?.close()}>
             Close
           </Button>
@@ -104,11 +101,7 @@ export function KeyboardShortcuts() {
               <dd className="flex shrink-0 items-center gap-1 font-mono text-code text-ink">
                 {s.keys.map((k, i) => (
                   <span key={k} className="inline-flex items-center gap-1">
-                    {i > 0 ? (
-                      <span aria-hidden className="text-mute">
-                        {s.chord ? 'then' : '+'}
-                      </span>
-                    ) : null}
+                    {i > 0 ? <span className="text-mute">{s.chord ? 'then' : '+'}</span> : null}
                     <kbd className="rounded-xs border border-hairline bg-canvas-soft px-1.5 py-0.5 text-caption text-ink-strong">
                       {k}
                     </kbd>
