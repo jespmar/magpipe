@@ -93,6 +93,13 @@ export function AgentEditor({
     d.querySelector<HTMLElement>('[data-autofocus]')?.focus();
   }, []);
 
+  /** Close through the element: the `close` event fires `onClose`, and the browser restores focus. */
+  function dismiss() {
+    const d = ref.current;
+    if (d?.open) d.close();
+    else onClose();
+  }
+
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft((prev) => ({ ...prev, [key]: value }));
 
@@ -147,6 +154,7 @@ export function AgentEditor({
             method: 'POST',
             body: JSON.stringify(parsed.data),
           });
+      dismiss();
       onSaved(res.agent);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Saving failed. Try again.');
@@ -186,7 +194,7 @@ export function AgentEditor({
             </h2>
             <button
               type="button"
-              onClick={onClose}
+              onClick={dismiss}
               aria-label="Close"
               className="inline-flex size-8 items-center justify-center rounded-pill border border-hairline text-mute hover:text-ink-strong"
             >
@@ -422,7 +430,7 @@ export function AgentEditor({
               {agent ? (
                 confirmDelete ? (
                   <span className="flex flex-wrap items-center gap-2 text-body-sm text-ink">
-                    Remove {agent.name} from the flock?
+                    Remove {agent.name}?
                     <Button variant="danger" size="sm" onClick={remove} disabled={busy}>
                       {busy ? 'Removing…' : 'Remove'}
                     </Button>
@@ -442,17 +450,17 @@ export function AgentEditor({
                     onClick={() => setConfirmDelete(true)}
                     disabled={busy}
                   >
-                    Remove from the flock
+                    Remove agent
                   </Button>
                 )
               ) : null}
             </div>
             <div className="flex gap-2">
-              <Button variant="ghost" onClick={onClose} disabled={busy}>
+              <Button variant="ghost" onClick={dismiss} disabled={busy}>
                 Cancel
               </Button>
               <Button type="submit" variant="primary" disabled={busy} aria-busy={busy}>
-                {busy ? 'Saving…' : agent ? 'Save changes' : 'Add to the flock'}
+                {busy ? 'Saving…' : agent ? 'Save changes' : 'Add agent'}
               </Button>
             </div>
           </div>

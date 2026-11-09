@@ -182,7 +182,7 @@ export function ToolsScreen({
         tabIndex={-1}
         role="status"
         aria-live="polite"
-        className="min-h-5 text-body-sm text-mute focus:outline-none"
+        className="text-body-sm text-mute focus:outline-none"
       >
         {pending ? 'Updating…' : notice}
       </p>

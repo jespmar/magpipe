@@ -15,7 +15,8 @@ const SOLID_EYEBROW_MAX = 8;
 
 /** Eyebrow + h1 + one-liner, shared by every screen head (Agents, Runs, Tools, Memory). */
 export function PageHead({ eyebrow, title, description, meta, actions }: PageHeadProps) {
-  const solid = eyebrow.trim().length <= SOLID_EYEBROW_MAX;
+  const word = eyebrow.trim();
+  const solid = !/\s/.test(word) && word.length <= SOLID_EYEBROW_MAX;
   return (
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div className="flex min-w-0 flex-col gap-1.5">

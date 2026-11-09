@@ -1,7 +1,7 @@
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
-import { useMemo, useOptimistic, useState, useTransition } from 'react';
+import { useMemo, useOptimistic, useRef, useState, useTransition } from 'react';
 import { PageHead } from '@/components/ui/PageHead';
 import { Button } from '@/components/ui/Button';
 import { FilterPills } from '@/components/ui/FilterPills';
@@ -76,6 +76,7 @@ export function AgentsScreen({
   );
   const [pending, startTransition] = useTransition();
   const [notice, setNotice] = useState<string | null>(null);
+  const status = useRef<HTMLParagraphElement>(null);
   // The optimistic roster holds what the operator just did until the refreshed server data lands.
   const [agents, optimistic] = useOptimistic(serverAgents, applyOptimistic);
 
@@ -154,21 +155,23 @@ export function AgentsScreen({
   function onSaved(saved: Agent) {
     const wasCreate = editor.mode === 'create';
     setEditor({ mode: 'closed' });
+    status.current?.focus();
     startTransition(() => {
       const stats = agents.find((a) => a.id === saved.id)?.stats ?? NO_STATS;
       optimistic({ type: 'upsert', agent: { ...saved, stats } });
       setSelectedId(saved.id);
-      setNotice(wasCreate ? 'Added to the flock.' : 'Changes saved.');
+      setNotice(wasCreate ? 'Agent added.' : 'Changes saved.');
       reload(addressFor(saved.slug));
     });
   }
 
   function onRemoved(id: string) {
     setEditor({ mode: 'closed' });
+    status.current?.focus();
     startTransition(() => {
       optimistic({ type: 'remove', id });
       setSelectedId(null);
-      setNotice('Removed from the flock.');
+      setNotice('Agent removed.');
       reload(addressFor(null));
     });
   }
@@ -201,7 +204,13 @@ export function AgentsScreen({
           value={filter}
           onChange={setFilter}
         />
-        <p role="status" aria-live="polite" className="text-body-sm text-mute">
+        <p
+          ref={status}
+          tabIndex={-1}
+          role="status"
+          aria-live="polite"
+          className="text-body-sm text-mute focus:outline-none"
+        >
           {pending ? 'Updating…' : notice}
         </p>
       </div>

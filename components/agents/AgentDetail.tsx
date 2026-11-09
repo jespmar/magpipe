@@ -78,7 +78,7 @@ export function AgentDetail({
           Tools
         </h3>
         {grants.length + agent.builtins.length === 0 ? (
-          <p className="text-body-sm text-mute">No tools granted — this bird can only think.</p>
+          <p className="text-body-sm text-mute">No tools granted.</p>
         ) : (
           <ul className="flex flex-wrap gap-2">
             {agent.builtins.map((b) => (
