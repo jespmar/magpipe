@@ -1,19 +1,22 @@
 import 'server-only';
 import { eq } from 'drizzle-orm';
 import { cache } from 'react';
-import { getDb } from './db';
+import { DbLockedError, getDb } from './db';
 import { agents, settings } from './db/schema';
 import { env } from './env';
 
+export type DbError = { kind: 'locked' | 'other'; message: string };
+
 export type ShellData = {
-  activeAgents: number;
+  /** null when the database is unavailable — the pill must not claim "0 active". */
+  activeAgents: number | null;
   region: string;
   workspaceName: string;
-  dbError: string | null;
+  dbError: DbError | null;
 };
 
 /**
- * What the app shell needs on every page: live-agent count for the nav pill and the footer
+ * What the app shell needs on every page: the live-agent count for the nav pill and the footer
  * region. Never throws — a database that cannot be opened degrades to a banner.
  */
 export const getShellData = cache(async (): Promise<ShellData> => {
@@ -33,10 +36,13 @@ export const getShellData = cache(async (): Promise<ShellData> => {
   } catch (err) {
     console.error('[shell] database unavailable:', err);
     return {
-      activeAgents: 0,
+      activeAgents: null,
       region: fallbackRegion,
       workspaceName: 'Magpipe',
-      dbError: err instanceof Error ? err.message : String(err),
+      dbError:
+        err instanceof DbLockedError
+          ? { kind: 'locked', message: err.message }
+          : { kind: 'other', message: err instanceof Error ? err.message : String(err) },
     };
   }
 });

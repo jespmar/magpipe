@@ -9,8 +9,9 @@ account. The database is Postgres running inside the app (PGlite).
 - Decisions (database, access, run engine, packaging): [`docs/decisions.md`](docs/decisions.md)
 
 > **Status: PR 1 — scaffold.** Shell, design tokens, routes, embedded database with
-> migrations, first-launch setup, demo data and the desktop wrapper are in place. Screen
-> bodies are placeholders naming the PR that fills them (spec §10).
+> migrations, first-launch setup, demo data and the desktop wrapper are in place. Screens whose
+> bodies are not built yet show an honest empty state in product voice — what will appear there,
+> the real numbers from your workspace, and what you can do now (spec §10 for the build order).
 
 ## Quick start
 

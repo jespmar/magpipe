@@ -16,7 +16,11 @@ export async function bootstrap(db: Db): Promise<boolean> {
 
   const seed = buildSeed();
   await db.transaction(async (tx) => {
-    await tx.insert(t.settings).values(seed.settings).onConflictDoNothing();
+    // The demo's region label belongs to the demo; a fresh workspace is simply local.
+    await tx
+      .insert(t.settings)
+      .values({ ...seed.settings, region: 'local' })
+      .onConflictDoNothing();
     await tx.insert(t.memoryNamespaces).values(seed.namespaces).onConflictDoNothing();
     // Tool grants come with the tools, which a fresh install does not have yet.
     await tx

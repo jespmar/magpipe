@@ -9,7 +9,7 @@ export type ButtonSize = 'sm' | 'md';
  */
 export function buttonClass(variant: ButtonVariant = 'outline', size: ButtonSize = 'md') {
   return clsx(
-    'inline-flex items-center justify-center gap-2 rounded-sm font-semibold whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+    'inline-flex items-center justify-center gap-2 rounded-sm font-semibold whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none',
     variant === 'run'
       ? 'px-4 py-2 text-button'
       : size === 'sm'

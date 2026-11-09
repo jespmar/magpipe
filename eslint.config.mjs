@@ -16,6 +16,9 @@ const config = [
       'next-env.d.ts',
       'playwright-report/**',
       'test-results/**',
+      // Third-party skill bundles (impeccable's engine scripts), not project code.
+      '.claude/**',
+      '.impeccable/**',
     ],
   },
   ...compat.extends('next/core-web-vitals', 'next/typescript'),
@@ -23,6 +26,15 @@ const config = [
     // The Electron main/preload processes are plain Node — no React/Next rules apply.
     files: ['electron/**/*.ts', 'scripts/**/*.mjs'],
     rules: { '@next/next/no-assign-module-variable': 'off' },
+  },
+  {
+    // `_prev`, `_formData`: an argument kept for its position (server-action signatures).
+    rules: {
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
+      ],
+    },
   },
   prettier,
 ];
