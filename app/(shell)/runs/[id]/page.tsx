@@ -8,7 +8,6 @@ import { getDb } from '@/lib/db';
 import { runs } from '@/lib/db/schema';
 import { formatDuration, formatTokens, plural, relativeTime } from '@/lib/format';
 import type { Run } from '@/lib/schemas';
-import { runStatusLabel } from '@/lib/text';
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -25,6 +24,7 @@ async function loadRun(displayId: string): Promise<Run | null | undefined> {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
   const run = await loadRun(id);
+  if (run === undefined) return { title: 'Flight not found' };
   return { title: run ? `${run.input.text} · ${id}` : id };
 }
 
@@ -46,7 +46,7 @@ export default async function RunDetailPage({ params }: Props) {
     );
   }
 
-  const birds = run.plan.filter((s) => s.agentId).length;
+  const agents = new Set(run.plan.map((s) => s.agentId).filter(Boolean)).size;
   return (
     <>
       <PageHead
@@ -54,7 +54,7 @@ export default async function RunDetailPage({ params }: Props) {
         title={run.input.text}
         meta={
           <>
-            <StatusPill variant={runStatusVariant(run.status)} label={runStatusLabel(run.status)} />
+            <StatusPill variant={runStatusVariant(run.status)} />
             <span>{run.displayId}</span>
             {run.durationMs !== null ? <span>took {formatDuration(run.durationMs)}</span> : null}
             <span>{formatTokens(run.usage.inputTokens + run.usage.outputTokens)} tokens</span>
@@ -64,7 +64,7 @@ export default async function RunDetailPage({ params }: Props) {
       />
       <EmptyState
         title="Flight path and log land here"
-        facts={[plural(run.plan.length, 'step'), plural(birds, 'bird')]}
+        facts={[plural(run.plan.length, 'step'), plural(agents, 'agent')]}
       >
         <p>
           Each step this flight took — which bird, what it did, with which tool, how many tokens —

@@ -11,7 +11,7 @@ export type Overview = {
   memory: { count: number; namespaces: number };
   runs: {
     count: number;
-    latest: { displayId: string; status: RunStatus; at: Date } | null;
+    latest: { displayId: string; text: string; status: RunStatus; at: Date } | null;
   };
   /** A workspace with nothing but the starter agents — the demo data is the obvious next step. */
   fresh: boolean;
@@ -36,6 +36,7 @@ export const getOverview = cache(async (): Promise<Overview | null> => {
         db
           .select({
             displayId: t.runs.displayId,
+            input: t.runs.input,
             status: t.runs.status,
             finishedAt: t.runs.finishedAt,
             createdAt: t.runs.createdAt,
@@ -56,6 +57,7 @@ export const getOverview = cache(async (): Promise<Overview | null> => {
         latest: latest
           ? {
               displayId: latest.displayId,
+              text: latest.input.text,
               status: latest.status,
               at: latest.finishedAt ?? latest.createdAt,
             }

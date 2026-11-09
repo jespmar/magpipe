@@ -4,6 +4,7 @@ import { signOut } from '@/auth';
 import { PageHead } from '@/components/ui/PageHead';
 import { Button } from '@/components/ui/Button';
 import { DemoDataForm } from '@/components/settings/DemoDataForm';
+import { ScrollToHash } from '@/components/ui/ScrollToHash';
 import { dataDir, getDb } from '@/lib/db';
 import { settings as settingsTable } from '@/lib/db/schema';
 import { buildSeed } from '@/lib/db/seed-data';
@@ -49,6 +50,7 @@ export default async function SettingsPage() {
   return (
     <>
       <PageHead eyebrow="Workspace" title="Settings" />
+      <ScrollToHash />
 
       <div className="grid gap-6 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] md:items-start wide:max-w-[1600px]">
         <Section id="workspace" title="Workspace" className="md:row-span-2">
@@ -67,7 +69,7 @@ export default async function SettingsPage() {
             title="Models"
             rows={[
               ['Orchestrator', settings?.models.orchestrator ?? dash],
-              ['Default for new birds', settings?.models.default ?? dash],
+              ['Default for new agents', settings?.models.default ?? dash],
             ]}
           />
           <Facts

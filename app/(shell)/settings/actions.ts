@@ -20,7 +20,7 @@ export async function loadDemoAction(_prev: DemoState, _formData: FormData): Pro
       status: 'done',
       message: `Loaded ${plural(n.tools, 'tool')}, ${plural(n.memory, 'memory', 'memories')} and ${plural(
         n.runs,
-        'finished flight',
+        'finished run',
       )}.`,
     };
   } catch (err) {

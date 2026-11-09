@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useActionState, useEffect, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
-import { Button } from '@/components/ui/Button';
+import { Button, ButtonLink } from '@/components/ui/Button';
 import { plural } from '@/lib/format';
 import { loadDemoAction, type DemoState } from '@/app/(shell)/settings/actions';
 
@@ -16,8 +16,8 @@ type Props = {
 
 /**
  * Load demo data, done properly: a confirm step before anything is written, a pending state
- * while it runs, the result spelled out in a live region that is always mounted (so it is
- * announced), and focus that follows the flow instead of falling to the page body.
+ * while it runs, the result in a live region that is always mounted (so it is announced), and
+ * focus that returns to the trigger button — a visible ring and the obvious next control.
  */
 export function DemoDataForm({ counts, disabledReason }: Props) {
   const router = useRouter();
@@ -25,14 +25,19 @@ export function DemoDataForm({ counts, disabledReason }: Props) {
     status: 'idle',
   });
   const [confirming, setConfirming] = useState(false);
-  const resultRef = useRef<HTMLParagraphElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const wasConfirming = useRef(false);
 
-  // When a result lands: close the confirm step, move focus to the result, and re-read the
-  // page's server data (the region label and other screens' facts come from what was loaded).
+  // Leaving the confirm step (Cancel or a result): focus goes back to the trigger.
+  useEffect(() => {
+    if (wasConfirming.current && !confirming) triggerRef.current?.focus();
+    wasConfirming.current = confirming;
+  }, [confirming]);
+
+  // When a result lands: close the confirm step and re-read the page's server data.
   useEffect(() => {
     if (state.status === 'idle') return;
     setConfirming(false);
-    resultRef.current?.focus();
     if (state.status === 'done') router.refresh();
   }, [state, router]);
 
@@ -54,13 +59,7 @@ export function DemoDataForm({ counts, disabledReason }: Props) {
   return (
     <div className="flex flex-col gap-3">
       {/* Always mounted so screen readers hear the change when the text arrives. */}
-      <p
-        ref={resultRef}
-        tabIndex={-1}
-        role="status"
-        aria-live="polite"
-        className="text-body-sm text-ink focus:outline-none"
-      >
+      <p role="status" aria-live="polite" className="text-body-sm text-ink">
         {state.status === 'done' ? (
           <>
             <span className="font-semibold text-emerald">Done.</span> {state.message}
@@ -73,9 +72,8 @@ export function DemoDataForm({ counts, disabledReason }: Props) {
         <form action={action} className="flex flex-col gap-3">
           <p className="text-body-sm text-ink">
             This adds {plural(counts.tools, 'example tool')},{' '}
-            {plural(counts.memory, 'memory', 'memories')} and{' '}
-            {plural(counts.runs, 'finished flight')}, and grants your birds their tools. Anything
-            you created yourself is left alone.
+            {plural(counts.memory, 'memory', 'memories')} and {plural(counts.runs, 'finished run')},
+            and grants your agents their tools. Anything you created yourself is left alone.
           </p>
           <div className="flex flex-wrap gap-2">
             <SubmitButton />
@@ -85,10 +83,15 @@ export function DemoDataForm({ counts, disabledReason }: Props) {
           </div>
         </form>
       ) : (
-        <div>
-          <Button variant="outline" size="sm" onClick={() => setConfirming(true)}>
+        <div className="flex flex-wrap gap-2">
+          <Button ref={triggerRef} variant="outline" size="sm" onClick={() => setConfirming(true)}>
             {state.status === 'idle' ? 'Load demo data' : 'Load it again'}
           </Button>
+          {state.status === 'done' ? (
+            <ButtonLink href="/runs" variant="ghost" size="sm">
+              See the flights
+            </ButtonLink>
+          ) : null}
         </div>
       )}
     </div>

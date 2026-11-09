@@ -5,7 +5,6 @@ import { ButtonLink } from '@/components/ui/Button';
 import { DemoLink } from '@/components/ui/DemoLink';
 import { plural, relativeTime } from '@/lib/format';
 import { getOverview } from '@/lib/overview';
-import { runStatusLabel } from '@/lib/text';
 
 export const metadata: Metadata = { title: 'Runs' };
 
@@ -35,11 +34,7 @@ export default async function RunsPage() {
       {latest ? (
         <EmptyState
           title={`${plural(ov.runs.count, 'flight')} on record`}
-          facts={[
-            `latest ${latest.displayId}`,
-            runStatusLabel(latest.status),
-            relativeTime(latest.at),
-          ]}
+          facts={[plural(ov.runs.count, 'run'), `latest ${latest.status}`, relativeTime(latest.at)]}
           actions={
             <ButtonLink href={`/runs/${latest.displayId}`} variant="outline">
               Open the latest flight
@@ -47,9 +42,9 @@ export default async function RunsPage() {
           }
         >
           <p>
-            The flight table — which birds flew, how long each flight took, what it cost — and each
-            flight’s step-by-step path land here next. Until then the latest flight opens from the
-            button below.
+            The flight table and each flight’s step-by-step path land here next. The latest flight
+            was “{latest.text}” — it {latest.status === 'done' ? 'finished' : latest.status}{' '}
+            {relativeTime(latest.at)}.
           </p>
         </EmptyState>
       ) : (

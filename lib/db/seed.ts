@@ -103,13 +103,8 @@ export async function loadDemo(db: Db, { reset = false } = {}) {
     await tx.insert(t.runs).values(seed.runs);
     await tx.insert(t.runEvents).values(seed.runEvents);
 
-    await tx
-      .insert(t.settings)
-      .values(seed.settings)
-      .onConflictDoUpdate({
-        target: t.settings.id,
-        set: { region: seed.settings.region, updatedAt: seed.settings.updatedAt },
-      });
+    // Workspace settings are the operator's, not the demo's: insert only if somehow missing.
+    await tx.insert(t.settings).values(seed.settings).onConflictDoNothing();
 
     // New runs continue after the seeded flight ids.
     await tx.execute(

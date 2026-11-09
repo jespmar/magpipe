@@ -71,18 +71,21 @@ function DbBanner({ error }: { error: DbError }) {
       className="border-b border-[rgba(251,191,36,0.35)] bg-[rgba(251,191,36,0.06)]"
     >
       <div className="shell-container flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-2.5 text-body-sm text-ink">
-        <p className="max-w-[31rem]">
-          <span className="font-semibold text-warn">
-            {locked
-              ? 'Another Magpipe window is using this data folder.'
-              : 'Magpipe can’t open its database.'}
-          </span>{' '}
-          {locked ? 'Close it, then try again.' : error.message}{' '}
-          <span className="text-body">
+        <div className="flex flex-col gap-0.5">
+          <p className="max-w-[31rem]">
+            <span className="font-semibold text-warn">
+              {locked
+                ? 'Another Magpipe window is using this data folder.'
+                : 'Magpipe can’t open its database.'}
+            </span>{' '}
+            {locked ? 'Close it, then try again.' : error.message}
+          </p>
+          {/* The path is a token, not prose: wrap only where it must, never mid-word by default. */}
+          <p className="max-w-[40rem] [overflow-wrap:anywhere] text-body">
             Data folder:{' '}
-            <code className="font-mono text-code break-all text-ink select-all">{dataDir()}</code>
-          </span>
-        </p>
+            <code className="font-mono text-code text-ink select-all">{dataDir()}</code>
+          </p>
+        </div>
         <RetryButton />
       </div>
     </div>

@@ -24,11 +24,11 @@ export default async function HomePage() {
     );
   }
 
-  // Fact lines use the precise nouns; the metaphor stays in headings.
+  // Fact lines use the precise nouns; the metaphor stays in headings and prose.
   const facts = [
     plural(ov.agents.count, 'agent'),
-    ov.runs.latest ? plural(ov.runs.count, 'flight') : 'no flights yet',
-    ov.runs.latest ? `last flight ${relativeTime(ov.runs.latest.at)}` : null,
+    ov.runs.latest ? plural(ov.runs.count, 'run') : 'no runs yet',
+    ov.runs.latest ? `last run ${relativeTime(ov.runs.latest.at)}` : null,
     plural(ov.memory.count, 'memory', 'memories'),
   ].filter((f): f is string => f !== null);
 
@@ -43,7 +43,7 @@ export default async function HomePage() {
             <ButtonLink href="/agents" variant="outline">
               Meet the flock
             </ButtonLink>
-            {ov.fresh ? <DemoLink variant="ghost" /> : null}
+            {ov.fresh ? <DemoLink /> : null}
           </>
         }
       >
