@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { DemoDataForm } from '@/components/settings/DemoDataForm';
 import { dataDir, getDb } from '@/lib/db';
 import { settings as settingsTable } from '@/lib/db/schema';
+import { buildSeed } from '@/lib/db/seed-data';
 import { env } from '@/lib/env';
 import { accessMode } from '@/lib/auth-mode';
 import { currentUser } from '@/lib/session';
@@ -38,6 +39,12 @@ export default async function SettingsPage() {
   ]);
   const mode = accessMode();
   const dash = '—';
+  const seed = buildSeed();
+  const demoCounts = {
+    tools: seed.tools.length,
+    memory: seed.memory.length,
+    runs: seed.runs.length,
+  };
 
   return (
     <>
@@ -45,6 +52,9 @@ export default async function SettingsPage() {
 
       <div className="grid gap-6 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] md:items-start wide:max-w-[1600px]">
         <Section id="workspace" title="Workspace" className="md:row-span-2">
+          <p className="text-body-sm text-body">
+            Read-only for now — editing these lands with the screens that need them.
+          </p>
           <Facts
             title="Identity"
             rows={[
@@ -79,6 +89,7 @@ export default async function SettingsPage() {
             alone.
           </p>
           <DemoDataForm
+            counts={demoCounts}
             disabledReason={
               shell.dbError
                 ? 'Needs the database — see the notice at the top of the page.'
@@ -123,8 +134,10 @@ function Section({
 }) {
   return (
     <section
+      id={id}
       aria-labelledby={`${id}-title`}
-      className={`flex flex-col gap-5 rounded-md border border-hairline bg-(image:--g-card) p-6 ${className ?? ''}`}
+      // scroll-mt clears the sticky header when linked as /settings#demo
+      className={`flex scroll-mt-24 flex-col gap-5 rounded-md border border-hairline bg-(image:--g-card) p-6 ${className ?? ''}`}
     >
       <h2 id={`${id}-title`} className="text-display-sm text-ink-strong">
         {title}

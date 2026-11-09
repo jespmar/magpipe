@@ -2,10 +2,11 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { eq } from 'drizzle-orm';
 import { PageHead } from '@/components/ui/PageHead';
-import { EmptyState } from '@/components/ui/EmptyState';
+import { EmptyState, UnavailableState } from '@/components/ui/EmptyState';
+import { runStatusVariant, StatusPill } from '@/components/ui/StatusPill';
 import { getDb } from '@/lib/db';
 import { runs } from '@/lib/db/schema';
-import { formatDuration, formatTokens, relativeTime } from '@/lib/format';
+import { formatDuration, formatTokens, plural, relativeTime } from '@/lib/format';
 import type { Run } from '@/lib/schemas';
 import { runStatusLabel } from '@/lib/text';
 
@@ -27,6 +28,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return { title: run ? `${run.input.text} · ${id}` : id };
 }
 
+/**
+ * No `loading.tsx` wraps this route on purpose: a streaming boundary above a page that calls
+ * `notFound()` would send a 200 before the 404 is known.
+ */
 export default async function RunDetailPage({ params }: Props) {
   const { id } = await params;
   const run = await loadRun(id);
@@ -36,29 +41,30 @@ export default async function RunDetailPage({ params }: Props) {
     return (
       <>
         <PageHead eyebrow="Flight" title={id} />
-        <EmptyState title="This flight can’t be read right now">
-          <p>The database is unavailable — see the notice at the top of the page.</p>
-        </EmptyState>
+        <UnavailableState />
       </>
     );
   }
 
-  const meta = [
-    run.displayId,
-    runStatusLabel(run.status),
-    run.durationMs !== null ? formatDuration(run.durationMs) : null,
-    `${formatTokens(run.usage.inputTokens + run.usage.outputTokens)} tokens`,
-    run.startedAt ? `started ${relativeTime(run.startedAt)}` : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
-
+  const birds = run.plan.filter((s) => s.agentId).length;
   return (
     <>
-      <PageHead eyebrow="Flight" title={run.input.text} meta={meta} />
+      <PageHead
+        eyebrow="Flight"
+        title={run.input.text}
+        meta={
+          <>
+            <StatusPill variant={runStatusVariant(run.status)} label={runStatusLabel(run.status)} />
+            <span>{run.displayId}</span>
+            {run.durationMs !== null ? <span>took {formatDuration(run.durationMs)}</span> : null}
+            <span>{formatTokens(run.usage.inputTokens + run.usage.outputTokens)} tokens</span>
+            {run.startedAt ? <span>started {relativeTime(run.startedAt)}</span> : null}
+          </>
+        }
+      />
       <EmptyState
         title="Flight path and log land here"
-        facts={[`${run.plan.length} steps`, `${run.plan.filter((s) => s.agentId).length} birds`]}
+        facts={[plural(run.plan.length, 'step'), plural(birds, 'bird')]}
       >
         <p>
           Each step this flight took — which bird, what it did, with which tool, how many tokens —

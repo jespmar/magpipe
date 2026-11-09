@@ -4,8 +4,8 @@ type PageHeadProps = {
   eyebrow: string;
   title: string;
   description?: string;
-  /** Mono facts line under the title, e.g. `flight_8f3972 · done · 11:05`. */
-  meta?: string;
+  /** Facts under the title (status pill, id, duration, …), laid out as one mono line. */
+  meta?: ReactNode;
   /** Search input, primary action, … — right-aligned, wraps under the title when narrow. */
   actions?: ReactNode;
 };
@@ -23,7 +23,11 @@ export function PageHead({ eyebrow, title, description, meta, actions }: PageHea
           {eyebrow}
         </span>
         <h1 className="page-title">{title}</h1>
-        {meta ? <p className="font-mono text-code text-mute">{meta}</p> : null}
+        {meta ? (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-1 font-mono text-code text-mute">
+            {meta}
+          </div>
+        ) : null}
         {description ? <p className="max-w-[31rem] text-body-sm text-body">{description}</p> : null}
       </div>
       {actions ? <div className="flex flex-wrap items-center gap-3">{actions}</div> : null}

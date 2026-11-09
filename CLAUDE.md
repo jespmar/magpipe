@@ -43,6 +43,11 @@ engine and no sign-in on desktop.
   them as `kicker-above-heading` / `gradient-text` / `overused-font`; those three are accepted
   (see `.impeccable/critique/ignore.md`). A single short eyebrow word renders solid
   (`PageHead` sets `data-solid`).
+- **Loading boundaries live per segment** (`loading.tsx` next to each list page, re-exporting
+  `PageSkeleton`), never at the `(shell)` level: a streaming boundary above a page that calls
+  `notFound()` answers 200 before the 404 is known. `runs/[id]` has none on purpose.
+- **Fact lines use the precise nouns** (agents, flights, memories); the metaphor (birds, the nest,
+  shiny bits) stays in headings, eyebrows and empty-state prose.
 - New public routes must be added to the matcher in `middleware.ts`; everything else is behind
   the desktop token (desktop) or a session (hosted).
 

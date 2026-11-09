@@ -13,11 +13,14 @@ export type Overview = {
     count: number;
     latest: { displayId: string; status: RunStatus; at: Date } | null;
   };
+  /** A workspace with nothing but the starter agents — the demo data is the obvious next step. */
+  fresh: boolean;
 };
 
 /**
  * The real numbers the holding screens show while their bodies are unbuilt. One request-cached
- * read; `null` when the database cannot be opened (the shell banner explains why).
+ * read; `null` when the database cannot be opened (the shell banner explains why, and every
+ * screen shows `UnavailableState` instead of claiming emptiness).
  */
 export const getOverview = cache(async (): Promise<Overview | null> => {
   try {
@@ -41,12 +44,15 @@ export const getOverview = cache(async (): Promise<Overview | null> => {
           .orderBy(desc(t.runs.createdAt))
           .limit(1),
       ]);
+    const toolCount = tools?.n ?? 0;
+    const memoryCount = memory?.n ?? 0;
+    const runCount = runs?.n ?? 0;
     return {
       agents: { count: agentRows.length, names: agentRows.map((a) => a.name) },
-      tools: { count: tools?.n ?? 0, needsAuth: toolsNeedingAuth?.n ?? 0 },
-      memory: { count: memory?.n ?? 0, namespaces: namespaces?.n ?? 0 },
+      tools: { count: toolCount, needsAuth: toolsNeedingAuth?.n ?? 0 },
+      memory: { count: memoryCount, namespaces: namespaces?.n ?? 0 },
       runs: {
-        count: runs?.n ?? 0,
+        count: runCount,
         latest: latest
           ? {
               displayId: latest.displayId,
@@ -55,6 +61,7 @@ export const getOverview = cache(async (): Promise<Overview | null> => {
             }
           : null,
       },
+      fresh: toolCount === 0 && memoryCount === 0 && runCount === 0,
     };
   } catch {
     return null;

@@ -28,6 +28,8 @@ export function BrandLink() {
       >
         Magpipe
       </span>
+      {/* The pause keeps the accessible name from reading "Magpipeagent orchestrator". */}
+      <span className="sr-only">, </span>
       <span className="ml-1 hidden text-caption font-medium text-mute sm:inline">
         agent orchestrator
       </span>
