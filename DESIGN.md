@@ -330,6 +330,8 @@ white disc.
 - **Glyph tile:** 40 px square, 8 px radius, Hairline on Canvas Soft, a mono 12/550 two-letter
   glyph — a tool's face, as the avatar disc is an agent's. Inside a card it is the one square
   among discs.
+- **Progress bar:** a 4 px Canvas Soft track with the white→cyan progress gradient as its fill —
+  the one gradient allowed to mean a quantity (verified share of the nest). No rings.
 
 ### Inputs / Fields
 

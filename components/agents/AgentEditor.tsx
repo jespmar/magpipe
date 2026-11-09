@@ -88,7 +88,9 @@ export function AgentEditor({
 
   useEffect(() => {
     const d = ref.current;
-    if (d && !d.open) d.showModal();
+    if (!d) return;
+    if (!d.open) d.showModal();
+    d.querySelector<HTMLElement>('[data-autofocus]')?.focus();
   }, []);
 
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
@@ -212,7 +214,7 @@ export function AgentEditor({
                   value={draft.name}
                   onChange={(e) => set('name', e.target.value)}
                   required
-                  autoFocus
+                  data-autofocus=""
                 />
               </Field>
               <Field

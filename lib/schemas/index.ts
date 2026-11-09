@@ -308,6 +308,39 @@ export const toolConnectInput = toolFields
 /** PATCH /api/tools/[id]: any subset; a new token re-tests the connection. */
 export const toolPatch = toolFields.partial();
 
+/** A date (`2026-12-06`) or a full timestamp; `null` clears. */
+export const dateOrDatetime = z.union([z.iso.date(), z.iso.datetime({ offset: true })]);
+
+/** POST /api/memory — a fact written by the operator (spec §3.6, §7.3). */
+export const memoryInput = z.object({
+  ns: namespaceKey,
+  key: z.string().trim().min(1, 'Give the fact a key').max(200),
+  value: z.string().trim().min(1, 'Write the fact itself').max(4000),
+  confidence: z.number().min(0).max(1).default(1),
+  source: z.string().trim().max(200).default('you'),
+  expiresAt: dateOrDatetime.nullable().default(null),
+  data: z.unknown().optional(),
+});
+
+/** PATCH /api/memory/[id]: any subset; `verified: true` stamps verifiedAt and clears stale/conflict. */
+export const memoryPatch = z.object({
+  value: memoryInput.shape.value.optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  source: z.string().trim().max(200).optional(),
+  expiresAt: dateOrDatetime.nullable().optional(),
+  data: z.unknown().optional(),
+  verified: z.literal(true).optional(),
+});
+
+/** POST /api/memory/namespaces — namespaces are user-creatable (D8). */
+export const namespaceInput = z.object({
+  label: z.string().trim().min(1, 'Name the namespace').max(40),
+});
+
+export type MemoryInput = z.infer<typeof memoryInput>;
+export type MemoryPatch = z.infer<typeof memoryPatch>;
+export type NamespaceInput = z.infer<typeof namespaceInput>;
+
 export type ToolAuthInput = z.infer<typeof toolAuthInput>;
 export type ToolConnectInput = z.infer<typeof toolConnectInput>;
 export type ToolPatch = z.infer<typeof toolPatch>;

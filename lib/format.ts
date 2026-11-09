@@ -38,6 +38,27 @@ export function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
+/**
+ * The nest's "updated" column (spec §3.6): a clock time today, a weekday this week, then
+ * "12 d", "2 w", and a short date past two months.
+ */
+export function shortWhen(date: Date, now: Date = new Date()): string {
+  const ms = now.getTime() - date.getTime();
+  const days = ms / 86_400_000;
+  const sameDay = date.toDateString() === now.toDateString();
+  if (sameDay || (ms >= 0 && ms < 3_600_000)) {
+    return new Intl.DateTimeFormat('en', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(date);
+  }
+  if (days < 7) return new Intl.DateTimeFormat('en', { weekday: 'short' }).format(date);
+  if (days < 14) return `${Math.round(days)} d`;
+  if (days < 60) return `${Math.round(days / 7)} w`;
+  return new Intl.DateTimeFormat('en', { day: 'numeric', month: 'short' }).format(date);
+}
+
 /** `1,284` — whole numbers with thousands separators, for counts in mono. */
 export function formatCount(n: number): string {
   return Math.round(n).toLocaleString('en-US');

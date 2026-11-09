@@ -206,3 +206,21 @@ than the demo's `eu-north-1`, and the footer shows `desktop` when no region is c
   found (`connected`, `needs_auth`, `error` with `stats.lastError`), so the registry is honest
   from the first second. `POST /api/tools/test` probes without saving; `POST /api/tools/[id]/test`
   probes a saved tool again.
+
+## D14 · The nest on desktop: trust computed on read, versions kept, no nightly job
+
+- **No cron.** Spec §7.3 has a nightly job mark stale entries and drop expired ones. The desktop
+  app has no scheduler, so `stale` (verified more than 30 days ago) and `expired` are computed
+  when the nest is read, and Nest health counts them live. The stored `stale` flag stays as a
+  hint a job may set later; expired facts are kept and labelled, not dropped — the operator
+  forgets them.
+- **Writes are versions.** "+ Add fact" under an existing namespace/key does not fail on the
+  unique index: it becomes a new version of that fact — the previous value goes to `history`,
+  `verifiedAt` is stamped, and a confidence swing above 0.3 flags `conflict` (spec §6).
+  Editing a value or confidence does the same; "Mark verified" stamps `verifiedAt` and clears
+  stale and conflict. Human writes carry `writtenBy: 'user'`, shown as "you".
+- **Namespaces** are created from the nav (`POST /api/memory/namespaces`); the id is the slug
+  of the label. Deleting a namespace is not offered while entries reference it.
+- **Search.** `GET /api/memory?q=` combines the tsvector index (`websearch_to_tsquery`) with a
+  substring match on key and value, so dotted keys and partial words both hit; the screen
+  filters the loaded list client-side for instant narrowing.
