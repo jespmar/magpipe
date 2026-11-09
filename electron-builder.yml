@@ -14,6 +14,9 @@ files:
   - '**/*'
   - '!**/*.map'
 npmRebuild: false
+# With no certificate, ad-hoc sign the macOS app so a downloaded copy opens via right-click →
+# Open instead of being refused as "damaged" (scripts/adhoc-sign-mac.cjs).
+afterPack: scripts/adhoc-sign-mac.cjs
 
 extraResources:
   # server.js, .next/, public/ and the drizzle/ migrations.
