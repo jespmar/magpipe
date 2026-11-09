@@ -1,0 +1,138 @@
+'use client';
+
+import { clsx } from 'clsx';
+import { Avatar } from '@/components/ui/Avatar';
+import { formatDuration, formatTokens, shortWhen } from '@/lib/format';
+import { runAgentIds, type AgentChip } from '@/lib/runs-util';
+import type { Run, RunStatus } from '@/lib/schemas';
+
+type Props = {
+  runs: Run[];
+  agents: AgentChip[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  emptyMessage: string;
+  now: Date;
+  className?: string;
+};
+
+const STATUS_COLOR: Record<RunStatus, string> = {
+  running: 'text-cyan',
+  done: 'text-emerald',
+  failed: 'text-danger',
+  queued: 'text-mute',
+  cancelled: 'text-mute',
+};
+
+/**
+ * The flight ledger (spec §3.4): flight · task · agents · status · duration · tokens · started.
+ * Twelve columns on a 900 px floor, so narrow windows scroll the table sideways instead of
+ * folding its facts.
+ */
+export function RunTable({
+  runs,
+  agents,
+  selectedId,
+  onSelect,
+  emptyMessage,
+  now,
+  className,
+}: Props) {
+  return (
+    <section
+      aria-label="Runs"
+      className={clsx(
+        // `relative` keeps the rows' visually hidden labels inside this scroll box; otherwise
+        // they position against the document and widen the page on narrow screens.
+        'relative min-w-0 overflow-x-auto rounded-md border border-hairline bg-(image:--g-card)',
+        className,
+      )}
+    >
+      {runs.length === 0 ? (
+        <p className="px-4 py-8 text-body-sm text-body">{emptyMessage}</p>
+      ) : (
+        <div className="min-w-[900px]">
+          <div className="grid grid-cols-12 gap-3 border-b border-hairline bg-canvas-soft px-4 py-3 label-caps">
+            <span className="col-span-2">Flight</span>
+            <span className="col-span-4">Task</span>
+            <span className="col-span-2">Agents</span>
+            <span>Status</span>
+            <span className="text-right">Duration</span>
+            <span className="text-right">Tokens</span>
+            <span className="text-right">Started</span>
+          </div>
+          <ul>
+            {runs.map((r) => {
+              const on = r.id === selectedId;
+              const birds = runAgentIds(r)
+                .map((id) => agents.find((a) => a.id === id))
+                .filter((a): a is AgentChip => a !== undefined);
+              const tokens = r.usage.inputTokens + r.usage.outputTokens;
+              return (
+                <li key={r.id} className="group">
+                  <button
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => onSelect(r.id)}
+                    className={clsx(
+                      'grid w-full grid-cols-12 items-center gap-3 border-b border-l-2 border-b-hairline-soft px-4 py-3 text-left transition-colors group-last:border-b-0 hover:bg-[rgba(255,255,255,0.03)] focus-visible:-outline-offset-3',
+                      on ? 'border-l-cyan bg-[rgba(34,193,220,0.06)]' : 'border-l-transparent',
+                    )}
+                  >
+                    <span className="col-span-2 truncate font-mono text-code text-code-ink">
+                      {r.displayId}
+                    </span>
+                    <span className="col-span-4 truncate text-body-sm text-ink">
+                      {r.input.text}
+                    </span>
+                    <span className="col-span-2 flex items-center gap-1">
+                      {birds.length === 0 ? (
+                        <span className="font-mono text-caption text-mute">—</span>
+                      ) : (
+                        birds.slice(0, 4).map((a) => (
+                          <span key={a.id} className="inline-flex">
+                            <Avatar initials={a.initials} size={24} />
+                            <span className="sr-only">{a.name}</span>
+                          </span>
+                        ))
+                      )}
+                      {birds.length > 4 ? (
+                        <span className="font-mono text-caption text-mute">
+                          +{birds.length - 4}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span
+                      className={clsx(
+                        'inline-flex items-center gap-1.5 text-caption font-medium',
+                        STATUS_COLOR[r.status],
+                      )}
+                    >
+                      <span
+                        aria-hidden
+                        className={clsx(
+                          'size-1.5 shrink-0 rounded-pill bg-current',
+                          r.status === 'running' && 'motion-safe:animate-blink',
+                        )}
+                      />
+                      {r.status}
+                    </span>
+                    <span className="text-right font-mono text-code text-body">
+                      {r.durationMs !== null ? formatDuration(r.durationMs) : '—'}
+                    </span>
+                    <span className="text-right font-mono text-code text-body">
+                      {tokens > 0 ? formatTokens(tokens) : '—'}
+                    </span>
+                    <span className="text-right font-mono text-code text-mute">
+                      {shortWhen(r.startedAt ?? r.createdAt, now)}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+}

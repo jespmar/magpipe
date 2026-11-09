@@ -35,10 +35,44 @@ test('the prompt window names a missing task, attaches a file and starts a fligh
   await expect(page).toHaveURL(/\/runs\/flight_[0-9a-z]+$/, { timeout: 15_000 });
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(task);
   await expect(page.getByText('Flight', { exact: true })).toBeVisible();
+  // Without model credentials the flight fails at once and its log says why.
+  await expect(page.getByRole('log')).toContainText('No model credentials', { timeout: 15_000 });
+  await expect(page.getByRole('region', { name: 'Result' })).toContainText('No model credentials');
 
   // Home now counts the run: the nest no longer says there are none.
   await page.goto('/');
   await expect(
     page.getByRole('region', { name: 'The nest' }).getByText('no runs yet'),
   ).toBeHidden();
+});
+
+test('the flight table filters, finds the flight, shows its path and re-flies it', async ({
+  page,
+}) => {
+  await page.goto('/runs');
+  const table = page.getByRole('region', { name: 'Runs' });
+  await expect(table.getByRole('listitem').first()).toBeVisible();
+
+  // The Failed pill keeps only failed flights.
+  await page.getByRole('button', { name: /^Failed/ }).click();
+  await expect(table.getByText('failed', { exact: true }).first()).toBeVisible();
+  await expect(table.getByText('done', { exact: true })).toHaveCount(0);
+
+  // Search narrows to the flight started from the prompt window.
+  await page.getByLabel('Search runs').fill('Summarise the attached note');
+  await expect(table.getByRole('listitem')).toHaveCount(1);
+  await table.getByRole('button').first().click();
+  const selected = page.getByRole('region', { name: /Summarise the attached note/ });
+  await expect(selected).toBeVisible();
+  await expect(selected.getByRole('link', { name: 'Open log' })).toHaveAttribute(
+    'href',
+    /\/runs\/flight_[0-9a-z]+$/,
+  );
+  await expect(selected.getByText('No steps were planned.')).toBeVisible();
+
+  // Re-fly starts a new flight with the same input and lands on it.
+  await selected.getByRole('button', { name: 'Re-fly' }).click();
+  await expect(page).toHaveURL(/\/runs\/flight_[0-9a-z]+$/, { timeout: 15_000 });
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(/Summarise the attached note/);
+  await expect(page.getByRole('log')).toContainText('No model credentials', { timeout: 15_000 });
 });

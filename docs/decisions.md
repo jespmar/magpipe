@@ -289,3 +289,27 @@ once per server start.
 - **The orb** is pure CSS: rings as percentage insets so one markup scales 260 → 400 px, the
   orbit and arc under `motion-safe:`, the grid behind it on a masked pseudo-element so the mask
   never fades the text over it.
+
+## D17 · The Runs screens as built (PR 7)
+
+- **The ledger is the hundred most recent runs**, filtered and searched on the client
+  (`matchesRunFilter`, `matchesRunQuery` over task, flight id and agent names); the pill counts
+  come from the server's status counts. The stats strip (`runsStats`) counts and prices today's
+  runs and judges the last seven days: succeeded = done / (done + failed) over finished runs,
+  median duration over finished runs' `durationMs`; a number with nothing behind it shows "—".
+- **Selection is transient state** (CLAUDE.md): `?run=<displayId>` is read once at load, the
+  address never changes while picking rows. The selected flight's card carries Open log · Re-fly
+  (· Cancel while live) and the plan as a chain of step cards (`RunFlightPath`): one markup,
+  horizontal with arrows below 1600 px and a vertical timeline from there, via `wide:` classes.
+- **Step cards say their state** in colour and in words: done = emerald dot and `tokens · mm:ss`,
+  live = cyan edge and fill with `running · elapsed`, failed = red with the error code, todo =
+  `waiting`, skipped = `skipped` on a dashed card.
+- **The flight page** tails the run with `RunEventLog` (server replay merged with the stream by
+  `seq`, following unless the pointer rests on it) and schedules a throttled `router.refresh()`
+  per event so the head facts and the path keep up; `useLiveRefresh` does the same for the list
+  while any run is live. A failed run's last error is quoted in the Result card.
+- **The result is rendered from markdown** with `react-markdown` + `remark-gfm`, mapped onto the
+  type scale (no raw HTML is rendered); files produced are listed by name and path (no download
+  route yet). The page title is the task cut at 140 characters; the Input card holds it whole.
+- **Re-fly and Cancel** call the PR 5 routes: Re-fly lands on the new flight, Cancel refreshes
+  and quotes the server's 409 reason when the run already ended.
