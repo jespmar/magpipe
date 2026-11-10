@@ -230,7 +230,7 @@ describe('claude code backend', () => {
     ).toBe('no_api_key');
     expect(
       failureFrom({ type: 'result', is_error: true, result: 'Authentication error' }, 'X').message,
-    ).toBe(CLI_LOGIN_MESSAGE);
+    ).toContain(CLI_LOGIN_MESSAGE);
     expect(
       failureFrom({ type: 'result', is_error: true, subtype: 'error_max_turns' }, 'X').code,
     ).toBe('limit_steps');

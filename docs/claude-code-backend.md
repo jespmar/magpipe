@@ -63,16 +63,19 @@ export interface RunBackend {
 Per step, one child process in the run's sandbox folder (so `Read` sees the attachments):
 
 ```
-claude -p --bare --output-format stream-json --verbose
+claude -p --setting-sources "" --no-session-persistence --disable-slash-commands
+  --output-format stream-json --verbose
   --model <agent.model>
   --system-prompt <the same system text runStep builds today>
   --tools <built-ins by grant, or "" for none>
   --allowedTools <the same list> mcp__magpipe__*
   --disallowedTools Bash Edit Write NotebookEdit
   --permission-mode dontAsk
-  --max-turns <agent.limits.maxSteps>
   --mcp-config '<inline JSON for the Magpipe MCP server>' --strict-mcp-config
 ```
+
+(As built: `--bare` is out because it never reads the keychain login; the limits are enforced
+from the stream because print mode has no turn cap. D22 lists every deviation.)
 
 - **Grants map onto CLI tools:** `web.search` → `WebSearch`, `web.fetch` → `WebFetch`,
   `files.read` → `Read`, `Glob`, `Grep` (confined to the sandbox by `--bare`). Anything else is

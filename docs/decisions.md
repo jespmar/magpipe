@@ -440,8 +440,17 @@ once per server start.
   (3) The CLI gets a clean environment: no `MAGPIPE_*`, no `ANTHROPIC_*` (so a key left in
   `magpipe.env` cannot silently switch the billing), no nested-session markers. (4) A failed
   result arrives as `is_error: true` even with `subtype: success`, so `is_error` is the check.
-- **Still to confirm on a signed-in machine:** that `--system-prompt` replaces the CLI's own
-  prompt in print mode, the name of the field that carries `--json-schema` output (the adapter
-  reads `structured_output` and falls back to the result text), and whether a Claude
-  subscription may power this use at all. The tests run against a fake `claude`
-  (`tests/stubs/claude.mjs`) that speaks the shapes observed here.
+- **A fifth deviation, found on the first signed-in flight:** `--bare` never reads the keychain
+  ("Anthropic auth is strictly ANTHROPIC_API_KEY"), so a subscription login looked signed out.
+  The CLI now runs without it and is kept to itself with `--setting-sources ""` (no user,
+  project or local settings: no hooks, plugins or model overrides), `--no-session-persistence`
+  (no transcript on disk) and `--disable-slash-commands`, plus `--strict-mcp-config` as before.
+- **Confirmed against CLI 2.1.322 with a signed-in login:** `--system-prompt` replaces the
+  CLI's own prompt entirely in print mode; `--json-schema` output arrives in
+  `structured_output` (the result text carries the same JSON); `stream-json` carries every
+  assistant message with its content blocks and usage, plus bookkeeping lines the adapter
+  ignores; a dead MCP server costs the call its tools, not the call. The tests run against a
+  fake `claude` (`tests/stubs/claude.mjs`) that speaks these shapes; `tests/real-claude.test.ts`
+  runs the same step through the real CLI when `REAL_CLAUDE=1` and is skipped otherwise, so the
+  suite still needs no credentials. Whether a Claude subscription may power this use is a
+  question for its terms, not for the code.

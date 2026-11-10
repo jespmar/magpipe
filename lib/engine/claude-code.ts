@@ -27,13 +27,13 @@ export type ClaudeCli = {
   version?: string;
 };
 
-/** The oldest CLI the adapter was built against: print mode with `--bare`, `--json-schema` and `--strict-mcp-config`. */
+/** The oldest CLI the adapter was built against: print mode with `--json-schema`, `--setting-sources` and `--strict-mcp-config`. */
 export const CLI_MIN_VERSION = '2.1.0';
 
 export const CLI_MISSING_MESSAGE =
   'Claude Code was not found on this machine. Install it, or set MAGPIPE_CLAUDE_PATH in magpipe.env (File → Open Config File) to the claude command; to use the API instead, set MAGPIPE_MODEL_BACKEND=api and ANTHROPIC_API_KEY. Then restart Magpipe.';
 export const CLI_LOGIN_MESSAGE =
-  'Claude Code is not signed in. Run `claude` once in Terminal, sign in, then try again.';
+  'Claude Code could not sign in. Run `claude` once in Terminal, sign in, then try again.';
 
 /** The MCP server name Claude Code sees; its tools arrive as `mcp__magpipe__<name>`. */
 const MCP_SERVER = 'magpipe';
@@ -224,7 +224,8 @@ export function failureFrom(res: CliResult, who: string): EngineError {
   if (
     /authentication|not logged in|log ?in|sign ?in|invalid api key|oauth|credential/i.test(text)
   ) {
-    return new EngineError('no_api_key', CLI_LOGIN_MESSAGE);
+    // The CLI's own words stay in the line: they say which credential source it tried.
+    return new EngineError('no_api_key', `${CLI_LOGIN_MESSAGE} Claude Code said: ${text}`);
   }
   if (res.subtype === 'error_max_turns') {
     return new EngineError('limit_steps', `${who} used all of its allowed tool rounds.`);
@@ -356,7 +357,18 @@ function selfUrl(): string {
   return `http://127.0.0.1:${process.env.PORT ?? '3456'}`;
 }
 
-const COMMON_ARGS = ['-p', '--bare'];
+/**
+ * Print mode, kept to itself: no user, project or local settings (so no hooks, plugins or model
+ * overrides), no skills, no transcript on disk. Not `--bare`: bare mode never reads the
+ * keychain, so a subscription login would look signed out (observed on CLI 2.1.322).
+ */
+const COMMON_ARGS = [
+  '-p',
+  '--setting-sources',
+  '',
+  '--no-session-persistence',
+  '--disable-slash-commands',
+];
 
 /** Text and tool blocks of one stream line, in Claude Code's message shape. */
 type Block = {
