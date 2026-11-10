@@ -108,123 +108,123 @@ export default async function SettingsPage() {
       <ScrollToHash />
 
       <div className="grid gap-6 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] md:items-start wide:max-w-[1600px]">
-        <Section id="workspace" title="Workspace" className="md:row-span-3">
-          <p className="text-body-sm text-body">
-            Read-only for now. Editing these lands with the screens that need them.
-          </p>
-          <Facts
-            title="Identity"
-            rows={[
-              ['Name', settings?.workspaceName ?? dash],
-              ['Region label', env.MAGPIPE_REGION ?? settings?.region ?? dash],
-            ]}
-          />
-          <Facts
-            title="Models"
-            rows={[
-              ['Orchestrator', settings?.models.orchestrator ?? dash],
-              ['Default for new agents', settings?.models.default ?? dash],
-              ...backendRows,
-            ]}
-            note={
-              backend.problem ??
-              'Runs go through the Claude Code on this machine unless magpipe.env sets MAGPIPE_MODEL_BACKEND=api with a key.'
-            }
-          />
-          <Facts
-            title="Storage"
-            rows={[
-              ['Data folder', dataDir()],
-              ...(env.MAGPIPE_CONFIG_PATH
-                ? [['Config file', env.MAGPIPE_CONFIG_PATH] as const]
-                : []),
-            ]}
-            note="Everything Magpipe knows lives in the data folder. To back up, copy it while Magpipe is closed."
-          />
-        </Section>
-
-        <Section id="spend" title="Spend cap">
-          <p className="text-body-sm text-body">
-            Once today’s spend reaches the cap, runs stop before their next step. Steps already
-            working finish.
-          </p>
-          <Facts
-            rows={[
-              [
-                'Spent today',
-                spend
-                  ? `${formatUsd(spend.spentUsd)} ${spend.capUsd ? 'of' : '·'} ${capText(spend.capUsd)}`
-                  : dash,
-              ],
-            ]}
-          />
-          {spend && capReached(spend) ? (
-            <p className="text-body-sm text-warn">
-              Today’s spend has reached the cap. Raise it to start runs again today.
+        {/* Two columns that stack on their own, so no card leaves a hole beside a taller one. */}
+        <div className="flex min-w-0 flex-col gap-6">
+          <Section id="workspace" title="Workspace">
+            <p className="text-body-sm text-body">
+              Read-only for now. Editing these lands with the screens that need them.
             </p>
-          ) : null}
-          <SpendCapForm
-            capUsd={settings?.spendCapUsd ?? 0}
-            disabledReason={
-              settings ? undefined : 'Needs the database. See the notice at the top of the page.'
-            }
-          />
-          <p className="text-caption text-mute">{SPEND_COUNTS[backend.backend]}</p>
-        </Section>
-
-        <Section id="demo" title="Demo data">
-          <p className="text-body-sm text-body">
-            Example tools, memory and finished flights from the design, so every screen has
-            something to show. Loading it again refreshes the examples and leaves your own data
-            alone.
-          </p>
-          <DemoDataForm
-            counts={demoCounts}
-            disabledReason={
-              shell.dbError
-                ? 'Needs the database. See the notice at the top of the page.'
-                : undefined
-            }
-          />
-        </Section>
-
-        <Section id="flock" title="Development flock">
-          <p className="text-body-sm text-body">
-            Five birds for software work on one repository: Researcher reads, Planner writes a plan
-            file, Coder commits on a branch, Verifier runs the checks and Reviewer reads the diff.
-            None of them pushes or merges; that stays with you. Loading it again puts them back as
-            written.
-          </p>
-          <FlockForm
-            defaultScripts={DEFAULT_FLOCK_SCRIPTS}
-            decisions={FLOCK_DECISIONS.length}
-            disabledReason={
-              shell.dbError
-                ? 'Needs the database. See the notice at the top of the page.'
-                : undefined
-            }
-          />
-        </Section>
-
-        <Section id="access" title="Access">
-          <p className="text-body-md text-ink-strong">
-            {user?.name ?? user?.email ?? 'Unknown'}
-            <span className="text-mute"> · {MODE_LABEL[mode]}</span>
-          </p>
-          {mode === 'signin' ? (
-            <form
-              action={async () => {
-                'use server';
-                await signOut({ redirectTo: '/signin' });
-              }}
-            >
-              <Button type="submit" variant="secondary" size="sm">
-                Sign out
-              </Button>
-            </form>
-          ) : null}
-        </Section>
-
+            <Facts
+              title="Identity"
+              rows={[
+                ['Name', settings?.workspaceName ?? dash],
+                ['Region label', env.MAGPIPE_REGION ?? settings?.region ?? dash],
+              ]}
+            />
+            <Facts
+              title="Models"
+              rows={[
+                ['Orchestrator', settings?.models.orchestrator ?? dash],
+                ['Default for new agents', settings?.models.default ?? dash],
+                ...backendRows,
+              ]}
+              note={
+                backend.problem ??
+                'Runs go through the Claude Code on this machine unless magpipe.env sets MAGPIPE_MODEL_BACKEND=api with a key.'
+              }
+            />
+            <Facts
+              title="Storage"
+              rows={[
+                ['Data folder', dataDir()],
+                ...(env.MAGPIPE_CONFIG_PATH
+                  ? [['Config file', env.MAGPIPE_CONFIG_PATH] as const]
+                  : []),
+              ]}
+              note="Everything Magpipe knows lives in the data folder. To back up, copy it while Magpipe is closed."
+            />
+          </Section>
+          <Section id="access" title="Access">
+            <p className="text-body-md text-ink-strong">
+              {user?.name ?? user?.email ?? 'Unknown'}
+              <span className="text-mute"> · {MODE_LABEL[mode]}</span>
+            </p>
+            {mode === 'signin' ? (
+              <form
+                action={async () => {
+                  'use server';
+                  await signOut({ redirectTo: '/signin' });
+                }}
+              >
+                <Button type="submit" variant="secondary" size="sm">
+                  Sign out
+                </Button>
+              </form>
+            ) : null}
+          </Section>
+        </div>
+        <div className="flex min-w-0 flex-col gap-6">
+          <Section id="spend" title="Spend cap">
+            <p className="text-body-sm text-body">
+              Once today’s spend reaches the cap, runs stop before their next step. Steps already
+              working finish.
+            </p>
+            <Facts
+              rows={[
+                [
+                  'Spent today',
+                  spend
+                    ? `${formatUsd(spend.spentUsd)} ${spend.capUsd ? 'of' : '·'} ${capText(spend.capUsd)}`
+                    : dash,
+                ],
+              ]}
+            />
+            {spend && capReached(spend) ? (
+              <p className="text-body-sm text-warn">
+                Today’s spend has reached the cap. Raise it to start runs again today.
+              </p>
+            ) : null}
+            <SpendCapForm
+              capUsd={settings?.spendCapUsd ?? 0}
+              disabledReason={
+                settings ? undefined : 'Needs the database. See the notice at the top of the page.'
+              }
+            />
+            <p className="text-caption text-mute">{SPEND_COUNTS[backend.backend]}</p>
+          </Section>
+          <Section id="demo" title="Demo data">
+            <p className="text-body-sm text-body">
+              Example tools, memory and finished flights from the design, so every screen has
+              something to show. Loading it again refreshes the examples and leaves your own data
+              alone.
+            </p>
+            <DemoDataForm
+              counts={demoCounts}
+              disabledReason={
+                shell.dbError
+                  ? 'Needs the database. See the notice at the top of the page.'
+                  : undefined
+              }
+            />
+          </Section>
+          <Section id="flock" title="Development flock">
+            <p className="text-body-sm text-body">
+              Five birds for software work on one repository: Researcher reads, Planner writes a
+              plan file, Coder commits on a branch, Verifier runs the checks and Reviewer reads the
+              diff. None of them pushes or merges; that stays with you. Loading it again puts them
+              back as written.
+            </p>
+            <FlockForm
+              defaultScripts={DEFAULT_FLOCK_SCRIPTS}
+              decisions={FLOCK_DECISIONS.length}
+              disabledReason={
+                shell.dbError
+                  ? 'Needs the database. See the notice at the top of the page.'
+                  : undefined
+              }
+            />
+          </Section>
+        </div>
         <Section id="orchestrator" title="Orchestrator" className="md:col-span-2">
           <p className="max-w-[31rem] text-body-sm text-body">
             Every run starts with a plan. The orchestrator writes it from these rules, the agents
