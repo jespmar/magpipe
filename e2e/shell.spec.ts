@@ -7,7 +7,9 @@ test('fresh workspace: nav reaches every screen, marks the active link, offers t
   page,
 }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { level: 1, name: 'Birds on the wire' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { level: 1, name: 'No agents flying right now' }),
+  ).toBeVisible();
   await expect(page.getByRole('link', { name: /Magpipe/ }).first()).toHaveAttribute(
     'aria-current',
     'page',
@@ -80,8 +82,11 @@ test('settings loads the demo data after a confirm step and reports the result',
   await page.goto('/runs');
   // The latest flight is selected by default; its path and log open from the same card.
   await page.getByRole('link', { name: 'Open log' }).click();
+  // First visit of the run page: the dev server compiles it while it also serves the ledger's
+  // replayed trail, so the landing can take a few seconds here; production answers in a beat.
+  await expect(page).toHaveURL(/\/runs\/flight_[0-9a-z]+$/, { timeout: 15_000 });
   await expect(page.getByRole('heading', { level: 1 })).not.toHaveText(/^flight_/);
-  await expect(page.getByText(/^took \d\d:\d\d$/)).toBeVisible();
+  await expect(page.getByText(/^took \d\d:\d\d$/)).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText('done', { exact: true }).first()).toBeVisible();
   await expect(
     page.getByRole('group', { name: 'Flight path' }).getByRole('listitem'),
@@ -96,7 +101,9 @@ test('unknown addresses keep the shell, answer 404, and offer a way back', async
   await expect(page.getByRole('heading', { level: 1, name: 'This bird flew off' })).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible();
   await page.getByRole('link', { name: 'Back to Magpipe' }).click();
-  await expect(page.getByRole('heading', { level: 1, name: 'Birds on the wire' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { level: 1, name: 'No agents flying right now' }),
+  ).toBeVisible();
 
   const run = await page.goto('/runs/flight_nope');
   expect(run?.status()).toBe(404);

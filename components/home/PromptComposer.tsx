@@ -152,7 +152,7 @@ export function PromptComposer() {
       }}
       onDrop={onDrop}
       // One box, not a card around a box: the field is the surface. Half the row at wide.
-      className="mx-auto flex w-full flex-col gap-3 wide:max-w-[50%]"
+      className="mx-auto flex w-full max-w-[56rem] flex-col gap-3 wide:max-w-[50%]"
     >
       <form
         noValidate

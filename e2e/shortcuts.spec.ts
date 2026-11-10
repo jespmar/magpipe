@@ -33,7 +33,9 @@ test('the shortcuts reach every screen and stay out of text fields', async ({ pa
 
   // `n` goes home with the cursor in the prompt, and the flag leaves the address.
   await page.keyboard.press('n');
-  await expect(page.getByRole('heading', { level: 1, name: 'Birds on the wire' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { level: 1, name: 'No agents flying right now' }),
+  ).toBeVisible();
   await expect(page.getByRole('textbox', { name: 'Ask Magpipe' })).toBeFocused();
   await expect.poll(() => new URL(page.url()).searchParams.has('focus')).toBe(false);
 

@@ -15,6 +15,10 @@ type Props = {
   run: Pick<Run, 'id' | 'status'>;
   initialEvents: FlightEvent[];
   agentNames: Record<string, string>;
+  /** Fetch the trail from the server even when the run is over (the stream replays, then ends). */
+  replay?: boolean;
+  /** `plain` drops the card frame, for a log that sits inside another card. */
+  frame?: 'card' | 'plain';
   className?: string;
 };
 
@@ -23,7 +27,14 @@ type Props = {
  * sequence, following the newest line unless the pointer rests on the list. Each streamed event
  * also re-reads the page's server data, so the path and the head keep up.
  */
-export function RunEventLog({ run, initialEvents, agentNames, className }: Props) {
+export function RunEventLog({
+  run,
+  initialEvents,
+  agentNames,
+  replay = false,
+  frame = 'card',
+  className,
+}: Props) {
   const router = useRouter();
   const [received, setReceived] = useState<FlightEvent[]>([]);
   const [endedAs, setEndedAs] = useState<RunStatus | null>(null);
@@ -35,15 +46,17 @@ export function RunEventLog({ run, initialEvents, agentNames, className }: Props
 
   useRunEvents({
     runId: run.id,
-    enabled: live,
+    enabled: live || replay,
     afterSeq: lastSeq,
+    // A replayed trail of a finished run changes nothing else on the page, so it must not
+    // refresh the router: a refresh racing a click on "Open log" would swallow the navigation.
     onEvent: (e) => {
       setReceived((prev) => [...prev, toFlightEvent(e, agentNames)]);
-      scheduleRefresh();
+      if (live) scheduleRefresh();
     },
     onEnd: (s) => {
       setEndedAs(s);
-      router.refresh();
+      if (live) router.refresh();
     },
   });
 
@@ -56,10 +69,16 @@ export function RunEventLog({ run, initialEvents, agentNames, className }: Props
   return (
     <section
       aria-labelledby="run-log-title"
-      className={clsx('flex min-w-0 flex-col gap-3 card p-5', className)}
+      className={clsx('flex min-w-0 flex-col gap-3', frame === 'card' && 'card p-5', className)}
     >
       <div className="flex items-center justify-between gap-4">
-        <h2 id="run-log-title" className="text-display-sm text-ink-strong">
+        <h2
+          id="run-log-title"
+          className={clsx(
+            'text-ink-strong',
+            frame === 'card' ? 'text-display-sm' : 'text-body-sm font-medium',
+          )}
+        >
           Flight log
         </h2>
         {live ? <Streaming /> : <StatusPill variant={runStatusVariant(status)} />}
@@ -75,7 +94,10 @@ export function RunEventLog({ run, initialEvents, agentNames, className }: Props
           aria-label="Run events"
           onPointerEnter={() => setReading(true)}
           onPointerLeave={() => setReading(false)}
-          className="max-h-[40rem] overflow-y-auto border-t border-hairline-soft"
+          className={clsx(
+            'overflow-y-auto border-t border-hairline-soft',
+            frame === 'card' ? 'max-h-[40rem]' : 'max-h-[24rem]',
+          )}
         >
           {events.map((e) => (
             <EventRow key={e.seq} event={e} />
