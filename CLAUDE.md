@@ -78,6 +78,10 @@ engine and no sign-in on desktop.
   from the plan (`resumeInterrupted`).
 - New public routes must be added to the matcher in `middleware.ts`; everything else is behind
   the desktop token (desktop) or a session (hosted).
+- **Home stays on Home.** The prompt never navigates: a run started there is selected in place
+  (`HomeScreen`), the panel shows it and the next message follows it up (`parentRunId`;
+  `loadThread` puts the thread into every prompt). Closing a card sets `dismissedAt`; the Runs
+  screen still lists the run. "Open log" is the way to the run's page.
 - **Keyboard shortcuts come from `lib/shortcuts.ts`.** Add a key there (the handler, the `?`
   sheet and Settings read the same list); single keys must stay out of text fields and open
   dialogs (`[role="dialog"]`, Arc's `Dialog`). Search fields are `<input type="search">` so `/`

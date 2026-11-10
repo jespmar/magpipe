@@ -27,6 +27,8 @@ export async function runStep(opts: {
   memory: MemoryEntry[];
   attachments: Attachment[];
   sandboxDir: string;
+  /** Earlier turns of the conversation this run continues, as prompt text. */
+  conversation?: string;
   signal: AbortSignal;
 }): Promise<StepOutcome> {
   const { db, run, step, agent } = opts;
@@ -74,6 +76,7 @@ export async function runStep(opts: {
       .map((s) => `Result of "${s.title}":\n${s.result!.summary}`)
       .join('\n\n');
     const user = [
+      opts.conversation ? `Earlier in this conversation:\n${opts.conversation}` : '',
       `Task given to Magpipe:\n${run.input.text}`,
       `Your step: ${step.title}\n${step.instructions ?? ''}`,
       context ? `Earlier results:\n${context}` : '',

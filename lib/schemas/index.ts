@@ -124,7 +124,10 @@ export const run = z.object({
   durationMs: z.number().int().nonnegative().nullable(),
   usage,
   output: runOutput.nullable(),
+  /** The run this one continues (a follow-up) or repeats (a re-fly). */
   parentRunId: runId.nullable(),
+  /** Set when the operator closed its card on Home; the Runs screen still lists it. */
+  dismissedAt: z.date().nullable(),
   createdBy: z.string(),
   createdAt: z.date(),
 });
@@ -348,7 +351,12 @@ export const runCreateInput = z.object({
     .array(z.string().regex(/^upl_[0-9a-z]+$/))
     .max(10)
     .default([]),
+  /** Continue the conversation of this run: its task and answer become context. */
+  parentRunId: runId.optional(),
 });
+
+/** PATCH /api/runs/[id]: close or reopen its card on Home. */
+export const runPatchInput = z.object({ dismissed: z.boolean() });
 
 /** An uploaded file's record, kept as a JSON sidecar next to the file (desktop, D3). */
 export const upload = z.object({
@@ -362,6 +370,7 @@ export const upload = z.object({
 });
 
 export type RunCreateInput = z.infer<typeof runCreateInput>;
+export type RunPatchInput = z.infer<typeof runPatchInput>;
 export type Upload = z.infer<typeof upload>;
 export type Usage = z.infer<typeof usage>;
 

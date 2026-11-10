@@ -5,7 +5,7 @@ import { nextRunDisplayId } from './db';
 import * as t from './db/schema';
 import { newId } from './ids';
 import { ZERO_USAGE } from './pricing';
-import { computeRunsStats, type RunsStats } from './runs-util';
+import { computeRunsStats, threadTurn, type RunsStats, type ThreadTurn } from './runs-util';
 import { runStatuses, type Attachment, type Run, type RunStatus } from './schemas';
 
 export async function createRun(
@@ -25,11 +25,46 @@ export async function createRun(
     usage: ZERO_USAGE,
     output: null,
     parentRunId,
+    dismissedAt: null,
     createdBy: 'user',
     createdAt: new Date(),
   };
   await db.insert(t.runs).values(run);
   return run;
+}
+
+/** Closes (or reopens) a run's card on Home. The Runs screen keeps listing it. */
+export async function setRunDismissed(
+  db: Db,
+  id: string,
+  dismissed: boolean,
+): Promise<Run | undefined> {
+  const [row] = await db
+    .update(t.runs)
+    .set({ dismissedAt: dismissed ? new Date() : null })
+    .where(eq(t.runs.id, id))
+    .returning();
+  return row;
+}
+
+/**
+ * The conversation a run continues: its ancestors by `parentRunId`, oldest first, as the
+ * operator's task and Magpipe's answer. A re-fly repeats its parent's task, so an ancestor whose
+ * task equals its child's is a retry and is folded away. Capped so a long thread cannot grow the
+ * prompt without bound.
+ */
+export async function loadThread(db: Db, run: Run, limit = 6): Promise<ThreadTurn[]> {
+  const turns: ThreadTurn[] = [];
+  let cursor: Run | undefined = run;
+  const seen = new Set<string>([run.id]);
+  while (cursor?.parentRunId && turns.length < limit && !seen.has(cursor.parentRunId)) {
+    seen.add(cursor.parentRunId);
+    const [parent]: Run[] = await db.select().from(t.runs).where(eq(t.runs.id, cursor.parentRunId));
+    if (!parent) break;
+    if (parent.input.text.trim() !== cursor.input.text.trim()) turns.unshift(threadTurn(parent));
+    cursor = parent;
+  }
+  return turns;
 }
 
 /** Accepts a run id (`run_…`) or the human display id (`flight_…`). */

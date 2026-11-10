@@ -3,8 +3,10 @@ import {
   agentCard,
   cardFooter,
   clockTime,
+  defaultSelected,
   formatBytes,
   mergeEvents,
+  reviveRun,
   toFlightEvent,
   type FlightEvent,
 } from '@/lib/home-util';
@@ -125,5 +127,33 @@ describe('flight events', () => {
   });
   it('shows a 24-hour clock with seconds', () => {
     expect(clockTime(new Date('2026-11-09T14:02:17'))).toBe('14:02:17');
+  });
+});
+
+describe('the selected flight', () => {
+  it('opens on the live flight, else the newest, else nothing', () => {
+    const live = { id: 'r2', status: 'running' } as Run;
+    const newest = { id: 'r3', status: 'done' } as Run;
+    expect(defaultSelected([newest, live, { id: 'r1', status: 'failed' } as Run])).toBe(live);
+    expect(defaultSelected([newest, { id: 'r1', status: 'failed' } as Run])).toBe(newest);
+    expect(defaultSelected([])).toBeNull();
+  });
+
+  it('revives a run that came back from the API as JSON', () => {
+    const json = JSON.parse(
+      JSON.stringify({
+        id: 'r1',
+        startedAt: now,
+        finishedAt: null,
+        dismissedAt: null,
+        createdAt: now,
+      }),
+    ) as Run;
+    const run = reviveRun(json);
+    expect(run.startedAt).toBeInstanceOf(Date);
+    expect(run.startedAt?.getTime()).toBe(now.getTime());
+    expect(run.createdAt.getTime()).toBe(now.getTime());
+    expect(run.finishedAt).toBeNull();
+    expect(run.dismissedAt).toBeNull();
   });
 });

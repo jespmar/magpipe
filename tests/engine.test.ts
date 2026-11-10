@@ -332,6 +332,66 @@ describe('run engine', () => {
     expect(counts.cancelled).toBeGreaterThanOrEqual(1);
   });
 
+  it('carries a follow-up’s conversation into the plan, the step and the merge', async () => {
+    const client = scripted((p) => {
+      if (isPlan(p)) {
+        return plan([
+          {
+            id: 's1',
+            agent: 'coder',
+            title: 'Answer the follow-up',
+            instructions: 'Answer it.',
+            dependsOn: [],
+            optional: false,
+          },
+        ]);
+      }
+      if (isMerge(p)) return text('Twelve, counting the new one.');
+      return text('Twelve.');
+    });
+    const engine = new Engine({ client, getDb: async () => db });
+    const first = await createRun(db, { text: 'How many birds are in the nest?', attachments: [] });
+    await db
+      .update(t.runs)
+      .set({ status: 'done', output: { markdown: 'Eleven birds.', artifacts: [] } })
+      .where(eq(t.runs.id, first.id));
+    // A re-fly repeats the task; its newer answer is the one the thread keeps.
+    const retry = await createRun(db, first.input, first.id);
+    await db
+      .update(t.runs)
+      .set({ status: 'done', output: { markdown: 'Eleven birds, one on the way.', artifacts: [] } })
+      .where(eq(t.runs.id, retry.id));
+    const followUp = await createRun(db, { text: 'And once it lands?', attachments: [] }, retry.id);
+    engine.enqueue(followUp.id);
+    await engine.whenIdle();
+    expect((await getRun(db, followUp.id))!.status).toBe('done');
+
+    const planCall = client.calls.find(isPlan)!;
+    const planSystem = String(planCall.system);
+    expect(planSystem).toContain(
+      'Operator: How many birds are in the nest?\nMagpipe: Eleven birds, one on the way.',
+    );
+    expect(planSystem).not.toContain('Magpipe: Eleven birds.\n');
+    expect(planSystem.split('Operator:').length - 1).toBe(1);
+    const stepCall = client.calls.find((p) => !isPlan(p) && !isMerge(p))!;
+    const stepUser = JSON.stringify(stepCall.messages[0]!.content);
+    expect(stepUser).toContain('Earlier in this conversation');
+    expect(stepUser).toContain('one on the way');
+    expect(stepUser).toContain('Task given to Magpipe:\\nAnd once it lands?');
+    // The planner's prompt also speaks of a final answer; the merge is the one without a schema.
+    const mergeCall = client.calls.find((p) => !isPlan(p) && isMerge(p))!;
+    expect(JSON.stringify(mergeCall.messages[0]!.content)).toContain(
+      'Earlier in this conversation',
+    );
+
+    // A fresh task carries no thread.
+    const fresh = await createRun(db, { text: 'A new question', attachments: [] });
+    engine.enqueue(fresh.id);
+    await engine.whenIdle();
+    const freshPlan = client.calls.filter(isPlan).at(-1)!;
+    expect(String(freshPlan.system)).not.toContain('Earlier');
+  }, 20_000);
+
   it('resumes runs a previous process left behind', async () => {
     const run = await createRun(db, { text: 'resume me', attachments: [] });
     await db

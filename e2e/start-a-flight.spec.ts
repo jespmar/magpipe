@@ -40,25 +40,49 @@ test('the prompt window names a missing task, attaches a file and starts a fligh
   await composer.getByLabel('Attach files', { exact: true }).setInputFiles(file);
   await expect(chips.getByText('11 B')).toBeVisible();
 
-  // ⌘/Ctrl + Enter starts the flight and lands on it.
+  // ⌘/Ctrl + Enter starts the flight. Home stays put: the new flight is selected, its panel
+  // opens beside the nest and the prompt empties, ready for a follow-up.
   await composer.getByLabel('Ask Magpipe').press('Control+Enter');
-  await expect(page).toHaveURL(/\/runs\/flight_[0-9a-z]+$/, { timeout: 15_000 });
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText(task);
+  const panel = page.getByRole('region', { name: /^flight_[0-9a-z]+$/ });
+  await expect(panel).toBeVisible({ timeout: 15_000 });
+  await expect(page).toHaveURL(/\/$/);
+  await expect(composer.getByLabel('Ask Magpipe')).toHaveValue('');
+  await expect(panel).toContainText(task);
+  const first = (await panel.getAttribute('aria-label'))!;
+  const cards = page.getByRole('region', { name: 'Runs' });
+  const cardOf = (id: string) =>
+    cards.getByRole('listitem').filter({ has: page.getByText(id, { exact: true }) });
+  await expect(cardOf(first).getByRole('button', { pressed: true })).toBeVisible();
+  await expect(composer.getByText(`Follow-up to ${first}`)).toBeVisible();
 
-  // The trail streams in and the flight lands: the path, the log and the result fill in.
-  const log = page.getByRole('log');
-  await expect(log).toContainText('Answer the task', { timeout: 20_000 });
-  await expect(page.getByText('done', { exact: true }).first()).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByRole('group', { name: 'Flight path' }).getByRole('listitem')).toHaveCount(
-    2,
-  );
-  await expect(page.getByRole('region', { name: 'Result' })).toContainText(
+  // The trail streams into the panel and the flight lands: the result and the files fill in.
+  await expect(panel.getByRole('log')).toContainText('Answer the task', { timeout: 20_000 });
+  await expect(panel.getByText('done', { exact: true }).first()).toBeVisible({ timeout: 20_000 });
+  await expect(panel.getByRole('region', { name: 'Result' })).toContainText(
     'Merged by the scripted model',
   );
-  await expect(page.getByRole('list', { name: 'Attachments' }).getByText('note.txt')).toBeVisible();
+  await expect(
+    panel.getByRole('list', { name: 'Attachments' }).getByText('note.txt'),
+  ).toBeVisible();
+  await expect(cardOf(first)).toContainText('done');
 
-  // Home now counts the run: the nest no longer says there are none.
-  await page.goto('/');
+  // The next message is a follow-up: the new flight opens with the thread it continues.
+  await composer.getByLabel('Ask Magpipe').fill('And what does the note leave out?');
+  await composer.getByRole('button', { name: 'Run' }).click();
+  await expect(panel).not.toHaveAttribute('aria-label', first, { timeout: 15_000 });
+  const second = (await panel.getAttribute('aria-label'))!;
+  await expect(composer.getByText(`Follow-up to ${second}`)).toBeVisible();
+  await expect(panel.getByRole('list', { name: 'Earlier in this thread' })).toContainText(first);
+  await expect(panel.getByText('done', { exact: true }).first()).toBeVisible({ timeout: 20_000 });
+
+  // "New question" drops the thread; closing a landed card takes it off Home.
+  await composer.getByRole('button', { name: 'New question' }).click();
+  await expect(composer.getByText(/Follow-up to/)).toBeHidden();
+  await page.getByRole('button', { name: `Close ${first}` }).click();
+  await expect(cards.getByText(first, { exact: true })).toBeHidden();
+  await expect(cards.getByText(second, { exact: true })).toBeVisible();
+
+  // The nest counts the runs: it no longer says there are none.
   await expect(
     page.getByRole('region', { name: 'The nest' }).getByText('no runs yet'),
   ).toBeHidden();
@@ -76,7 +100,7 @@ test('the flight table filters, finds the flight, shows its path and re-flies it
   await expect(table.getByText('done', { exact: true }).first()).toBeVisible();
   await expect(table.getByText('failed', { exact: true })).toHaveCount(0);
 
-  // Search narrows to the flight started from the prompt window.
+  // Search narrows to the flight started from the prompt window; a closed card is still here.
   await page.getByLabel('Search runs').fill('Summarise the attached note');
   await expect(table.getByRole('listitem')).toHaveCount(1);
   await table.getByRole('button').first().click();

@@ -8,6 +8,8 @@ export async function mergeRun(opts: {
   run: Run;
   steps: Step[];
   agentNames: Map<string, string>;
+  /** Earlier turns of the conversation this run continues, as prompt text. */
+  conversation?: string;
   signal: AbortSignal;
 }): Promise<{ markdown: string; usage: Usage }> {
   const done = opts.steps.filter((s) => s.agentId && s.status === 'done' && s.result?.summary);
@@ -20,9 +22,10 @@ export async function mergeRun(opts: {
   const failures = failed.map((s) => `- ${s.title}: ${s.error?.message ?? 'failed'}`).join('\n');
 
   const system = `You are Magpipe, the orchestrator. Write the final answer to the operator's task in Markdown: lead with the outcome, keep it tight, keep every concrete fact and number the agents reported, and name what did not get done. Do not invent results.`;
+  const before = opts.conversation ? `Earlier in this conversation:\n${opts.conversation}\n\n` : '';
   const user = done.length
-    ? `Task:\n${opts.run.input.text}\n\nWhat the agents reported:\n\n${results}${failures ? `\n\nSteps that did not finish:\n${failures}` : ''}`
-    : `Task:\n${opts.run.input.text}\n\nNo agent was involved; answer the task yourself.${failures ? `\n\nSteps that did not finish:\n${failures}` : ''}`;
+    ? `${before}Task:\n${opts.run.input.text}\n\nWhat the agents reported:\n\n${results}${failures ? `\n\nSteps that did not finish:\n${failures}` : ''}`
+    : `${before}Task:\n${opts.run.input.text}\n\nNo agent was involved; answer the task yourself.${failures ? `\n\nSteps that did not finish:\n${failures}` : ''}`;
 
   const { text, usage } = await opts.backend.merge(
     { model: opts.model, system, user },

@@ -6,8 +6,12 @@ import {
   headTitle,
   lastErrorText,
   matchesRunQuery,
+  resultPlaceholder,
   runAgentIds,
   stepMeta,
+  threadFor,
+  threadText,
+  threadTurn,
 } from '@/lib/runs-util';
 import type { Run, Step } from '@/lib/schemas';
 
@@ -154,5 +158,57 @@ describe('steps and queries', () => {
       ]),
     ).toBe('last');
     expect(lastErrorText([{ kind: 'done', text: 'Run finished' }])).toBeNull();
+  });
+});
+
+describe('conversation threads', () => {
+  const turn = (
+    id: string,
+    text: string,
+    parentRunId: string | null,
+    over: Partial<Pick<Run, 'status' | 'output'>> = {},
+  ) =>
+    ({
+      id,
+      displayId: `flight_${id}`,
+      parentRunId,
+      input: { text, attachments: [] },
+      status: 'done',
+      output: { markdown: `Answer to ${text}`, artifacts: [] },
+      ...over,
+    }) as unknown as Run;
+
+  it('renders turns as operator and Magpipe lines, a missing answer as its placeholder', () => {
+    const done = threadTurn(turn('a', 'How many birds?', null));
+    const failed = threadTurn(turn('b', 'And now?', 'a', { status: 'failed', output: null }));
+    expect(threadText([done, failed])).toBe(
+      'Operator: How many birds?\nMagpipe: Answer to How many birds?\n\n' +
+        `Operator: And now?\nMagpipe: ${resultPlaceholder('failed')}`,
+    );
+    expect(threadText([])).toBe('');
+  });
+
+  it('clips a long turn so a thread cannot grow a prompt without bound', () => {
+    const long = threadTurn(turn('a', 'x'.repeat(5_000), null));
+    const text = threadText([long]);
+    expect(text.length).toBeLessThan(4_100);
+    expect(text).toContain('…');
+  });
+
+  it('walks the ancestors oldest first, folds re-flies away and stops at the cap', () => {
+    const first = turn('1', 'How many birds?', null);
+    const retry = turn('2', 'How many birds?', '1'); // a re-fly: the same task again
+    const second = turn('3', 'And tomorrow?', '2');
+    const third = turn('4', 'Why?', '3');
+    const runs = [third, second, retry, first];
+    expect(threadFor(runs, third).map((r) => r.id)).toEqual(['2', '3', '4']);
+    expect(threadFor(runs, retry).map((r) => r.id)).toEqual(['2']);
+    expect(threadFor(runs, first).map((r) => r.id)).toEqual(['1']);
+    expect(threadFor(runs, third, 1).map((r) => r.id)).toEqual(['3', '4']);
+    // An ancestor no longer loaded ends the walk; a cycle cannot loop.
+    expect(threadFor([third, second], third).map((r) => r.id)).toEqual(['3', '4']);
+    const loopA = turn('a', 'a', 'b');
+    const loopB = turn('b', 'b', 'a');
+    expect(threadFor([loopA, loopB], loopA).map((r) => r.id)).toEqual(['b', 'a']);
   });
 });

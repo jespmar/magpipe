@@ -454,3 +454,26 @@ once per server start.
   runs the same step through the real CLI when `REAL_CLAUDE=1` and is skipped otherwise, so the
   suite still needs no credentials. Whether a Claude subscription may power this use is a
   question for its terms, not for the code.
+
+## D23 · Home is a conversation
+
+- **Why.** Starting a flight used to leave Home for the run's page, so each question was a
+  dead end: read the result, go back, type the next one with nothing linking the two. The
+  operator asked to stay on Home, to see the selected flight's result beside the nest, to have
+  the next message go to that flight, and to clear landed cards away.
+- **Shape.** Home is one client screen (`HomeScreen`) around the server's data. The cards on
+  the left choose a flight (`aria-pressed`, cyan edge); the panel on the right shows it: the
+  turns before it, its task and files, the merged result, and the trail (`RunEventLog` with
+  `replay`, streaming while the flight is up). The prompt says "Follow-up to flight_N" while a
+  flight is selected and "New question" drops that; a run started from Home is selected in
+  place, the prompt empties, and the router refreshes so the server's copy takes over. The
+  spec's "navigates to `/runs/[id]`" (§3.2) no longer holds on Home; "Open log" is the page.
+- **Threads are rows, not a table.** A follow-up is a run with `parentRunId` (the field re-fly
+  already set). The engine loads the chain (`loadThread`, oldest first, six turns, each clipped
+  to 2 000 characters) and hands it to the plan's system prompt and to every step's and the
+  merge's user message as "Earlier in this conversation". A re-fly repeats its parent's task,
+  so an ancestor whose task equals its child's is folded away and the newer answer stands. The
+  panel walks the same chain on the client (`threadFor`) from the cards it has.
+- **Closing is a timestamp.** `runs.dismissed_at` hides the card on Home; the Runs screen, the
+  run's page and the counters are unchanged. Only a landed flight can be closed (409 while it is
+  live), and `PATCH /api/runs/[id] { dismissed: false }` reopens it.

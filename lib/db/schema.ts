@@ -86,6 +86,7 @@ export const runs = pgTable(
     usage: jsonb().$type<Run['usage']>().notNull(),
     output: jsonb().$type<NonNullable<Run['output']>>(),
     parentRunId: text().references((): AnyPgColumn => runs.id, { onDelete: 'set null' }),
+    dismissedAt: timestamptz(),
     createdBy: text().notNull(),
     createdAt: timestamptz().notNull().defaultNow(),
   },

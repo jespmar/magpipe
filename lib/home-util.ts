@@ -148,3 +148,20 @@ export function mergeEvents(
 }
 
 export const LIVE_RUN_STATUSES: ReadonlySet<Run['status']> = new Set(['queued', 'running']);
+
+/** Home's first choice among the cards: the flight that is live, else the newest. */
+export function defaultSelected<T extends Pick<Run, 'status'>>(runs: readonly T[]): T | null {
+  return runs.find((r) => LIVE_RUN_STATUSES.has(r.status)) ?? runs[0] ?? null;
+}
+
+/** A run that came back from the API as JSON: its dates are strings until revived. */
+export function reviveRun(run: Run): Run {
+  const date = (v: Date | string | null) => (v === null ? null : new Date(v));
+  return {
+    ...run,
+    startedAt: date(run.startedAt),
+    finishedAt: date(run.finishedAt),
+    dismissedAt: date(run.dismissedAt),
+    createdAt: new Date(run.createdAt),
+  };
+}

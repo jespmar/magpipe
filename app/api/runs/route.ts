@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { apiError, dbError, parseBody, requireUser } from '@/lib/api';
 import { getDb } from '@/lib/db';
 import { getEngine } from '@/lib/engine';
-import { createRun, listRuns } from '@/lib/runs';
+import { createRun, getRun, listRuns } from '@/lib/runs';
 import { runCreateInput, runStatuses, type RunStatus } from '@/lib/schemas';
 import { attachmentsFor, UploadError } from '@/lib/uploads';
 
@@ -30,15 +30,27 @@ export async function GET(req: Request) {
   }
 }
 
-/** POST /api/runs { text, attachmentIds } — creates the run and hands it to the engine. */
+/**
+ * POST /api/runs { text, attachmentIds, parentRunId? } — creates the run and hands it to the
+ * engine. With `parentRunId` the run is a follow-up: that run's task and answer (and its own
+ * ancestors') become the conversation the new run continues.
+ */
 export async function POST(req: Request) {
   const user = await requireUser();
   if (user instanceof NextResponse) return user;
   const body = await parseBody(req, runCreateInput);
   if (!body.ok) return body.res;
   try {
+    const db = await getDb();
+    if (body.data.parentRunId && !(await getRun(db, body.data.parentRunId))) {
+      return apiError('not_found', 'The run to follow up on no longer exists', 404);
+    }
     const attachments = await attachmentsFor(body.data.attachmentIds);
-    const run = await createRun(await getDb(), { text: body.data.text, attachments });
+    const run = await createRun(
+      db,
+      { text: body.data.text, attachments },
+      body.data.parentRunId ?? null,
+    );
     getEngine().enqueue(run.id);
     return NextResponse.json({ run }, { status: 201 });
   } catch (err) {
