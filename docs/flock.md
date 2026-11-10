@@ -83,10 +83,10 @@ before and after every step, so a restart resumes from it.
 
 Two parts of that skeleton are levers this proposal uses:
 
-- **`decisions` reaches every plan.** `relevantMemory` loads every `decisions` entry, plus up to
-  30 entries the task matches, into the planner's prompt (`lib/engine/index.ts`). The
-  orchestrator's own prompt has no editor, so `decisions` is the only place an operator can
-  write standing rules that steer planning.
+- **`decisions` reaches every plan.** `relevantMemory` loads every `decisions` entry, then the
+  entries the task matches, up to 30 in all, into the planner's prompt (`lib/engine/index.ts`).
+  The orchestrator's own prompt has no editor (Settings shows it read-only, D34), so `decisions`
+  is the only place an operator can write standing rules that steer planning.
 - **A follow-up is the loop.** A run started as a follow-up carries `parentRunId`, and the last
   six turns reach the plan, every step and the merge (D23). The operator decides whether there
   is another turn, which puts the human exactly where the evidence wants the gate.
@@ -179,7 +179,7 @@ web, which keeps the injection surface away from the writer.
 ```text
 You plan one code change. You write a plan file; you never edit source code.
 
-1. Read the repository's CLAUDE.md or AGENTS.md first, then the research handed to you and the facts and decisions in memory.
+1. Read the research handed to you and the facts and decisions in memory. The repository's CLAUDE.md is already in your instructions.
 2. Open the code the change will touch. A plan built on files you have not read is a guess.
 3. Choose a short slug for the task (lowercase words joined by hyphens). Write docs/plans/<slug>.md with exactly these headings:
    - Goal: one paragraph.
@@ -209,7 +209,7 @@ every method begins with becomes the list of assumptions the operator edits.
 ```text
 You implement one approved plan in a repository. You are the only agent that writes code in this run.
 
-1. Read the plan file named in your step (or the task, when the operator called the change small) and the repository's CLAUDE.md.
+1. Read the plan file named in your step (or the task, when the operator called the change small). The repository's CLAUDE.md is already in your instructions.
 2. Run git_status. Work on the branch magpipe/<slug>: switch to it if it exists, create it from the default branch if it does not. A step can be retried after a restart, so continue from what is already committed rather than starting over.
 3. Take the plan one step at a time. Where the plan names a test, write the test first and run it to see it fail, then write the code and run it until it passes.
 4. Fix the code, not the test. Never delete, skip or weaken a test to make it pass; if a test is wrong, say so and leave it.
@@ -334,7 +334,8 @@ tool at all. Until the spend cap is enforced, the per-step limits are the budget
 Steps run with `--setting-sources ''`, so Claude Code skills, hooks and `CLAUDE.md` never load
 inside a step. Magpipe's equivalents are the agent's system prompt (a role's procedure),
 `decisions` entries (rules the orchestrator and every reading agent see) and the repository's own
-`CLAUDE.md`, which the Planner and Coder read as their first action.
+`CLAUDE.md` (or `AGENTS.md`), which the engine adds to the prompt of every step whose agent can
+reach the repository (D34). Settings shows the orchestrator's rules beside the `decisions`.
 
 Write these from the Memory screen with confidence 1 and source "operator". They reach every
 plan, including plans for work that is not software, so each one says when it applies.
@@ -437,7 +438,7 @@ three are small.
 | 6     | No bounded loop or re-plan                                                                                                                                                                  | A review-and-fix cycle inside one run                         | Retry a dependant with the Reviewer's findings at most N times, off by default                                         |
 | 7     | The spend cap is recorded, not enforced (D15)                                                                                                                                               | Unattended runs                                               | Enforce from the run's usage totals                                                                                    |
 | 8     | Resume re-runs a live step from scratch                                                                                                                                                     | A half-committed Coder step repeats (the prompt mitigates it) | Resume write steps with "continue from the branch"                                                                     |
-| 9     | Steps load no `CLAUDE.md` by design; the orchestrator prompt has no editor                                                                                                                  | Repository conventions reach the Coder only if it reads them  | With a bound repository, append its `CLAUDE.md` to the step prompt; a standing-instructions view of `decisions`        |
+| 9     | Done (D34). Each step's prompt carries the `CLAUDE.md` or `AGENTS.md` of every repository its agent reaches; Settings shows the orchestrator's rules beside the `decisions`.                |                                                               |                                                                                                                        |
 | 10    | No agent import or export                                                                                                                                                                   | Shipping the roster to a fresh install                        | "Load the development flock" beside the demo data, asking for the repository's folder                                  |
 
 ## Releases

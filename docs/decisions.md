@@ -630,3 +630,46 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
 - **Not covered:** what an agent decides rather than does (a Reviewer's verdict and tiered
   findings) is still prose plus the `reviews` memory entry; and work done through MCP servers
   is not recorded, only through bound repositories.
+
+## D34 · A repository's conventions reach the step; the orchestrator's rules are on Settings
+
+- **Why.** Steps run Claude Code with `--setting-sources ''` (D22) and the API path has no
+  settings at all, so no step loads a `CLAUDE.md`. A repository's conventions (its check
+  commands, its layout, its rules) reached an agent only if its prompt said to read them and it
+  spent a turn doing so: the flock's Planner and Coder prompts did, the Reviewer and Verifier did
+  not. And the two things that steer every plan, the orchestrator's fixed rules and the
+  `decisions` entries, could not be seen together anywhere in the product. It was the ninth gap
+  in `docs/flock.md`.
+- **Shape.** `setupTools` reads the conventions of each bound repository the step gets at least
+  one operation from (`readConventions` in `lib/repo.ts`) and returns them beside the tools
+  (`ToolRuntime.conventions`). `runStep` appends them to the system prompt after the agent's
+  memory, one heading per file, for example "Conventions of App and App plans (their
+  CLAUDE.md):" (`conventionsText` in `lib/engine/step.ts`). Both backends send that same system
+  prompt, so the API and Claude Code paths get the same text. The plan and the merge get none:
+  they route and summarise, they do not touch code.
+- **Which file.** `CLAUDE.md` in the bound folder, then at the git work tree's root, then
+  `AGENTS.md` the same way; the first with text in it wins. Two bindings of one work tree (the
+  app and its plans folder) find the same file, which appears once under both names.
+- **Guards.** Reaching a repository means being offered one of its operations: an empty grant
+  (D25), or `run` on a binding without scripts, gives the step nothing and so no conventions.
+  The read follows `read`'s path rules, so a `CLAUDE.md` symlinked out of the folder is skipped,
+  and takes at most 32 KB. Each file is cut at 8,000 characters, at a line end where one is near,
+  and the prompt says where it was cut. A missing, empty, binary or unreadable file is skipped
+  without a word, as a step goes on without a repository whose folder is gone.
+- **The orchestrator on Settings.** A read-only section shows `ORCHESTRATOR_SYSTEM` (in the
+  `TextBlock` the agent detail uses for a system prompt, which wraps and copies) beside the
+  standing instructions: every `decisions` entry with its key and value, long values cut, each
+  key opening the entry in Memory, the line "Every entry here reaches every plan the
+  orchestrator makes." and "Edit in Memory" (`/memory?ns=decisions`). With none it says so and
+  offers "Add a decision". Memory says the same line above the Decisions namespace, with a link
+  back. `relevantMemory` hands a plan at most 30 memories, decisions first and newest first, so
+  past 30 both screens say that only the 30 most recently updated reach it (`PLAN_MEMORY_CAP` in
+  `lib/memory-util.ts`; a test pins it to the engine). When the database cannot be opened the
+  rules still show and the list says it cannot be read, as the other Settings sections degrade.
+- **Not covered:** the rules stay read-only, because `decisions` already carries the operator's
+  rules and an editable prompt would change every plan with no record of why. `@` imports in a
+  `CLAUDE.md` are not followed (a file that only says `@AGENTS.md` hands on that line), and
+  `CLAUDE.md` files in folders below the binding are not read. An agent with `write` on a
+  repository can change the file that later steps read; the change is recorded (D29) and shows
+  in the diff, but nothing prevents it. The number of repositories whose files join one prompt
+  has no cap beyond the 8,000 characters each.

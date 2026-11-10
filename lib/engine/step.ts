@@ -1,8 +1,8 @@
 /**
  * One step of a run (spec §7.2): the agent's own prompt, the orchestrator's instructions, the
- * results it depends on and the memory it may read; then the backend runs the model with the
- * step's tools, writing every message, tool call, tool result and memory write to the run's
- * trail, under the agent's limits.
+ * results it depends on, the memory it may read and the conventions of the repositories it can
+ * reach (D34); then the backend runs the model with the step's tools, writing every message,
+ * tool call, tool result and memory write to the run's trail, under the agent's limits.
  */
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Db } from '../db';
@@ -12,7 +12,8 @@ import type { RunBackend } from './backend';
 import { emitEvent } from './events';
 import { EngineError, withRetries } from './model';
 import { memoryText } from './plan';
-import { setupTools, type Trail } from './tools';
+import { setupTools, type StepConventions, type Trail } from './tools';
+import { CONVENTIONS_CAP } from '../repo';
 import { workFacts, type WorkItem } from '../work';
 
 export type StepOutcome = { summary: string; usage: Usage };
@@ -73,6 +74,7 @@ export async function runStep(opts: {
       '',
       `You are one agent in a run orchestrated by Magpipe. Do the step you are given, use your tools when they help, and finish with a clear written result: what you found or did, and anything the next step must know. Keep it under 1000 characters.`,
       readable.length ? `\nShared memory you may rely on:\n${memoryText(readable)}` : '',
+      runtime.conventions.length ? `\n${conventionsText(runtime.conventions)}` : '',
     ].join('\n');
 
     // Each earlier result, then what Magpipe saw its tools do: the branch, the files, the checks.
@@ -119,7 +121,28 @@ export async function runStep(opts: {
   }
 }
 
-/** Marks an agent running or idle for the Home and Agents screens; paused agents keep their status. */
+/**
+ * The repositories' own instructions for the step's system prompt (D34). Steps load no settings
+ * of their own (D22), so each file reaches the prompt here, once, under the names of the
+ * repository tools bound to its work tree.
+ */
+export function conventionsText(list: readonly StepConventions[]): string {
+  if (list.length === 0) return '';
+  const files = list.map((c) => {
+    const names = [...c.repos].sort((a, b) => a.localeCompare(b));
+    const who =
+      names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+    const cut = c.cut
+      ? `\n[Cut here: only the first ${CONVENTIONS_CAP.toLocaleString('en-US')} characters of ${c.name} are shown.]`
+      : '';
+    return `Conventions of ${who} (${names.length === 1 ? 'its' : 'their'} ${c.name}):\n${c.text}${cut}`;
+  });
+  return [
+    'The repositories you can reach keep these instructions for anyone who works in them. Follow them where they apply to your step.',
+    ...files,
+  ].join('\n\n');
+}
+
 /**
  * Moves an agent between idle, waiting (for a repository another step is changing, D28) and
  * running. A paused agent is never touched, and waiting never hides a step that is running.

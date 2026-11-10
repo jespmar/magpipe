@@ -1,7 +1,7 @@
 /**
  * What a step may touch: the built-in tools the agent was given (spec §7.4), scoped memory
- * (§7.3), the workspace sandbox (D6), and every MCP server granted to it, called over the
- * app's own MCP client. Tool names must match /^[a-zA-Z0-9_-]{1,64}$/ on the wire.
+ * (§7.3), the workspace sandbox (D6), bound repositories (D27, with their conventions for the
+ * prompt, D34) and every MCP server granted to it, called over the app's own MCP client. Tool names must match /^[a-zA-Z0-9_-]{1,64}$/ on the wire.
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -20,10 +20,12 @@ import {
   gitLog,
   gitStatus,
   inspectRepository,
+  readConventions,
   repoRead,
   repoRun,
   repoSearch,
   repoWrite,
+  type RepoConventions,
   type RepoOutcome,
   type RepoToolName,
 } from '../repo';
@@ -46,8 +48,13 @@ export type ToolRuntime = {
   dispatch: Map<string, (input: Record<string, unknown>) => Promise<ToolOutcome>>;
   /** Hints for events: the registry tool a wire name belongs to. */
   labels: Map<string, string>;
+  /** The CLAUDE.md or AGENTS.md of each repository the step can reach, once per file (D34). */
+  conventions: StepConventions[];
   close(): Promise<void>;
 };
+
+/** A repository's conventions file and the names of the tools bound to its work tree. */
+export type StepConventions = RepoConventions & { repos: string[] };
 
 /** Where a step's events go: the run's trail, with the step and agent already filled in. */
 export type Trail = {
@@ -306,6 +313,7 @@ export async function setupTools(setup: ToolSetup): Promise<ToolRuntime> {
   const tools: ModelTool[] = [];
   const dispatch: ToolRuntime['dispatch'] = new Map();
   const labels = new Map<string, string>();
+  const conventions: StepConventions[] = [];
   const connections: McpConnection[] = [];
 
   // ── built-ins by name ─────────────────────────────────────────────────────
@@ -557,10 +565,12 @@ export async function setupTools(setup: ToolSetup): Promise<ToolRuntime> {
           [found.root, tool.repository.path].map((p) => fs.realpath(p).catch(() => p)),
         );
         const prefix = path.relative(realRoot!, realFolder!).split(path.sep).join('/');
+        let offered = 0;
         for (const [opName, op] of ops) {
           if (!allowed(opName) || (opName === 'run' && tool.repository.scripts.length === 0)) {
             continue;
           }
+          offered += 1;
           tools.push(op.tool);
           labels.set(op.name, `${tool.name} · ${opName}`);
           dispatch.set(op.name, async (input) => {
@@ -576,6 +586,14 @@ export async function setupTools(setup: ToolSetup): Promise<ToolRuntime> {
             }
             return { text: res.text, isError: res.isError };
           });
+        }
+        // Steps load no CLAUDE.md of their own (D22), so a repository the agent can reach hands
+        // its conventions to the prompt: once per file, however many bindings share the tree.
+        const rules = offered > 0 ? await readConventions(realFolder!, realRoot!) : null;
+        if (rules) {
+          const same = conventions.find((c) => c.file === rules.file);
+          if (same) same.repos.push(tool.name);
+          else conventions.push({ ...rules, repos: [tool.name] });
         }
         continue;
       }
@@ -628,7 +646,7 @@ export async function setupTools(setup: ToolSetup): Promise<ToolRuntime> {
     throw err;
   }
 
-  return { tools, dispatch, labels, close: closeAll };
+  return { tools, dispatch, labels, conventions, close: closeAll };
 }
 
 type ClientToolSchema = Extract<ModelTool, { input_schema: unknown }>['input_schema'];

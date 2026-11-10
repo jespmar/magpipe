@@ -298,6 +298,71 @@ export async function resolveRepoPath(
   return target;
 }
 
+// ─── conventions ───────────────────────────────────────────────────────────
+
+/** The files a repository keeps for agents that work in it, in the order they are looked for. */
+export const CONVENTION_FILES = ['CLAUDE.md', 'AGENTS.md'] as const;
+/** How much of one conventions file reaches a step's prompt, in characters. */
+export const CONVENTIONS_CAP = 8_000;
+
+export type RepoConventions = {
+  /** The file's real path, so two bindings of one work tree find the same file. */
+  file: string;
+  name: (typeof CONVENTION_FILES)[number];
+  /** At most `CONVENTIONS_CAP` characters, cut at a line end where one is near. */
+  text: string;
+  /** Whether the file goes on past `text`. */
+  cut: boolean;
+};
+
+/** The first bytes of a file: enough for `CONVENTIONS_CAP` characters in any encoding of UTF-8. */
+async function readHead(file: string): Promise<{ buf: Buffer; size: number } | null> {
+  const handle = await fs.open(file, 'r');
+  try {
+    const stat = await handle.stat();
+    if (!stat.isFile()) return null;
+    const want = Math.min(stat.size, CONVENTIONS_CAP * 4);
+    const { bytesRead, buffer } = await handle.read(Buffer.alloc(want), 0, want, 0);
+    return { buf: buffer.subarray(0, bytesRead), size: stat.size };
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
+ * The repository's own instructions for agents (D34): CLAUDE.md in the folder, then at the work
+ * tree's root, then AGENTS.md the same way. The same path rules as `read` apply, so a symlink
+ * that leads out of the folder is not followed. A missing, empty, binary or unreadable file is
+ * skipped; null when there is none.
+ */
+export async function readConventions(dir: string, root: string): Promise<RepoConventions | null> {
+  const bases = path.resolve(dir) === path.resolve(root) ? [dir] : [dir, root];
+  for (const name of CONVENTION_FILES) {
+    for (const base of bases) {
+      try {
+        const file = await fs.realpath(await resolveRepoPath(base, name));
+        const head = await readHead(file);
+        if (!head || head.buf.includes(0)) continue;
+        let text = head.buf.toString('utf8').replace(/^﻿/, '');
+        let cut = head.size > head.buf.length;
+        if (text.length > CONVENTIONS_CAP) {
+          cut = true;
+          const lineEnd = text.lastIndexOf('\n', CONVENTIONS_CAP);
+          let end = lineEnd > CONVENTIONS_CAP / 2 ? lineEnd : CONVENTIONS_CAP;
+          // Never leave half of a surrogate pair at the end.
+          if (/[\uD800-\uDBFF]/.test(text[end - 1] ?? '')) end -= 1;
+          text = text.slice(0, end);
+        }
+        text = text.trimEnd();
+        if (text.trim()) return { file, name, text, cut };
+      } catch {
+        // Not there or not readable: look in the next place.
+      }
+    }
+  }
+  return null;
+}
+
 // ─── operations ────────────────────────────────────────────────────────────
 
 /**

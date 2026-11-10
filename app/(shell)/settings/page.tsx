@@ -5,17 +5,22 @@ import { PageHead } from '@/components/ui/PageHead';
 import { Button } from '@/components/ui/Button';
 import { Kbd } from '@/components/ui/Kbd';
 import { DemoDataForm } from '@/components/settings/DemoDataForm';
+import { StandingInstructions } from '@/components/settings/StandingInstructions';
 import { ScrollToHash } from '@/components/ui/ScrollToHash';
+import { TextBlock } from '@/components/ui/TextBlock';
 import { dataDir, getDb } from '@/lib/db';
 import { describeModelBackend } from '@/lib/engine/claude-code';
+import { ORCHESTRATOR_SYSTEM } from '@/lib/engine/plan';
 import { settings as settingsTable } from '@/lib/db/schema';
 import { buildSeed } from '@/lib/db/seed-data';
 import { env } from '@/lib/env';
+import { listMemory } from '@/lib/memory';
+import { STANDING_NS } from '@/lib/memory-util';
 import { accessMode } from '@/lib/auth-mode';
 import { currentUser } from '@/lib/session';
 import { getShellData } from '@/lib/shell-data';
 import { SHORTCUTS } from '@/lib/shortcuts';
-import type { Settings } from '@/lib/schemas';
+import type { MemoryEntry, Settings } from '@/lib/schemas';
 
 export const metadata: Metadata = { title: 'Settings' };
 
@@ -23,6 +28,15 @@ async function loadSettings(): Promise<Settings | null> {
   try {
     const [row] = await (await getDb()).select().from(settingsTable).limit(1);
     return row ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Every `decisions` entry, or null when the database cannot be read (the shell says why). */
+async function loadStanding(): Promise<MemoryEntry[] | null> {
+  try {
+    return await listMemory(await getDb(), { ns: STANDING_NS });
   } catch {
     return null;
   }
@@ -36,11 +50,12 @@ const MODE_LABEL = {
 
 /** Read-only facts for now (spec §3.7); editing lands with the screen that first needs it. */
 export default async function SettingsPage() {
-  const [settings, user, shell, backend] = await Promise.all([
+  const [settings, user, shell, backend, standing] = await Promise.all([
     loadSettings(),
     currentUser(),
     getShellData(),
     describeModelBackend(),
+    loadStanding(),
   ]);
   const backendRows: (readonly [string, string])[] =
     backend.backend === 'claude-code'
@@ -140,6 +155,23 @@ export default async function SettingsPage() {
               </Button>
             </form>
           ) : null}
+        </Section>
+
+        <Section id="orchestrator" title="Orchestrator" className="md:col-span-2">
+          <p className="max-w-[31rem] text-body-sm text-body">
+            Every run starts with a plan. The orchestrator writes it from these rules, the agents
+            and their tools, and the memory that matters to the task. The rules come with Magpipe;
+            the standing instructions are yours.
+          </p>
+          <div className="grid gap-6 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] md:items-start">
+            <TextBlock
+              title="Orchestrator rules"
+              text={ORCHESTRATOR_SYSTEM}
+              copyLabel="Copy rules"
+              maxHeight={480}
+            />
+            <StandingInstructions entries={standing} />
+          </div>
         </Section>
 
         <Section id="keyboard" title="Keyboard" className="md:col-span-2">
