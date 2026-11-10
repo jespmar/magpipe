@@ -44,13 +44,13 @@ function lastUserText(params: ModelParams): string {
 
 /**
  * The agent to plan for, from the orchestrator's registry text (`- slug (Name, role): …` then
- * `model …; tools: …`): the first agent with no registry tools (the stub never calls a tool
- * server), else the first agent at all.
+ * indented lines, one of them `servers: …`): the first agent with no servers (the stub never
+ * calls a tool server), else the first agent at all.
  */
 export function pickRegistrySlug(text: string): string | null {
   const entries = text.split(/^(?=- [a-z0-9-]+ \()/m).filter((e) => e.startsWith('- '));
   const slugOf = (entry: string) => /^- ([a-z0-9-]+) \(/.exec(entry)?.[1] ?? null;
-  const toolFree = entries.find((e) => !/tools: [^;\n]*tool_/.test(e));
+  const toolFree = entries.find((e) => /^ {2}servers: none$/m.test(e));
   return slugOf(toolFree ?? entries[0] ?? '');
 }
 

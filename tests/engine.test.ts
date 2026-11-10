@@ -464,7 +464,9 @@ describe('run engine with a granted MCP server', () => {
       .where(eq(t.agents.slug, 'operator'));
 
     const client = scripted((p) => {
-      if (isPlan(p))
+      if (isPlan(p)) {
+        // The planner reads the grant by name, with only the tool it allows.
+        expect(String(p.system)).toContain('  servers: Echo server (echo.say)\n');
         return plan([
           {
             id: 's1',
@@ -475,6 +477,7 @@ describe('run engine with a granted MCP server', () => {
             optional: false,
           },
         ]);
+      }
       if (isMerge(p)) return text('merged');
       const names = (p.tools ?? []).map((tool) => (tool as { name: string }).name);
       expect(names).toContain('echo-server__echo_say');
