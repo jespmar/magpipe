@@ -98,6 +98,31 @@ test('settings loads the demo data after a confirm step and reports the result',
   await expect(page.locator('footer')).not.toContainText('eu-north-1');
 });
 
+test('settings changes the daily spend cap and refuses one that is not a cap', async ({ page }) => {
+  await page.goto('/settings');
+  const spend = page.getByRole('region', { name: 'Spend cap' });
+  const field = spend.getByRole('textbox', { name: 'Cap per day, in dollars' });
+  const save = spend.getByRole('button', { name: 'Save cap' });
+  await expect(field).toHaveValue('50.00');
+  await expect(spend.getByRole('definition').filter({ hasText: '$50.00' })).toBeVisible();
+
+  // Refused beside the field, before anything is sent.
+  await field.fill('-5');
+  await save.click();
+  await expect(field).toHaveAttribute('aria-invalid', 'true');
+  await expect(spend.getByRole('alert')).toContainText(
+    'The cap can’t be negative. Use 0 for no cap',
+  );
+
+  await field.fill('75');
+  await expect(field).not.toHaveAttribute('aria-invalid', 'true');
+  await save.click();
+  await expect(spend.getByRole('button', { name: 'Saved' })).toBeVisible();
+  await expect(spend.getByRole('definition').filter({ hasText: '$75.00' })).toBeVisible();
+  await page.reload();
+  await expect(field).toHaveValue('75.00');
+});
+
 test('unknown addresses keep the shell, answer 404, and offer a way back', async ({ page }) => {
   const res = await page.goto('/no-such-page');
   expect(res?.status()).toBe(404);

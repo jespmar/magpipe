@@ -5,6 +5,7 @@ import { PageHead } from '@/components/ui/PageHead';
 import { Button } from '@/components/ui/Button';
 import { Kbd } from '@/components/ui/Kbd';
 import { DemoDataForm } from '@/components/settings/DemoDataForm';
+import { SpendCapForm } from '@/components/settings/SpendCapForm';
 import { ScrollToHash } from '@/components/ui/ScrollToHash';
 import { dataDir, getDb } from '@/lib/db';
 import { describeModelBackend } from '@/lib/engine/claude-code';
@@ -13,8 +14,10 @@ import { buildSeed } from '@/lib/db/seed-data';
 import { env } from '@/lib/env';
 import { accessMode } from '@/lib/auth-mode';
 import { currentUser } from '@/lib/session';
+import { formatUsd } from '@/lib/runs-util';
 import { getShellData } from '@/lib/shell-data';
 import { SHORTCUTS } from '@/lib/shortcuts';
+import { capReached, capText, spendToday, type SpendToday } from '@/lib/spend';
 import type { Settings } from '@/lib/schemas';
 
 export const metadata: Metadata = { title: 'Settings' };
@@ -28,16 +31,33 @@ async function loadSettings(): Promise<Settings | null> {
   }
 }
 
+async function loadSpend(): Promise<SpendToday | null> {
+  try {
+    return await spendToday(await getDb());
+  } catch {
+    return null;
+  }
+}
+
+/** What the cap counts, for the backend in use (D22: Claude Code's dollars are not a bill). */
+const SPEND_COUNTS = {
+  'claude-code':
+    'Counts today’s runs at API prices. Under Claude Code that is an estimate, not a bill.',
+  api: 'Counts today’s runs at the API’s list prices.',
+  stub: 'Counts today’s runs at API prices. The scripted model has no price, so it adds nothing.',
+} as const;
+
 const MODE_LABEL = {
   desktop: 'desktop app, no sign-in',
   open: 'sign-in disabled for development',
   signin: 'signed in with GitHub',
 } as const;
 
-/** Read-only facts for now (spec §3.7); editing lands with the screen that first needs it. */
+/** Workspace facts (spec §3.7); the daily spend cap is the one the operator edits (D32). */
 export default async function SettingsPage() {
-  const [settings, user, shell, backend] = await Promise.all([
+  const [settings, spend, user, shell, backend] = await Promise.all([
     loadSettings(),
+    loadSpend(),
     currentUser(),
     getShellData(),
     describeModelBackend(),
@@ -71,7 +91,7 @@ export default async function SettingsPage() {
       <ScrollToHash />
 
       <div className="grid gap-6 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] md:items-start wide:max-w-[1600px]">
-        <Section id="workspace" title="Workspace" className="md:row-span-2">
+        <Section id="workspace" title="Workspace" className="md:row-span-3">
           <p className="text-body-sm text-body">
             Read-only for now. Editing these lands with the screens that need them.
           </p>
@@ -80,7 +100,6 @@ export default async function SettingsPage() {
             rows={[
               ['Name', settings?.workspaceName ?? dash],
               ['Region label', env.MAGPIPE_REGION ?? settings?.region ?? dash],
-              ['Spend cap per day', settings ? `$${settings.spendCapUsd.toFixed(2)}` : dash],
             ]}
           />
           <Facts
@@ -105,6 +124,35 @@ export default async function SettingsPage() {
             ]}
             note="Everything Magpipe knows lives in the data folder. To back up, copy it while Magpipe is closed."
           />
+        </Section>
+
+        <Section id="spend" title="Spend cap">
+          <p className="text-body-sm text-body">
+            Once today’s spend reaches the cap, runs stop before their next step. Steps already
+            working finish.
+          </p>
+          <Facts
+            rows={[
+              [
+                'Spent today',
+                spend
+                  ? `${formatUsd(spend.spentUsd)} ${spend.capUsd ? 'of' : '·'} ${capText(spend.capUsd)}`
+                  : dash,
+              ],
+            ]}
+          />
+          {spend && capReached(spend) ? (
+            <p className="text-body-sm text-warn">
+              Today’s spend has reached the cap. Raise it to start runs again today.
+            </p>
+          ) : null}
+          <SpendCapForm
+            capUsd={settings?.spendCapUsd ?? 0}
+            disabledReason={
+              settings ? undefined : 'Needs the database. See the notice at the top of the page.'
+            }
+          />
+          <p className="text-caption text-mute">{SPEND_COUNTS[backend.backend]}</p>
         </Section>
 
         <Section id="demo" title="Demo data">
@@ -212,13 +260,13 @@ function Facts({
   rows,
   note,
 }: {
-  title: string;
+  title?: string;
   rows: ReadonlyArray<readonly [string, string]>;
   note?: string;
 }) {
   return (
     <div className="flex flex-col gap-3">
-      <h3 className="text-body-sm font-medium text-ink">{title}</h3>
+      {title ? <h3 className="text-body-sm font-medium text-ink">{title}</h3> : null}
       <dl className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-[180px_minmax(0,1fr)]">
         {rows.map(([k, v]) => (
           <div key={k} className="contents">

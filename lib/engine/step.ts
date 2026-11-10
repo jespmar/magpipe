@@ -13,7 +13,7 @@ import { emitEvent } from './events';
 import { EngineError, withRetries } from './model';
 import { memoryText } from './plan';
 import { setupTools, type Trail } from './tools';
-import { workFacts, type WorkItem } from '../work';
+import { resumeNote, workFacts, type WorkItem } from '../work';
 
 export type StepOutcome = { summary: string; usage: Usage };
 
@@ -32,6 +32,8 @@ export async function runStep(opts: {
   conversation?: string;
   /** Collects what repository tools do in this step (D29); the caller keeps it, done or failed. */
   work?: WorkItem[];
+  /** Saves the record onto the step as it grows, so a restart keeps it (D33). */
+  onWork?: (work: readonly WorkItem[]) => Promise<void>;
   signal: AbortSignal;
 }): Promise<StepOutcome> {
   const { db, run, step, agent } = opts;
@@ -63,6 +65,7 @@ export async function runStep(opts: {
         onRejectedWrite: (text) => trail.emit('error', text),
         onToolUnavailable: (text) => trail.emit('error', text),
         work: opts.work,
+        onWork: opts.onWork,
       }),
     { signal, onRetry: (f, n) => trail.emit('error', `Retry ${n}: ${f.message}`) },
   );
@@ -89,6 +92,7 @@ export async function runStep(opts: {
       opts.conversation ? `Earlier in this conversation:\n${opts.conversation}` : '',
       `Task given to Magpipe:\n${run.input.text}`,
       `Your step: ${step.title}\n${step.instructions ?? ''}`,
+      resumeNote(step) ?? '',
       context ? `Earlier results:\n${context}` : '',
       opts.attachments.length
         ? `Attached files: ${opts.attachments.map((a) => a.name).join(', ')}`
@@ -119,7 +123,6 @@ export async function runStep(opts: {
   }
 }
 
-/** Marks an agent running or idle for the Home and Agents screens; paused agents keep their status. */
 /**
  * Moves an agent between idle, waiting (for a repository another step is changing, D28) and
  * running. A paused agent is never touched, and waiting never hides a step that is running.

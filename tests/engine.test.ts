@@ -1,10 +1,11 @@
 /**
  * The run engine against the real embedded database with a scripted model: plan → steps →
- * merge, tool calls, memory writes, retries, failures, limits and cancellation (spec §7.2, D5).
+ * merge, tool calls, memory writes, retries, failures, limits and cancellation (spec §7.2, D5),
+ * the daily spend cap (D32) and resuming a step after a restart (D33).
  */
 import Anthropic from '@anthropic-ai/sdk';
 import { eq } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { openDb, type Db } from '@/lib/db';
 import * as t from '@/lib/db/schema';
 import { Engine } from '@/lib/engine';
@@ -415,6 +416,12 @@ describe('run engine', () => {
     expect(result.status).toBe('done');
     expect(result.output?.markdown).toBe('merged after restart');
     expect(client.calls.some((p) => isPlan(p))).toBe(false); // the existing plan was kept
+    // The step knows it was interrupted, and that nothing was recorded before (D33).
+    expect(result.plan[0]!.restarts).toBe(1);
+    expect(result.plan[1]!.restarts).toBeUndefined();
+    const stepUser = JSON.stringify(client.calls.find((p) => !isMerge(p))!.messages[0]!.content);
+    expect(stepUser).toContain('This step was interrupted by a restart after it had started.');
+    expect(stepUser).toContain('Magpipe recorded no repository work before that.');
   });
 });
 
@@ -702,6 +709,222 @@ describe('run engine recording what steps did in a repository', () => {
     expect(s1.work?.files).toEqual([{ repo: 'App', path: 'src/b.ts', change: 'created' }]);
     expect(calls).toBeGreaterThan(1);
   }, 30_000);
+
+  it('saves each recorded item onto the step before the step ends (D33)', async () => {
+    const run = await createRun(db, { text: 'write two files', attachments: [] });
+    const seen: { status?: string; files?: string[] }[] = [];
+    const client = scripted(async (p) => {
+      if (isPlan(p)) {
+        return plan([
+          {
+            id: 's1',
+            agent: 'operator',
+            title: 'Write two files',
+            instructions: '',
+            dependsOn: [],
+            optional: false,
+          },
+        ]);
+      }
+      if (isMerge(p)) return text('merged');
+      const n = resultsIn(p);
+      if (n > 0) {
+        // What a restart at this moment would find in the plan.
+        const s1 = (await getRun(db, run.id))!.plan.find((st) => st.id === 's1')!;
+        seen.push({ status: s1.status, files: s1.work?.files.map((f) => f.path) });
+      }
+      if (n === 0) return toolUse('app__write', { path: 'src/d1.ts', contents: 'd1\n' }, 'tu_d1');
+      if (n === 1) return toolUse('app__write', { path: 'src/d2.ts', contents: 'd2\n' }, 'tu_d2');
+      return text('Wrote both.');
+    });
+    const engine = new Engine({ client, getDb: async () => db });
+    engine.enqueue(run.id);
+    await engine.whenIdle();
+    expect((await getRun(db, run.id))!.status).toBe('done');
+    expect(seen).toEqual([
+      { status: 'live', files: ['src/d1.ts'] },
+      { status: 'live', files: ['src/d1.ts', 'src/d2.ts'] },
+    ]);
+  }, 30_000);
+
+  it('resumes an interrupted step with what it had recorded, and keeps that work (D33)', async () => {
+    const run = await createRun(db, { text: 'finish the change', attachments: [] });
+    const earlier = {
+      branches: [{ repo: 'App', name: 'magpipe/x', created: true }],
+      files: [{ repo: 'App', path: 'src/e1.ts', change: 'created' as const }],
+      commits: [{ repo: 'App', branch: 'magpipe/x', sha: 'abc1234', message: 'First half' }],
+      checks: [],
+    };
+    await db
+      .update(t.runs)
+      .set({
+        status: 'running',
+        startedAt: new Date(),
+        plan: [
+          {
+            id: 's1',
+            agentId: 'agt_operator',
+            title: 'Make the change',
+            dependsOn: [],
+            status: 'live',
+            startedAt: new Date().toISOString(),
+            work: earlier,
+          },
+          { id: 'merge', agentId: null, title: 'Merge results', dependsOn: ['s1'], status: 'todo' },
+        ],
+      })
+      .where(eq(t.runs.id, run.id));
+
+    let stepUser = '';
+    const client = scripted((p) => {
+      if (isMerge(p)) return text('merged after restart');
+      if (resultsIn(p) === 0) {
+        stepUser = String(p.messages[0]!.content);
+        return toolUse('app__write', { path: 'src/e2.ts', contents: 'e2\n' }, 'tu_e2');
+      }
+      return text('Finished the second half.');
+    });
+    const engine = new Engine({ client, getDb: async () => db });
+    expect(await engine.resumeInterrupted(db)).toBe(1);
+    await engine.whenIdle();
+
+    expect(stepUser).toContain(
+      [
+        'This step was interrupted by a restart after it had started. Before that, Magpipe recorded:',
+        '- App: created and switched to branch magpipe/x',
+        '- App: created src/e1.ts',
+        '- App: committed abc1234 on magpipe/x: First half',
+        'Continue from there: check git_status and the branch, and do not redo work that is already committed.',
+      ].join('\n'),
+    );
+    const after = (await getRun(db, run.id))!;
+    expect(after.status).toBe('done');
+    const s1 = after.plan.find((st) => st.id === 's1')!;
+    expect(s1.restarts).toBe(1);
+    // Both attempts are on the record: the first attempt's branch, file and commit, then the new file.
+    expect(s1.work).toEqual({
+      ...earlier,
+      files: [
+        { repo: 'App', path: 'src/e1.ts', change: 'created' },
+        { repo: 'App', path: 'src/e2.ts', change: 'created' },
+      ],
+    });
+    const texts = (await listEvents(db, run.id)).map((e) => e.text);
+    expect(texts).toContain('Magpipe restarted; resuming where the run left off.');
+  }, 30_000);
+});
+
+describe('run engine under a daily spend cap (D32)', () => {
+  let db: Db;
+  let close: () => Promise<void>;
+  beforeAll(async () => {
+    ({ db, close } = await openDb('memory://'));
+    // Room for the pricey calls below: the cap, not a step's token limit, is what stops them.
+    await db
+      .update(t.agents)
+      .set({ limits: { maxTokens: 10_000_000, maxSteps: 30, timeoutSec: 600 } });
+  }, 30_000);
+  afterAll(() => close());
+  beforeEach(async () => {
+    // Each case starts the day afresh.
+    await db.delete(t.runs);
+  });
+
+  /** Every call costs $1.40 at the orchestrator's prices: 100k tokens in, 50k out. */
+  const pricey = (m: ModelMessage): ModelMessage => ({
+    ...m,
+    usage: { ...m.usage, input_tokens: 100_000, output_tokens: 50_000 },
+  });
+  const twoSteps = () =>
+    scripted((p) => {
+      if (isPlan(p)) {
+        return pricey(
+          plan([
+            {
+              id: 's1',
+              agent: 'researcher',
+              title: 'Look it up',
+              instructions: '',
+              dependsOn: [],
+              optional: false,
+            },
+            {
+              id: 's2',
+              agent: 'coder',
+              title: 'Draft the change',
+              instructions: '',
+              dependsOn: ['s1'],
+              optional: false,
+            },
+          ]),
+        );
+      }
+      if (isMerge(p)) return pricey(text('merged'));
+      return pricey(text(String(p.system).includes('Coder') ? 'Drafted.' : 'Found it.'));
+    });
+  const setCap = (spendCapUsd: number) => db.update(t.settings).set({ spendCapUsd });
+  const runOnce = async (client: ModelClient) => {
+    const engine = new Engine({ client, getDb: async () => db });
+    const run = await createRun(db, { text: 'look it up and draft the change', attachments: [] });
+    engine.enqueue(run.id);
+    await engine.whenIdle();
+    const events = await listEvents(db, run.id);
+    return { run: (await getRun(db, run.id))!, last: events[events.length - 1]! };
+  };
+
+  it('stops the run before a step once today’s spend reaches the cap', async () => {
+    await setCap(2);
+    const client = twoSteps();
+    const { run, last } = await runOnce(client);
+    expect(run.status).toBe('failed');
+    expect(run.plan.map((s) => [s.id, s.status])).toEqual([
+      ['s1', 'done'],
+      ['s2', 'skipped'],
+      ['merge', 'skipped'],
+    ]);
+    // The plan ($1.40) left room for the first step; the first step's own $1.40 used it up.
+    expect(last).toMatchObject({
+      kind: 'error',
+      payload: { code: 'spend_cap' },
+      text: 'Today’s spend ($2.80) reached the $2.00 cap, so the run stopped before “Draft the change”. Raise the cap in Settings to go on.',
+    });
+    // One plan call and the first step's call; the second step and the merge never asked.
+    expect(client.calls.filter(isPlan)).toHaveLength(1);
+    expect(client.calls.filter((p) => !isPlan(p))).toHaveLength(1);
+    expect(run.usage.costUsd).toBeCloseTo(2.8);
+  }, 20_000);
+
+  it('runs to the end while today’s spend stays under the cap', async () => {
+    await setCap(100);
+    const { run, last } = await runOnce(twoSteps());
+    expect(run.status).toBe('done');
+    expect(run.plan.every((s) => s.status === 'done')).toBe(true);
+    expect(last.kind).toBe('done');
+    expect(run.usage.costUsd).toBeCloseTo(5.6);
+  }, 20_000);
+
+  it('stops before planning when the day is already spent, and treats a cap of 0 as none', async () => {
+    const spent = await createRun(db, { text: 'an earlier run', attachments: [] });
+    await db
+      .update(t.runs)
+      .set({ status: 'done', usage: { inputTokens: 1, outputTokens: 1, costUsd: 500 } })
+      .where(eq(t.runs.id, spent.id));
+
+    await setCap(50);
+    const stopped = twoSteps();
+    const first = await runOnce(stopped);
+    expect(first.run.status).toBe('failed');
+    expect(first.run.plan).toEqual([]);
+    expect(stopped.calls).toHaveLength(0);
+    expect(first.last.payload).toEqual({ code: 'spend_cap' });
+    expect(first.last.text).toBe(
+      'Today’s spend ($500.00) reached the $50.00 cap, so the run stopped before planning. Raise the cap in Settings to go on.',
+    );
+
+    await setCap(0);
+    const second = await runOnce(twoSteps());
+    expect(second.run.status).toBe('done');
+  }, 20_000);
 });
 
 describe('run engine with one writer per work tree', () => {
