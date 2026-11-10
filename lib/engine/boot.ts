@@ -3,6 +3,8 @@
  * runs, and keep the job on a timer while the app is open. Called from `instrumentation.ts`.
  */
 import { DbLockedError, getDb } from '../db';
+import { env } from '../env';
+import { findClaudeCli } from './claude-code';
 import { getEngine } from './index';
 import { runHousekeeping, scheduleHousekeeping } from './housekeeping';
 
@@ -11,6 +13,11 @@ const g = globalThis as unknown as { __magpipeBooted?: boolean };
 export async function bootEngine(): Promise<void> {
   if (g.__magpipeBooted) return;
   g.__magpipeBooted = true;
+  // Find the claude command now (a login shell and `claude --version` can take a few seconds),
+  // so the first flight and the Settings screen read the cached answer.
+  if (env.MAGPIPE_MODEL_BACKEND !== 'api' && env.MAGPIPE_MODEL_STUB !== 'scripted') {
+    void findClaudeCli().catch(() => null);
+  }
   try {
     const db = await getDb();
     const { staleMarked } = await runHousekeeping(db);

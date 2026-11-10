@@ -63,7 +63,7 @@ export function FlightLog({ latest, agentNames, className }: Props) {
       className={clsx('min-w-0 flex-col gap-5', className)}
     >
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <h2 id="flight-log-title" className="page-title">
+        <h2 id="flight-log-title" className="text-display-sm text-ink-strong">
           Flight log
         </h2>
         <ButtonLink href="/runs" variant="ghost">

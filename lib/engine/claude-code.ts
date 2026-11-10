@@ -139,7 +139,8 @@ export function findClaudeCli(): Promise<ClaudeCli | null> {
 }
 
 export type BackendInfo = {
-  backend: 'api' | 'claude-code';
+  /** `stub` is the scripted model of development and tests, never production. */
+  backend: 'api' | 'claude-code' | 'stub';
   cli: ClaudeCli | null;
   /** What stands in the way, when something does. */
   problem?: string;
@@ -147,6 +148,9 @@ export type BackendInfo = {
 
 /** The facts the Settings screen shows about how runs reach Claude. Claude Code is the default. */
 export async function describeModelBackend(): Promise<BackendInfo> {
+  if (env.MAGPIPE_MODEL_STUB === 'scripted' && process.env.NODE_ENV !== 'production') {
+    return { backend: 'stub', cli: null };
+  }
   if (env.MAGPIPE_MODEL_BACKEND === 'api') return { backend: 'api', cli: null };
   const cli = await findClaudeCli();
   if (!cli) return { backend: 'claude-code', cli, problem: CLI_MISSING_MESSAGE };
