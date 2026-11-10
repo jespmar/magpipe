@@ -2,7 +2,7 @@
 
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
-import { CodeBlock } from '@/components/ui/CodeBlock';
+import { TextBlock } from '@/components/ui/TextBlock';
 import { StatTile } from '@/components/ui/StatTile';
 import type { AgentRow, NamespaceOption, ToolOption } from '@/lib/agents';
 import { describeMemoryScope, formatPercent } from '@/lib/agents-util';
@@ -45,7 +45,7 @@ export function AgentDetail({
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={onEdit} disabled={busy}>
+          <Button variant="secondary" size="sm" onClick={onEdit} disabled={busy}>
             Edit
           </Button>
           <Button
@@ -65,7 +65,7 @@ export function AgentDetail({
       ) : null}
 
       <dl className="grid grid-cols-3 divide-x divide-hairline-soft border-y border-hairline-soft">
-        <StatTile value={String(agent.stats.runs7d)} label="runs · 7d" />
+        <StatTile value={String(agent.stats.runs7d)} label="runs, 7 days" />
         <StatTile value={formatPercent(agent.stats.successPct)} label="success" />
         <StatTile
           value={agent.stats.avgTokens === null ? '—' : formatTokens(agent.stats.avgTokens)}
@@ -74,7 +74,7 @@ export function AgentDetail({
       </dl>
 
       <section aria-labelledby="agent-tools-label" className="flex flex-col gap-2">
-        <h3 id="agent-tools-label" className="label-caps">
+        <h3 id="agent-tools-label" className="text-body-sm font-medium text-ink">
           Tools
         </h3>
         {grants.length + agent.builtins.length === 0 ? (
@@ -84,7 +84,7 @@ export function AgentDetail({
             {agent.builtins.map((b) => (
               <li
                 key={b}
-                className="rounded-sm bg-canvas-soft px-2 py-0.5 font-mono text-code text-code-ink"
+                className="rounded-sm bg-canvas-soft px-2 py-0.5 font-mono text-code text-ink"
               >
                 {b}
               </li>
@@ -92,7 +92,7 @@ export function AgentDetail({
             {grants.map(({ tool, scopes }) => (
               <li
                 key={tool.id}
-                className="rounded-sm bg-canvas-soft px-2 py-0.5 font-mono text-code text-code-ink"
+                className="rounded-sm bg-canvas-soft px-2 py-0.5 font-mono text-code text-ink"
                 title={scopes.length ? `${tool.name}: ${scopes.join(', ')}` : tool.name}
               >
                 {tool.slug}
@@ -104,7 +104,7 @@ export function AgentDetail({
       </section>
 
       <section aria-labelledby="agent-memory-label" className="flex flex-col gap-2">
-        <h3 id="agent-memory-label" className="label-caps">
+        <h3 id="agent-memory-label" className="text-body-sm font-medium text-ink">
           Memory scope
         </h3>
         <p className="text-body-sm text-ink">
@@ -112,17 +112,11 @@ export function AgentDetail({
         </p>
       </section>
 
-      <section aria-labelledby="agent-prompt-label" className="flex flex-col gap-2">
-        <CodeBlock
-          heading={
-            <h3 id="agent-prompt-label" className="label-caps">
-              System prompt
-            </h3>
-          }
-          code={agent.systemPrompt || '(no system prompt yet)'}
-          label={`Copy ${agent.name}’s system prompt`}
-        />
-      </section>
+      <TextBlock
+        title="System prompt"
+        text={agent.systemPrompt || '(no system prompt yet)'}
+        copyLabel="Copy prompt"
+      />
     </aside>
   );
 }

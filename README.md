@@ -111,7 +111,7 @@ Electron main ──utilityProcess.fork──▶ server.js (Next standalone, 127
 ```
 app/                 routes — (shell)/ holds every screen inside AppShell
   api/health, api/internal/shutdown, api/auth
-components/          AppShell, Logo, NavLinks, ui/ primitives
+components/          AppShell, Logo, NavLinks, arc/ (Arc UI, vendored), ui/ wrappers
 lib/
   schemas/           zod schemas = row types = API validation
   db/                PGlite + Drizzle: schema, schema-check, seed, seed-data
@@ -127,4 +127,6 @@ docs/                spec, decisions
 
 ## Conventions
 
-See [`CLAUDE.md`](CLAUDE.md).
+See [`CLAUDE.md`](CLAUDE.md). The interface is built from [Arc](https://uiarc.dev) components
+(`components/arc/`, installed with `npx shadcn@latest add @uiarc/<id>`, never edited by hand) on
+Magpipe's own palette; `DESIGN.md` describes the result.

@@ -22,7 +22,7 @@ test('the prompt window names a missing task, attaches a file and starts a fligh
 
   // Run with nothing typed: the problem is named and focus goes to the prompt.
   await composer.getByRole('button', { name: 'Run' }).click();
-  await expect(composer.getByRole('alert')).toHaveText('Give Magpipe a task.');
+  await expect(composer.getByRole('alert')).toContainText('Give Magpipe a task.');
   await expect(composer.getByLabel('Ask Magpipe')).toBeFocused();
 
   const task = `Summarise the attached note ${Date.now().toString(36)}`;
@@ -44,13 +44,12 @@ test('the prompt window names a missing task, attaches a file and starts a fligh
   await composer.getByLabel('Ask Magpipe').press('Control+Enter');
   await expect(page).toHaveURL(/\/runs\/flight_[0-9a-z]+$/, { timeout: 15_000 });
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(task);
-  await expect(page.getByText('Flight', { exact: true })).toBeVisible();
 
   // The trail streams in and the flight lands: the path, the log and the result fill in.
   const log = page.getByRole('log');
   await expect(log).toContainText('Answer the task', { timeout: 20_000 });
   await expect(page.getByText('done', { exact: true }).first()).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByRole('list', { name: 'Flight path' }).getByRole('listitem')).toHaveCount(
+  await expect(page.getByRole('group', { name: 'Flight path' }).getByRole('listitem')).toHaveCount(
     2,
   );
   await expect(page.getByRole('region', { name: 'Result' })).toContainText(
@@ -88,7 +87,7 @@ test('the flight table filters, finds the flight, shows its path and re-flies it
     /\/runs\/flight_[0-9a-z]+$/,
   );
   await expect(
-    selected.getByRole('list', { name: 'Flight path' }).getByRole('listitem'),
+    selected.getByRole('group', { name: 'Flight path' }).getByRole('listitem'),
   ).toHaveCount(2);
 
   // Re-fly starts a new flight with the same input and lands on it.

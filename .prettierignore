@@ -9,3 +9,5 @@ docs/spec.md
 drizzle/
 .claude/
 .impeccable/
+# Arc components are vendored verbatim (installed with the shadcn CLI); never reformat or edit them.
+components/arc/

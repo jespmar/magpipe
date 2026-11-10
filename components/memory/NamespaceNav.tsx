@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from 'react';
 import { clsx } from 'clsx';
+import { Input } from '@/components/arc/input/input';
 import { Button } from '@/components/ui/Button';
 import type { NamespaceCount } from '@/lib/memory';
 
@@ -30,18 +31,15 @@ export function NamespaceNav({ namespaces, total, value, onChange, onCreate, bus
 
   const row = (on: boolean) =>
     clsx(
-      'flex w-full items-center justify-between gap-2 rounded-sm border-l-2 px-3 py-2.5 text-left text-body-sm transition-colors focus-visible:-outline-offset-3',
+      'flex w-full items-center justify-between gap-2 rounded-(--radius-control) px-3 py-2.5 text-left text-body-sm transition-colors',
       on
-        ? 'border-l-cyan bg-[rgba(34,193,220,0.06)] font-semibold text-ink-strong'
-        : 'border-l-transparent text-body hover:bg-[rgba(255,255,255,0.03)] hover:text-ink',
+        ? 'bg-cyan-soft font-medium text-ink-strong'
+        : 'text-body hover:bg-canvas-muted hover:text-ink',
     );
 
   return (
-    <nav
-      aria-label="Namespaces"
-      className="flex flex-col gap-0.5 rounded-md border border-hairline bg-(image:--g-card) p-2"
-    >
-      <span className="px-3 pt-2 pb-1.5 label-caps">Namespaces</span>
+    <nav aria-label="Namespaces" className="flex flex-col gap-0.5 card p-2">
+      <span className="px-3 pt-2 pb-1.5 text-body-sm font-medium text-ink">Namespaces</span>
       <button
         type="button"
         aria-pressed={value === null}
@@ -49,7 +47,7 @@ export function NamespaceNav({ namespaces, total, value, onChange, onCreate, bus
         className={row(value === null)}
       >
         <span>All</span>
-        <span className="font-mono text-caption text-mute">{total}</span>
+        <span className="font-mono text-caption text-mute tabular-nums">{total}</span>
       </button>
       {namespaces.map((ns) => {
         const on = value === ns.id;
@@ -62,26 +60,23 @@ export function NamespaceNav({ namespaces, total, value, onChange, onCreate, bus
             className={row(on)}
           >
             <span className="truncate">{ns.label}</span>
-            <span className="font-mono text-caption text-mute">{ns.count}</span>
+            <span className="font-mono text-caption text-mute tabular-nums">{ns.count}</span>
           </button>
         );
       })}
       {adding ? (
-        <form onSubmit={submit} className="flex flex-col gap-2 px-3 pt-2 pb-1">
-          <label htmlFor="new-namespace" className="text-caption font-medium text-body">
-            New namespace
-          </label>
+        <form onSubmit={submit} className="flex flex-col gap-3 px-2 pt-3 pb-1">
+          <Input
+            id="new-namespace"
+            label="New namespace"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            autoFocus
+            maxLength={40}
+          />
           <div className="flex gap-2">
-            <input
-              id="new-namespace"
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              autoFocus
-              maxLength={40}
-              className="min-w-0 flex-1 rounded-sm border border-hairline bg-canvas-soft px-3 py-1.5 text-body-sm text-ink focus:border-ink-strong focus:outline-none"
-            />
-            <Button type="submit" variant="outline" size="sm" disabled={busy || !label.trim()}>
-              Add
+            <Button type="submit" variant="secondary" size="sm" disabled={busy || !label.trim()}>
+              Add namespace
             </Button>
             <Button variant="ghost" size="sm" onClick={() => setAdding(false)} disabled={busy}>
               Cancel
@@ -89,13 +84,11 @@ export function NamespaceNav({ namespaces, total, value, onChange, onCreate, bus
           </div>
         </form>
       ) : (
-        <button
-          type="button"
-          onClick={() => setAdding(true)}
-          className="mt-1 rounded-sm px-3 py-2 text-left text-caption font-medium text-ghost hover:text-ink-strong"
-        >
-          + New namespace
-        </button>
+        <div className="pt-1">
+          <Button variant="ghost" size="sm" onClick={() => setAdding(true)}>
+            New namespace
+          </Button>
+        </div>
       )}
     </nav>
   );

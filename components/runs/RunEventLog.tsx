@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { clsx } from 'clsx';
 import { EventRow } from '@/components/runs/EventRow';
+import { Streaming } from '@/components/home/FlightLog';
 import { runStatusVariant, StatusPill } from '@/components/ui/StatusPill';
 import { mergeEvents, toFlightEvent, type FlightEvent } from '@/lib/home-util';
 import { LIVE } from '@/lib/runs-util';
@@ -61,20 +62,10 @@ export function RunEventLog({ run, initialEvents, agentNames, className }: Props
         <h2 id="run-log-title" className="text-display-sm text-ink-strong">
           Flight log
         </h2>
-        {live ? (
-          <span className="inline-flex shrink-0 items-center gap-1.5 text-caption font-medium text-ink-strong">
-            <span
-              aria-hidden
-              className="size-1.5 rounded-pill bg-accent motion-safe:animate-blink"
-            />
-            streaming
-          </span>
-        ) : (
-          <StatusPill variant={runStatusVariant(status)} />
-        )}
+        {live ? <Streaming /> : <StatusPill variant={runStatusVariant(status)} />}
       </div>
       {events.length === 0 ? (
-        <p className="border-t border-hairline py-4 text-body-sm text-body">
+        <p className="border-t border-hairline-soft py-4 text-body-sm text-body">
           {live ? 'Waking the flock…' : 'This run left no trail.'}
         </p>
       ) : (
@@ -84,7 +75,7 @@ export function RunEventLog({ run, initialEvents, agentNames, className }: Props
           aria-label="Run events"
           onPointerEnter={() => setReading(true)}
           onPointerLeave={() => setReading(false)}
-          className="max-h-[40rem] overflow-y-auto border-t border-hairline"
+          className="max-h-[40rem] overflow-y-auto border-t border-hairline-soft"
         >
           {events.map((e) => (
             <EventRow key={e.seq} event={e} />

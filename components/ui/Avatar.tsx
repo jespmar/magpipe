@@ -1,6 +1,6 @@
 import { clsx } from 'clsx';
 
-/** Mono initials on a hairline disc — the agent's face everywhere (spec §5.4). */
+/** Mono initials on a hairline disc: the agent's face everywhere, and a tool's glyph. */
 export function Avatar({
   initials,
   size = 36,
@@ -14,7 +14,7 @@ export function Avatar({
     <span
       aria-hidden
       className={clsx(
-        'inline-flex shrink-0 items-center justify-center rounded-pill border border-hairline bg-canvas-soft font-mono font-[550] text-ink-strong',
+        'inline-flex shrink-0 items-center justify-center rounded-pill border border-hairline bg-canvas-soft font-mono font-medium text-ink-strong',
         size === 44 ? 'text-code' : 'text-caption',
         className,
       )}

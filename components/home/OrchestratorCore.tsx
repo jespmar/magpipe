@@ -18,19 +18,18 @@ export function OrchestratorCore({ stats, hasRuns, fresh, className }: Props) {
     <section
       aria-label="The nest"
       className={clsx(
-        'orb-grid flex flex-col items-center gap-6 border-y border-dashed border-hairline px-4 py-6 text-center wide:justify-center wide:gap-7 wide:border-x wide:border-y-0 wide:px-8',
+        'flex flex-col items-center gap-6 border-y border-hairline-soft px-4 py-8 text-center wide:justify-center wide:border-x wide:border-y-0 wide:px-8',
         className,
       )}
     >
       <OrchestratorOrb />
-      <div className="flex flex-col items-center gap-1.5">
-        <span className="eyebrow">The nest</span>
+      <div className="flex flex-col items-center gap-2">
         <h2 id="nest-title" className="text-display-md text-ink-strong">
           {n > 0 ? `Magpipe is flying ${plural(n, 'agent')}` : 'No agents flying right now'}
         </h2>
         <p className="max-w-[31rem] text-body-sm text-body">
           Sends each task out to the flock, collects the shiny bits they bring back and keeps the
-          nest — shared memory — tidy.
+          nest (shared memory) tidy.
         </p>
       </div>
       <dl className="flex flex-wrap justify-center gap-x-8 gap-y-3 wide:gap-x-10">
@@ -48,12 +47,12 @@ export function OrchestratorCore({ stats, hasRuns, fresh, className }: Props) {
   );
 }
 
-/** A centred mono number over its caption — the nest's version of the stat tile. */
+/** A centred mono number over its caption, the nest's version of the stat tile. */
 function Counter({ value, label }: { value: string; label: string }) {
   return (
     <div className="flex flex-col-reverse items-center gap-0.5">
       <dt className="text-caption text-mute">{label}</dt>
-      <dd className="m-0 font-mono text-display-sm font-[550] tracking-normal text-ink-strong wide:text-[24px] wide:leading-8">
+      <dd className="m-0 font-mono text-display-sm font-medium text-ink-strong tabular-nums wide:text-[22px] wide:leading-7">
         {value}
       </dd>
     </div>

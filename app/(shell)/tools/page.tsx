@@ -12,7 +12,7 @@ export const metadata: Metadata = { title: 'Tools' };
 type Props = { searchParams: Promise<{ connect?: string }> };
 
 const DESCRIPTION =
-  'MCP servers and integrations the flock can use. Each tool is scoped per bird — nothing is reachable unless it is granted here.';
+  'MCP servers and integrations the flock can use. Each tool is scoped per bird: nothing is reachable unless it is granted here.';
 
 export default async function ToolsPage({ searchParams }: Props) {
   const params = await searchParams;
@@ -36,7 +36,7 @@ export default async function ToolsPage({ searchParams }: Props) {
     console.error('[tools] unavailable:', err);
     return (
       <>
-        <PageHead eyebrow="Beaks & claws" title="Tools" description={DESCRIPTION} />
+        <PageHead title="Tools" description={DESCRIPTION} />
         <UnavailableState />
       </>
     );

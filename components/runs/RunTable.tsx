@@ -27,8 +27,8 @@ const STATUS_COLOR: Record<RunStatus, string> = {
 
 /**
  * The flight ledger (spec §3.4): flight · task · agents · status · duration · tokens · started.
- * Twelve columns on a 900 px floor, so narrow windows scroll the table sideways instead of
- * folding its facts.
+ * Twelve columns on a 900 px floor, so narrow windows scroll the table inside its card instead
+ * of folding its facts.
  */
 export function RunTable({
   runs,
@@ -67,15 +67,15 @@ export function RunTable({
         // `relative` keeps the rows' visually hidden labels inside this scroll box; otherwise
         // they position against the document and widen the page on narrow screens. Below 1600 px
         // the ledger scrolls inside its own height so the selected flight stays within reach.
-        'relative max-h-[28rem] min-w-0 overflow-auto rounded-md border border-hairline bg-(image:--g-card) wide:max-h-none',
+        'relative max-h-[28rem] min-w-0 overflow-auto card wide:max-h-none',
         className,
       )}
     >
       {runs.length === 0 ? (
-        <p className="px-4 py-8 text-body-sm text-body">{emptyMessage}</p>
+        <p className="px-5 py-8 text-body-sm text-body">{emptyMessage}</p>
       ) : (
         <div className="min-w-[900px]">
-          <div className="sticky top-0 z-10 grid grid-cols-12 gap-3 border-b border-hairline bg-canvas-soft px-4 py-3 label-caps">
+          <div className="sticky top-0 z-10 grid grid-cols-12 gap-3 border-b border-hairline-soft bg-canvas-raised px-5 py-3 text-caption font-medium text-mute">
             <span className="col-span-2">Flight</span>
             <span className="col-span-4">Task</span>
             <span className="col-span-2">Agents</span>
@@ -98,11 +98,11 @@ export function RunTable({
                     aria-pressed={on}
                     onClick={() => onSelect(r.id)}
                     className={clsx(
-                      'grid w-full grid-cols-12 items-center gap-3 border-b border-l-2 border-b-hairline-soft px-4 py-3 text-left transition-colors group-last:border-b-0 hover:bg-[rgba(255,255,255,0.03)] focus-visible:-outline-offset-3',
-                      on ? 'border-l-cyan bg-[rgba(34,193,220,0.06)]' : 'border-l-transparent',
+                      'grid w-full grid-cols-12 items-center gap-3 border-b border-l-2 border-b-hairline-soft px-5 py-3 text-left transition-colors group-last:border-b-0 hover:bg-canvas-muted focus-visible:-outline-offset-3',
+                      on ? 'border-l-cyan bg-cyan-soft' : 'border-l-transparent',
                     )}
                   >
-                    <span className="col-span-2 truncate font-mono text-code text-code-ink">
+                    <span className="col-span-2 truncate font-mono text-code text-ink">
                       {r.displayId}
                     </span>
                     <span className="col-span-4 truncate text-body-sm text-ink">
@@ -140,10 +140,10 @@ export function RunTable({
                       />
                       {r.status}
                     </span>
-                    <span className="text-right font-mono text-code text-body">
+                    <span className="text-right font-mono text-code text-body tabular-nums">
                       {r.durationMs !== null ? formatDuration(r.durationMs) : '—'}
                     </span>
-                    <span className="text-right font-mono text-code text-body">
+                    <span className="text-right font-mono text-code text-body tabular-nums">
                       {tokens > 0 ? formatTokens(tokens) : '—'}
                     </span>
                     <span className="text-right font-mono text-code text-mute">
@@ -157,7 +157,7 @@ export function RunTable({
           {clipped ? (
             <div
               aria-hidden
-              className="pointer-events-none sticky bottom-0 -mt-6 h-6 bg-gradient-to-t from-canvas to-transparent wide:hidden"
+              className="pointer-events-none sticky bottom-0 -mt-6 h-6 bg-gradient-to-t from-canvas-raised to-transparent wide:hidden"
             />
           ) : null}
         </div>

@@ -146,9 +146,8 @@ export function ToolsScreen({
   return (
     <>
       <PageHead
-        eyebrow="Beaks & claws"
         title="Tools"
-        description="MCP servers and integrations the flock can use. Each tool is scoped per bird — nothing is reachable unless it is granted here."
+        description="MCP servers and integrations the flock can use. Each tool is scoped per bird: nothing is reachable unless it is granted here."
         actions={
           <>
             {/* Lives in the head so a notice never moves the columns below. */}
@@ -173,7 +172,7 @@ export function ToolsScreen({
               aria-expanded={panel}
               aria-controls="connect-panel"
             >
-              + Connect tool
+              Connect tool
             </Button>
           </>
         }
@@ -188,14 +187,11 @@ export function ToolsScreen({
       ) : null}
 
       {tools.length === 0 ? (
-        <EmptyState title="No tools connected yet" actions={fresh ? <DemoLink /> : undefined}>
-          <p>
-            Birds reach the world through tools: MCP servers you connect here, plus the built-ins
-            (web search, file reading, a sandboxed workspace). Press “Connect tool”, paste a
-            server’s JSON, and it is tested and listed in one go
-            {fresh ? ', or load the demo data to look at nine examples' : ''}.
-          </p>
-        </EmptyState>
+        <EmptyState
+          title="No tools connected yet"
+          description={`Birds reach the world through tools: MCP servers you connect here, plus the built-ins (web search, file reading, a sandboxed workspace). Press “Connect tool”, paste a server’s JSON, and it is tested and listed in one go${fresh ? ', or load the demo data to look at nine examples' : ''}.`}
+          actions={fresh ? <DemoLink /> : undefined}
+        />
       ) : visible.length === 0 ? (
         <p className="text-body-sm text-body">No tools match “{query}”.</p>
       ) : (

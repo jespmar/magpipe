@@ -2,6 +2,7 @@
 
 import { useId, useState, type FormEvent } from 'react';
 import { clsx } from 'clsx';
+import { Input } from '@/components/arc/input/input';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { StatusPill } from '@/components/ui/StatusPill';
@@ -24,7 +25,7 @@ type Props = {
   secretsReady: boolean;
 };
 
-/** One integration as a badge: glyph, name, kind, status, reach, who holds it (spec §3.5). */
+/** One integration: glyph, name, kind, status, reach, who holds it (spec §3.5). */
 export function ToolCard({
   tool,
   agents,
@@ -67,14 +68,9 @@ export function ToolCard({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <span
-            aria-hidden
-            className="inline-flex size-10 shrink-0 items-center justify-center rounded-md border border-hairline bg-canvas-soft font-mono text-caption font-[550] text-ink-strong"
-          >
-            {tool.glyph}
-          </span>
+          <Avatar initials={tool.glyph} size={40} />
           <div className="flex min-w-0 flex-col gap-0.5">
-            <h2 id={`${ids}-name`} className="truncate text-body-md font-semibold text-ink-strong">
+            <h2 id={`${ids}-name`} className="truncate text-body-md font-medium text-ink-strong">
               {tool.name}
             </h2>
             <span className="text-caption text-mute">{kindLabel(tool)}</span>
@@ -95,7 +91,7 @@ export function ToolCard({
           {tool.scopes.map((scope) => (
             <li
               key={scope}
-              className="rounded-sm bg-canvas-soft px-2 py-0.5 font-mono text-caption text-code-ink"
+              className="rounded-sm bg-canvas-soft px-2 py-0.5 font-mono text-caption text-ink"
             >
               {scope}
             </li>
@@ -105,7 +101,7 @@ export function ToolCard({
         <p className="text-caption text-mute">No tool names discovered yet.</p>
       )}
 
-      <div className="mt-auto flex items-center justify-between gap-3 border-t border-hairline pt-3">
+      <div className="mt-auto flex items-center justify-between gap-3 border-t border-hairline-soft pt-3">
         <ul aria-label="Granted to" className="flex gap-1">
           {holders.length === 0 ? (
             <li className="text-caption text-mute">No agent holds this</li>
@@ -118,20 +114,20 @@ export function ToolCard({
             ))
           )}
         </ul>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <span className="font-mono text-caption text-mute">
             {formatCount(tool.stats.calls24h)} calls · 24h
           </span>
           {builtin ? null : (
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={toggle}
               aria-expanded={open}
               aria-controls={`${ids}-manage`}
-              className="rounded-xs text-caption font-medium text-ghost hover:text-ink-strong"
             >
               {open ? 'Done' : 'Manage'}
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -143,12 +139,12 @@ export function ToolCard({
         >
           {mode === 'actions' ? (
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" onClick={onTest} disabled={busy}>
+              <Button variant="secondary" size="sm" onClick={onTest} disabled={busy}>
                 Test again
               </Button>
               {canAuth ? (
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   size="sm"
                   onClick={() => setMode('token')}
                   disabled={busy}
@@ -163,28 +159,31 @@ export function ToolCard({
           ) : null}
 
           {mode === 'token' ? (
-            <form onSubmit={submitToken} className="flex flex-col gap-2">
-              <label htmlFor={`${ids}-token`} className="text-caption font-medium text-body">
-                {tool.auth.type === 'apikey' ? 'API key' : 'Access token'}
-              </label>
+            <form onSubmit={submitToken} className="flex flex-col gap-3">
+              <Input
+                id={`${ids}-token`}
+                label={tool.auth.type === 'apikey' ? 'API key' : 'Access token'}
+                description={
+                  secretsReady
+                    ? 'Stored encrypted on this machine and sent only to this server.'
+                    : 'Tokens can’t be stored until MAGPIPE_SECRET_KEY is set. See .env.example.'
+                }
+                type="password"
+                autoComplete="off"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                disabled={!secretsReady}
+                autoFocus
+                style={{ fontFamily: 'var(--font-mono)' }}
+              />
               <div className="flex flex-wrap gap-2">
-                <input
-                  id={`${ids}-token`}
-                  type="password"
-                  autoComplete="off"
-                  value={token}
-                  onChange={(e) => setToken(e.target.value)}
-                  disabled={!secretsReady}
-                  autoFocus
-                  className="min-w-0 flex-1 rounded-sm border border-hairline bg-canvas-soft px-3 py-1.5 font-mono text-code text-ink focus:border-ink-strong focus:outline-none disabled:opacity-50"
-                />
                 <Button
                   type="submit"
                   variant="primary"
                   size="sm"
                   disabled={busy || !secretsReady || !token.trim()}
                 >
-                  Save & test
+                  Save and test
                 </Button>
                 <Button
                   variant="ghost"
@@ -195,11 +194,6 @@ export function ToolCard({
                   Cancel
                 </Button>
               </div>
-              <p className="text-caption text-mute">
-                {secretsReady
-                  ? 'Stored encrypted on this machine and sent only to this server.'
-                  : 'Tokens can’t be stored until MAGPIPE_SECRET_KEY is set — see .env.example.'}
-              </p>
             </form>
           ) : null}
 

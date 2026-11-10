@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { signOut } from '@/auth';
 import { PageHead } from '@/components/ui/PageHead';
 import { Button } from '@/components/ui/Button';
+import { Kbd } from '@/components/ui/Kbd';
 import { DemoDataForm } from '@/components/settings/DemoDataForm';
 import { ScrollToHash } from '@/components/ui/ScrollToHash';
 import { dataDir, getDb } from '@/lib/db';
@@ -50,13 +51,13 @@ export default async function SettingsPage() {
 
   return (
     <>
-      <PageHead eyebrow="Workspace" title="Settings" />
+      <PageHead title="Settings" />
       <ScrollToHash />
 
       <div className="grid gap-6 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] md:items-start wide:max-w-[1600px]">
         <Section id="workspace" title="Workspace" className="md:row-span-2">
           <p className="text-body-sm text-body">
-            Read-only for now — editing these lands with the screens that need them.
+            Read-only for now. Editing these lands with the screens that need them.
           </p>
           <Facts
             title="Identity"
@@ -95,7 +96,7 @@ export default async function SettingsPage() {
             counts={demoCounts}
             disabledReason={
               shell.dbError
-                ? 'Needs the database — see the notice at the top of the page.'
+                ? 'Needs the database. See the notice at the top of the page.'
                 : undefined
             }
           />
@@ -113,7 +114,7 @@ export default async function SettingsPage() {
                 await signOut({ redirectTo: '/signin' });
               }}
             >
-              <Button type="submit" variant="outline" size="sm">
+              <Button type="submit" variant="secondary" size="sm">
                 Sign out
               </Button>
             </form>
@@ -132,7 +133,7 @@ export default async function SettingsPage() {
               { title: 'Go to a screen', items: SHORTCUTS.filter((s) => s.chord) },
             ].map((group) => (
               <div key={group.title} className="flex flex-col gap-3">
-                <h3 className="label-caps">{group.title}</h3>
+                <h3 className="text-body-sm font-medium text-ink">{group.title}</h3>
                 <dl className="grid grid-cols-[9.5rem_minmax(0,1fr)] gap-x-4 gap-y-2.5">
                   {group.items.map((s) => (
                     <div key={s.label} className="contents">
@@ -159,14 +160,6 @@ export default async function SettingsPage() {
   );
 }
 
-function Kbd({ children }: { children: ReactNode }) {
-  return (
-    <kbd className="rounded-xs border border-hairline bg-canvas-soft px-1.5 py-0.5 font-mono text-caption text-ink-strong">
-      {children}
-    </kbd>
-  );
-}
-
 function Section({
   id,
   title,
@@ -183,7 +176,7 @@ function Section({
       id={id}
       aria-labelledby={`${id}-title`}
       // scroll-mt clears the sticky header when linked as /settings#demo
-      className={`flex scroll-mt-24 flex-col gap-5 rounded-md border border-hairline bg-(image:--g-card) p-6 ${className ?? ''}`}
+      className={`flex scroll-mt-24 flex-col gap-5 card p-6 ${className ?? ''}`}
     >
       <h2 id={`${id}-title`} className="text-display-sm text-ink-strong">
         {title}
@@ -204,7 +197,7 @@ function Facts({
 }) {
   return (
     <div className="flex flex-col gap-3">
-      <h3 className="label-caps">{title}</h3>
+      <h3 className="text-body-sm font-medium text-ink">{title}</h3>
       <dl className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-[180px_minmax(0,1fr)]">
         {rows.map(([k, v]) => (
           <div key={k} className="contents">

@@ -1,55 +1,45 @@
 ---
 name: Magpipe
-description: A dark, quiet aviary where the few bright things are the ones that act or are alive.
+description: A dark, quiet aviary built from Arc components, where the few bright things are the ones that act or are alive.
 colors:
   canvas: '#101010'
-  canvas-soft: '#1a1a1a'
   canvas-raised: '#181818'
+  canvas-soft: '#1a1a1a'
+  canvas-muted: '#222222'
   hairline: '#3d3a39'
   hairline-soft: '#1f1f1f'
   ink: '#f2f2f2'
   ink-strong: '#ffffff'
   body: '#bdbdbd'
   mute: '#8b949e'
-  code: '#f5f6f7'
-  accent-white: '#ffffff'
-  ghost: '#d1d5db'
   sheen-cyan: '#22c1dc'
-  sheen-teal: '#0e9aa8'
-  sheen-emerald: '#16a35e'
   sheen-cyan-soft: '#66d9e8'
-  sheen-tint: '#d6f5f7'
+  sheen-emerald: '#16a35e'
   warn: '#fbbf24'
   danger: '#f87171'
 typography:
-  display-xl:
-    fontFamily: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
-    fontSize: '60px'
-    fontWeight: 400
-    lineHeight: '60px'
-    letterSpacing: '-0.65px'
   display:
-    fontFamily: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+    fontFamily: 'Geist, sans-serif'
     fontSize: '36px'
     fontWeight: 400
     lineHeight: '40px'
-    letterSpacing: '-0.9px'
+    letterSpacing: '-0.03em'
   headline:
     fontFamily: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
-    fontSize: '24px'
-    fontWeight: 700
-    lineHeight: '32px'
-    letterSpacing: '-0.6px'
+    fontSize: '22px'
+    fontWeight: 500
+    lineHeight: '28px'
+    letterSpacing: '-0.01em'
   title:
     fontFamily: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
-    fontSize: '20px'
-    fontWeight: 600
-    lineHeight: '28px'
+    fontSize: '18px'
+    fontWeight: 500
+    lineHeight: '26px'
   body:
     fontFamily: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
     fontSize: '16px'
     fontWeight: 400
-    lineHeight: '26px'
+    lineHeight: '24px'
   body-sm:
     fontFamily: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
     fontSize: '14px'
@@ -60,32 +50,23 @@ typography:
     fontSize: '12px'
     fontWeight: 400
     lineHeight: '16px'
-  eyebrow:
-    fontFamily: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
-    fontSize: '14px'
-    fontWeight: 600
-    lineHeight: '20px'
-    letterSpacing: '2.52px'
   label:
     fontFamily: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
-    fontSize: '12px'
-    fontWeight: 600
-    lineHeight: '16px'
-    letterSpacing: '1.2px'
+    fontSize: '14px'
+    fontWeight: 500
+    lineHeight: '20px'
   code:
     fontFamily: "SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace"
     fontSize: '13px'
     fontWeight: 400
     lineHeight: '18px'
-  button:
-    fontFamily: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
-    fontSize: '14px'
-    fontWeight: 600
-    lineHeight: '20px'
 rounded:
   xs: '4px'
   sm: '6px'
   md: '8px'
+  control: '18px'
+  panel: '26px'
+  surface: '34px'
   pill: '9999px'
 spacing:
   xs: '4px'
@@ -97,292 +78,279 @@ spacing:
   3xl: '48px'
 components:
   button-primary:
-    backgroundColor: '{colors.accent-white}'
+    backgroundColor: '{colors.ink}'
     textColor: '{colors.canvas}'
-    typography: '{typography.button}'
-    rounded: '{rounded.sm}'
-    padding: '10px 16px'
-  button-primary-hover:
-    backgroundColor: '{colors.sheen-tint}'
-  button-outline:
-    backgroundColor: '{colors.canvas}'
+    typography: '{typography.label}'
+    rounded: '{rounded.control}'
+    padding: '0 16px'
+  button-secondary:
+    backgroundColor: '{colors.canvas-raised}'
     textColor: '{colors.ink}'
-    typography: '{typography.button}'
-    rounded: '{rounded.sm}'
-    padding: '10px 16px'
+    typography: '{typography.label}'
+    rounded: '{rounded.control}'
+    padding: '0 16px'
   button-ghost:
-    backgroundColor: '{colors.canvas}'
-    textColor: '{colors.ghost}'
-    typography: '{typography.button}'
-    rounded: '{rounded.sm}'
-    padding: '10px 16px'
-  pill-status:
-    backgroundColor: '{colors.canvas}'
+    backgroundColor: 'transparent'
+    textColor: '{colors.body}'
+    typography: '{typography.label}'
+    rounded: '{rounded.control}'
+    padding: '0 16px'
+  badge-status:
+    backgroundColor: '{colors.canvas-raised}'
     textColor: '{colors.ink}'
     typography: '{typography.caption}'
     rounded: '{rounded.pill}'
-    padding: '2px 10px'
+    padding: '0 10px'
   chip-mono:
     backgroundColor: '{colors.canvas-soft}'
-    textColor: '{colors.code}'
+    textColor: '{colors.ink}'
     typography: '{typography.code}'
     rounded: '{rounded.sm}'
     padding: '2px 8px'
   card:
     backgroundColor: '{colors.canvas-raised}'
     textColor: '{colors.ink}'
-    rounded: '{rounded.md}'
+    rounded: '{rounded.surface}'
     padding: '24px'
   input:
-    backgroundColor: '{colors.canvas-soft}'
+    backgroundColor: '{colors.canvas-raised}'
     textColor: '{colors.ink}'
     typography: '{typography.body-sm}'
-    rounded: '{rounded.sm}'
-    padding: '10px 16px'
+    rounded: '{rounded.control}'
 ---
 
 # Design System: Magpipe
 
 ## Overview
 
-**Creative North Star: "The Night Aviary"**
+**Creative North Star: "The Night Aviary, quiet"**
 
 Magpipe is a dark, quiet enclosure in which a few bright birds are always visible. The ground is
-near-black and stays that way; the only light on it is the white of the things you can act on
-(the logo on its disc, the primary button, the live dot) and one sheen — cyan running to teal and
-emerald — that marks what is alive, current or identifying (eyebrows, the active underline, the
-wing, a glow around a running thing). Everything else is drawn with hairlines so the birds carry
-the picture.
+near-black and stays that way. The things you can act on are white (the logo disc, the primary
+button); the things that are alive or chosen are cyan (the live badge, the active link, the
+selected row, the progress fill); done is emerald, "needs you" is amber, failed is red. Everything
+else is drawn in greys and hairlines so the birds carry the picture.
 
-The surface is an operator's tool, so familiarity is a feature: one sans for everything, mono
-where numbers and identifiers live, fixed sizes rather than fluid ones, a stable top nav. Brand
-shows in precise details — the gradient-clipped eyebrow, the cyan hairline under the frosted nav,
-mono fact lines, the magpie — never in decoration. Copy is short and plain; the bird metaphor is
-allowed in headings and prose and kept out of any label that must be precise. There is no light
-theme and no second accent: green, purple and blue as UI colours are rejected.
+The components are Arc's (uiarc.dev): CSS modules on semantic tokens, Motion for the few
+movements that explain a change. Magpipe's palette is mapped onto Arc's tokens in
+`app/globals.css`, so a button, a badge or a dialog from Arc is already in the aviary's colours.
+Type carries the hierarchy: Geist at display size for the page title, Inter at 400 and 500 for
+everything else, mono for anything that is data. There are no eyebrows, no gradients, no glows and
+no uppercase. Copy is short and plain; the bird metaphor lives in headings and prose and stays out
+of any label that must be precise. There is no light theme and no second accent.
 
 **Key Characteristics:**
 
-- Near-black canvas with a faint dot grid and one ambient cyan glow; depth from hairlines, not shadows.
-- White is the only solid accent; the cyan→teal→emerald sheen appears only as a signal.
-- Inter at fixed sizes, light display weights, mono for data; eyebrows in tracked uppercase.
-- Small radii (6–8 px), pills only for status and filters, 1 px hairlines, 2 px active underline.
-- Motion is a state, not a texture: a pulsing dot, a glow on hover, nothing on page load.
+- Near-black canvas, flat surfaces on 1 px hairlines; depth only on floating layers (dialogs).
+- White acts, cyan is alive or chosen, emerald/amber/red mean done/needs you/failed. Nothing else is coloured.
+- Geist for the page title, Inter for the rest at 400 and 500; mono for ids, counts, models, paths.
+- Arc's shapes: 18 px controls, 26 px panels, 34 px surfaces, pills for status; nested corners stay concentric.
+- Motion explains a change (a dialog rising, a label morphing, a progress fill settling); the only loops are a live dot and the orb's slow orbit, both opt-in.
 
 ## Colors
 
-A black aviary with one bright accent and one sheen: white does, the sheen tells.
+A black aviary with one accent: white does, cyan tells.
 
 ### Primary
 
-- **Accent White** (#ffffff): the one solid accent. Fills the primary button, the logo disc and
-  the live dot; also the strongest text. If a surface is white, it is something you can act on.
-- **Paper Tint** (#d6f5f7): the primary button's hover and the light end of the "Run" button's
-  gradient — white warmed one step toward the sheen.
+- **Ink Strong** (#ffffff): headings and the strongest text. **Ink** (#f2f2f2, Arc's
+  `--foreground`): the primary button's fill and body-strong text. If a surface is light, it is
+  something you can act on.
 
 ### Secondary
 
-- **Sheen Cyan** (#22c1dc): the live colour. Active nav underline (2 px), status of a running
-  agent, the hover border and glow on cards, the hairline under the nav (at 28% alpha), the bright
-  end of the eyebrow gradient. Never a fill behind text.
-- **Sheen Teal** (#0e9aa8) and **Sheen Emerald** (#16a35e): the middle and far end of the sheen
-  ramp (`linear-gradient(135deg, #22c1dc 0%, #0e9aa8 55%, #16a35e 100%)`), used on the wing of
-  the logo and the progress bar. Emerald alone is permitted for one meaning: a finished state
-  (done).
-- **Soft Cyan** (#66d9e8): the eyebrow gradient's mid-stop and the solid colour a single short
-  eyebrow word takes instead of the gradient.
+- **Sheen Cyan** (#22c1dc, Arc's `--accent` and `--info`): the live colour. The active nav
+  underline (2 px), the running and connected badges, the selected row's edge and 12 % wash
+  (`--accent-subtle`), the progress fill, the keyboard focus outline, the dashed orbit, the logo's
+  wing. Never a fill behind text, never a glow.
+- **Sheen Emerald** (#16a35e, `--success`): one meaning, a finished state (done). Also the far
+  end of the wing.
 
 ### Tertiary
 
-- **Warn Amber** (#fbbf24): needs attention — a tool that needs re-authorising, the database
-  banner, a stale memory. Text and 1 px borders only.
-- **Danger Red** (#f87171): failed, conflicting, destructive. Text and 1 px borders only.
+- **Warn Amber** (#fbbf24, `--warning`): needs attention. A tool that needs re-authorising, the
+  database notice, a stale memory.
+- **Danger Red** (#f87171, `--danger`): failed, conflicting, destructive. Text, badges and the
+  danger button's label only.
 
 ### Neutral
 
-- **Canvas** (#101010): the page and the inside of every control.
-- **Canvas Raised** (#181818) → **Canvas** gradient: cards (`linear-gradient(180deg, #181818, #101010)`).
-- **Canvas Soft** (#1a1a1a): inputs, table header rows, avatar and chip backgrounds.
-- **Hairline** (#3d3a39): every border at rest; **Hairline Soft** (#1f1f1f): row dividers.
-- **Ink** (#f2f2f2) and **Ink Strong** (#ffffff): body-strong and headings.
-- **Body** (#bdbdbd): running text. **Mute** (#8b949e): labels, captions, metadata — still ≥4.5:1 on canvas.
-- **Code** (#f5f6f7): mono text. **Ghost** (#d1d5db): the ghost button's text.
+- **Canvas** (#101010, `--background`): the page.
+- **Canvas Raised** (#181818, `--surface`): cards, inputs, buttons, table header rows.
+- **Canvas Soft** (#1a1a1a, `--surface-raised`): dialogs, chips, avatar discs, key caps.
+- **Canvas Muted** (#222222, `--surface-muted`): hover and pressed fills, disabled controls, the segmented control's track.
+- **Hairline** (#3d3a39, `--border`): every border at rest. **Hairline Soft** (#1f1f1f, `--border-subtle`): row dividers and rules inside a surface.
+- **Body** (#bdbdbd, `--text-secondary`): running text. **Mute** (#8b949e, `--text-muted`): labels, captions, metadata, still ≥4.5:1 on canvas.
 
 ### Named Rules
 
-**The White Acts Rule.** White fills nothing that cannot be pressed. The primary button, the logo
-disc and the live dot are white; a decorative white surface is a mistake.
+**The White Acts Rule.** A light fill means a thing you can press: the primary button, the logo
+disc. A decorative light surface is a mistake.
 
-**The Sheen Signals Rule.** Cyan, teal and emerald never fill a control or a panel. They appear as
-text (eyebrows), as a 1–2 px line (active underline, hover border, nav hairline), as a glow on a
-live or hovered thing, and as the wing. Their rarity is what makes "running" legible.
+**The Cyan Tells Rule.** Cyan marks what is alive or chosen, as a badge, a 2 px line, a 12 % wash
+or a fill that measures progress. It never fills a control or a panel and never glows.
 
-**The Two Semantics Rule.** Amber means "needs you", red means "failed". No other colour carries
-meaning; status otherwise reads from a word, a dot and position.
+**Status Means Status.** Emerald is done, amber needs you, red failed, always next to a word.
+No other colour carries meaning.
 
 ## Typography
 
-**Display Font:** Inter (system sans fallback)
-**Body Font:** Inter
-**Label/Mono Font:** SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono
+**Display Font:** Geist (`--font-display`, headings 30 px and up)
+**Body Font:** Inter (`--font-body`)
+**Mono Font:** SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono
 
-**Character:** one well-tuned sans at fixed pixel sizes, light at display sizes and semibold for
-controls, with a tracked uppercase eyebrow as the single typographic flourish. Mono is reserved
-for things that are data: ids, counts, models, paths, tokens.
+**Character:** Arc's scale at fixed pixel sizes, two weights (400 and 500), sentence case
+everywhere. Hierarchy comes from size, colour (Ink Strong over Body over Mute) and spacing, never
+from bold, caps or tracking. Mono is reserved for things that are data: ids, counts, models,
+paths, tokens.
 
 ### Hierarchy
 
-- **Display** (400, 36/40 px, −0.9 px; 48/52 px at ≥1600): the page title. The hero on Home may
-  use Display XL (400, 60/60, −0.65 px).
-- **Headline** (700, 24/32 px, −0.6 px): one per section at most — the orb's "Magpipe is flying
-  N agents".
-- **Title** (600, 20/28 px): card and panel titles, agent names on cards.
-- **Body** (400, 16/26 px) and **Body Small** (400, 14/20 px): prose and descriptions; measure
+- **Display** (Geist 400, 36/40 px, −0.03 em; 48/52 px at ≥1600): the page title, one per
+  screen (`page-title`).
+- **Headline** (Inter 500, 22/28 px, −0.01 em): one per section at most, e.g. the nest's
+  "Magpipe is flying 3 agents", a dialog's title.
+- **Title** (Inter 500, 18/26 px): card and panel titles, agent names on cards.
+- **Body** (400, 16/24 px) and **Body Small** (400, 14/20 px): prose and descriptions; measure
   ≈72 characters (`max-width: 34rem` at 16 px, `31rem` at 14 px).
-- **Caption** (400/500, 12/16 px): roles, timestamps, hints.
-- **Eyebrow** (600, 14/20 px, +2.52 px, uppercase, sheen gradient clipped to text): the one
-  line above a page title. A single word of eight characters or fewer renders solid Soft Cyan.
-- **Label** (600, 12/16 px, +1.2 px, uppercase, Mute): table headers and section labels.
-- **Code** (400, 13/18 px, mono; 550 for emphasis): ids, counts, models, paths.
+- **Label** (500, 14/20 px): field labels, section labels inside a card ("Tools", "Memory
+  scope"), sentence case.
+- **Caption** (400/500, 12/16 px): roles, timestamps, hints, table headers (Mute).
+- **Code** (400/500, 13/18 px, mono): ids, counts, models, paths; `tabular-nums` where numbers change or align.
 
 ### Named Rules
 
-**The Measured Column Rule.** Prose widths are set in rem, not `ch` — Inter is narrower than its
+**The Measured Column Rule.** Prose widths are set in rem, not `ch`; Inter is narrower than its
 zero, so `ch` overshoots the 65–75 character measure.
 
-**The Numbers Are Mono Rule.** Anything the operator might copy or compare — an id, a count, a
-token total, a model name, a path — is set in the mono stack, often in Mute.
+**The Numbers Are Mono Rule.** Anything the operator might copy or compare is set in the mono
+stack, often in Mute, often `select-all`.
+
+**The Two Weights Rule.** 400 and 500 only. No 600, no bold, no uppercase, no letter-spacing on
+small labels, no line above a heading.
 
 ## Layout
 
-A single centred container: 1200 px wide at desktop with 32 px gutters (16 px below 768 px),
-2300 px wide with 48 px gutters at ≥1600 px ("wide"). Three breakpoints only: below 768 px
-everything stacks and the header becomes two static rows; 768–1599 px is the desktop
-arrangement; at ≥1600 px wide arrangements switch on (side-by-side columns, vertical timelines,
-48/52 px page titles).
+One page container (`shell-container`): 1200 px wide at desktop with 32 px gutters (16 px below
+768 px), 2300 px wide with 48 px gutters at ≥1600 px ("wide"). Three breakpoints only: below
+768 px everything stacks and the header becomes two static rows; 768–1599 px is the desktop
+arrangement; at ≥1600 px wide arrangements switch on (side-by-side columns, a vertical flight
+path, 48/52 px page titles).
 
-Tables are 12-column CSS grids with a Label-style header row on Canvas Soft and 1 px Hairline Soft
-row dividers; a selected row gets a 2 px Sheen Cyan left edge and a `rgba(34,193,220,.06)` fill.
-Cards sit in fluid wrap grids (`flex: 1 1 300px`). Spacing follows a 4 px base; the working steps
-are 8, 12, 16, 24, 32 and 48 px, with 24 px inside cards and 56 px between page sections. Reading
-widths cap at 34 rem (prose) and 60 rem (a holding panel).
+Spacing on the 4 px grid: 16 px inside a group, 24 px between regions (the main column's gap),
+32 to 48 px between sections of a long page, 24 px inside cards (20 in dense ones). Tables are
+12-column CSS grids inside a card with a Caption header row and 1 px Hairline Soft dividers; a
+selected row gets a 2 px cyan left edge and the 12 % cyan wash. Wide tables scroll inside their
+card, never the page. Cards sit in fluid wrap grids and share edges (same top, same height).
 
 ## Elevation & Depth
 
-Flat by default. Every surface is a hairline plane on the same dark ground; the page carries one
-ambient layer (a radial cyan glow top-centre at 14%, a faint emerald glow bottom-right at 10%, a
-24 px dot grid at 4.5% white) and the nav is frosted (`rgba(16,16,16,.72)` + `blur(14px)`). There
-are no drop shadows at rest. Light appears only as a response to state: a card hovered gets a
-cyan border and a 28 px cyan glow at 12%; the primary button carries a 22 px cyan glow at 25–30%
-because it is the thing to press; the orchestrator orb glows because it is alive.
-
-### Shadow Vocabulary
-
-- **Glow Cyan** (`box-shadow: 0 0 22px rgba(34,193,220,.3)`): the primary "Run" button and the orb's disc.
-- **Glow Soft** (`box-shadow: 0 0 22px rgba(34,193,220,.25)`): other primary buttons.
-- **Card Hover** (`border-color: rgba(34,193,220,.45); box-shadow: 0 0 28px rgba(34,193,220,.12)`): any card under the pointer.
+Flat by default. Every surface is a hairline plane on the same dark ground; there are no drop
+shadows at rest, no ambient glows and no gradients. Only floating layers (Arc's dialogs, menus)
+carry a shadow (`--shadow-floating`). The nav is a solid canvas bar with a Hairline Soft rule
+beneath it.
 
 ### Named Rules
 
-**The Light as State Rule.** Nothing glows at rest except the one primary action and the orb.
-Glow means "live", "hovered" or "press me"; a decorative glow is a lapse.
+**The Nothing Glows Rule.** No element glows: not the primary button, not a hovered card, not the
+orb. Light is a fill (white, cyan), never a halo.
 
 ## Shapes
 
-Small radii throughout: 4 px for tiny chips, 6 px for buttons, inputs and code chips, 8 px for
-cards and panels; 9999 px pills are reserved for status, filters and avatar discs. Borders are
-1 px Hairline; the only thicker line is the 2 px Sheen Cyan underline of the active nav item and
-the 2 px left edge of a selected row. The brand's one organic form is the magpie on a perfect
-white disc.
+Arc's radii: 18 px for controls (buttons, inputs, the segmented control), 26 px for panels (menus,
+nested lists), 34 px for surfaces (cards, dialogs, the empty state); 9999 px pills for status
+badges, avatars and attachment chips; 4 to 8 px for the small things (mono chips, key caps, code).
+A nested corner is the outer radius minus the padding, so curves stay parallel. Borders are 1 px
+Hairline; the only thicker line is the 2 px cyan underline of the active nav item and the 2 px
+left edge of a selected row.
 
 ## Components
 
+Every control is an Arc component (`components/arc/`, installed verbatim with the shadcn CLI and
+never edited). Magpipe's own primitives in `components/ui/` are thin wrappers that set the
+product's defaults.
+
 ### Buttons
 
-- **Shape:** 6 px radius, semibold 14/20 (16/24 for the Run button), 10 × 16 px padding (8 × 16
-  in dense rows).
-- **Primary:** Accent White on Canvas text, Glow Soft; hover Paper Tint. The Run button is the
-  only coloured gradient fill (`linear-gradient(135deg, #ffffff, #d6f5f7 60%, #a8e8ee)`) with Glow Cyan.
-- **Outline:** Canvas fill, 1 px Hairline border, Ink text; hover border Ghost.
-- **Soft:** as Outline on Canvas Soft (toolbar actions such as "Attach files").
-- **Ghost:** no border, Ghost text; hover Ink Strong. For secondary actions beside a primary.
-- **Disabled:** 50% opacity, no glow, `cursor: not-allowed`, always with a stated reason nearby.
-- **Focus:** a 2 px Ink Strong ring at 2 px offset, instant (no transition).
+- **Arc `button`** through `components/ui/Button`: `primary` (Ink fill, Canvas label), `secondary`
+  (Canvas Raised fill, Hairline border, the default), `ghost` (no fill, Body label) and `danger`
+  (Danger label on a secondary shape). Sizes `sm` (36 px) in dense rows and toolbars, `md` (44 px)
+  for a surface's main action.
+- One primary button per surface. `loading` replaces the label with a spinner in place and keeps
+  the button's width and focus; a verb-plus-object label ("Add fact", "Connect tool", "Save changes").
+- `ButtonLink` gives a Next link the same shape for navigation.
+- **Focus:** Arc's shared `:focus-visible` outline (cyan, 2 px, 2 px offset); nothing on pointer focus.
 
-### Chips and Pills
+### Badges and chips
 
-- **Status pill:** 1 px border and text in the status colour (cyan running, white waiting, mute
-  idle/queued, emerald done, red failed, amber needs-auth), 6 px dot, Caption 500, 2 × 10 px,
-  pill radius. The dot blinks only when running and only for users who have not asked for less motion.
-- **Filter pill:** Body Small, 4 × 12 px, Hairline border; selected = Accent White fill with
-  Canvas text.
-- **Mono chip:** Canvas Soft, Code text, 6 px radius, 2 × 8 px — tool names, scopes, models.
+- **Status badge** (Arc `badge`, pill, dot): a 12 % tint of its tone with the tone as text and a
+  dot. Running and connected are `info` (cyan), done `success`, failed and conflict `danger`,
+  needs-auth and stale `warning`, the rest `neutral`. The dot is still; the only blinking dot is
+  the bare one in a table cell or the streaming line, under `motion-safe:`.
+- **Live badge:** "3 agents active" in the nav, `info` while anyone is running, `neutral` at rest,
+  "Status unavailable" when the database cannot be read.
+- **Mono chip:** Canvas Soft, Code text, 6 px radius, 2 × 8 px: tool names, scopes, models.
+- **Status word:** inside a dense table cell the status is a 6 px dot and the lowercase word in the
+  status colour, no badge.
 
 ### Cards / Containers
 
-- **Card:** Canvas Raised → Canvas gradient, 1 px Hairline, 8 px radius, 24 px padding, no shadow;
-  hover per Card Hover. Content cards only — never nested.
-- **Panel:** `linear-gradient(180deg, #141a1a, #141414)` with a 1 px cyan border at 28%: the
-  prompt window, the connect panel, holding states.
-- **Stat strip:** three mono 20/28 550 values over Caption labels, divided by 1 px Hairline Soft
-  verticals and framed by Hairline Soft rules above and below; flat on the card surface, never
-  boxed (no card inside a card). On a page of its own (the Runs screen) the strip becomes four
-  stat tiles: a mono 24/32 550 value over its caption in a 16 px card, one per column. A value
-  with nothing behind it reads "—", never a false zero.
-- **Step chain:** a run's plan as 196 px step cards (`AGENT` label in tracked caps · what · mono
-  meta `mm:ss · tokens`), joined by hairline arrows — a horizontal chain at desktop, a vertical
-  timeline from 1600 px. State lives in the dot and the edge: done an emerald dot on a hairline
-  card, live a cyan dot (blinking under `motion-safe:`) with a cyan edge and an 8% cyan fill,
-  failed a red dot and edge, waiting grey, skipped grey on a dashed card.
-- **Status word:** inside a table cell the status is a 6 px dot and the lowercase word in the
-  status colour, no border — the pill's content without its frame, so dense rows stay quiet.
-- **Glyph tile:** 40 px square, 8 px radius, Hairline on Canvas Soft, a mono 12/550 two-letter
-  glyph — a tool's face, as the avatar disc is an agent's. Inside a card it is the one square
-  among discs.
-- **Progress bar:** a 4 px Canvas Soft track with the white→cyan progress gradient as its fill —
-  the one gradient allowed to mean a quantity (verified share of the nest). No rings.
+- **Card** (`card`): Canvas Raised, 1 px Hairline, 34 px radius, 24 px padding, no shadow, no
+  hover effect. Content cards only, never nested; the dialog is the one floating surface.
+- **Stat group:** four mono 22/28 500 values over Caption labels in one card, cells divided by
+  Hairline Soft (`gap-px` on a Hairline Soft ground). Inside a card the three-tile strip is flat:
+  Hairline Soft rules above and below, vertical dividers between.
+- **Flight path:** Arc `stepper`, one step per planned step, `agent · meta` beneath the title. A
+  horizontal chain below 1600 px (compact markers under 30 rem), a vertical list from 1600 px. The
+  live step is current (cyan ring), a failed step carries its error, the steps after it stay upcoming.
+- **Empty state:** Arc `empty-state` inside a card: an icon, a title, one or two sentences, the mono
+  facts line and one real next step.
+- **Progress bar:** Arc `progress` with its label kept for assistive tech only; the fill is cyan.
 
 ### Inputs / Fields
 
-- **Style:** Canvas Soft fill, 1 px Hairline, 6 px radius, 10 × 16 px padding, Body Small, Mute
-  placeholder; textareas resize vertically.
-- **Focus:** border Ink Strong, no outline; selection is cyan at 35%; caret is Sheen Cyan.
-- **Code block:** Canvas, 1 px Hairline, 8 px radius, 16 px padding, Code text, with a Ghost "Copy" control.
+- Arc `input`, `textarea`, `select`, `checkbox` and `search-field`, each with its visible label
+  (the toolbar search hides its label for assistive tech only). Canvas Raised fill, Hairline
+  border, 18 px radius, 44 px tall; focus darkens the border to Ink; an error is a red border and
+  a red line beneath, `role="alert"`. JSON and prompts set `font-family: var(--font-mono)` inline.
+- **Dialogs:** Arc `dialog` for the editors and the shortcuts sheet: a titled header with its own
+  close control, 24 px body padding, the commit row stuck to the bottom on Canvas Soft.
+- **Code block:** Arc `code-block` with a name and language in its header, a Copy control and a
+  fold after N lines; `text` for prompts, `json` for raw records.
 
 ### Navigation
 
-Frosted sticky header with a Sheen Cyan hairline (28%) beneath: logo disc (36 px) + wordmark
-left, four Body Small links centred, a live pill and an outline Settings button right. Active
-link: Ink Strong, 600, 2 px Sheen Cyan underline; hover: Ink Strong. On phones the header is two
-static rows. Footer: Body Small left, mono version · region right.
+A solid Canvas header with a Hairline Soft rule: logo disc (32 px) + wordmark left, four Body
+Small links centred, the live badge and a ghost Settings button right. Active link: Ink Strong,
+500, 2 px cyan underline; hover: Ink Strong. On phones the header is two static rows. Footer:
+Body Small left, mono version · region right.
 
 ### Signature Components
 
-- **Eyebrow:** the tracked uppercase line with the sheen gradient clipped to its letters — the
-  brand's one flourish, above every page title.
-- **Logo disc:** the dark magpie with white plumage and sheen wing on a white 36 px disc; at the
-  centre of the orchestrator orb at 68 px.
-- **Live pill:** hairline pill with a blinking white dot and "N agents active"; grey dot and
-  "Status unavailable" when the database cannot be read.
-- **Orchestrator orb:** three translucent cyan rings, a dashed orbit (16 s) and a counter-rotating
-  conic arc (26 s) around the disc, on a radially masked cyan grid — the only orchestrated motion
-  in the product, and still only for users who have not asked for reduced motion.
+- **Logo disc:** the dark magpie with white plumage and the cyan-to-emerald wing on a white disc;
+  at the centre of the orb at 33 % of its width.
+- **Orchestrator orb:** the disc inside two hairline rings (one cyan at 30 %) and one dashed cyan
+  orbit that turns once every 24 seconds, only for people who have not asked for less motion. The
+  screen's one memorable detail; it does not glow.
+- **The flight log line:** `time · agent · text` in mono, the orchestrator's lines in cyan,
+  errors in red.
 
 ## Do's and Don'ts
 
 ### Do:
 
-- **Do** make white mean action: primary buttons, the disc, the live dot — nothing decorative.
-- **Do** keep the sheen to lines, text, glows and the wing; signal, never fill.
-- **Do** set ids, counts, models and paths in mono, usually Mute, often `select-all`.
+- **Do** reach for an Arc component before writing a control; wrap it in `components/ui`, never fork it.
+- **Do** make white mean action and cyan mean alive or chosen; keep every other colour for status, with a word beside it.
+- **Do** set ids, counts, models and paths in mono, usually Mute, often `select-all`; `tabular-nums` where they change.
+- **Do** write sentence case, verb-plus-object buttons, and periods, commas or colons instead of dashes.
 - **Do** give every disabled control a visible reason, every empty state a real next step, and every error its remedy.
 - **Do** hold prose to ≈72 characters with rem widths (34 rem at 16 px, 31 rem at 14 px).
-- **Do** opt motion in with `motion-safe:`; keep state transitions at 150 ms.
 
 ### Don't:
 
+- **Don't** add an eyebrow, an overline, uppercase text, tracked labels or a weight above 500.
+- **Don't** add gradients, glows, coloured shadows or shadows on anything that does not float.
 - **Don't** introduce a light theme, a blue, a purple or any second accent.
-- **Don't** add drop shadows at rest or glow anything that is not live, hovered or the primary action.
-- **Don't** use the bird metaphor in status pills, fact lines, table cells or Settings rows.
-- **Don't** nest cards, widen radii past 8 px (pills excepted), or use `ch` for measure.
-- **Don't** let gradient text appear anywhere but the eyebrow; a single short eyebrow word renders solid.
+- **Don't** use the bird metaphor in badges, fact lines, table cells or Settings rows.
+- **Don't** nest cards, break concentric corners, or use `ch` for measure.
+- **Don't** restyle an Arc component's internals with classes; inline style only for a font family the content needs.

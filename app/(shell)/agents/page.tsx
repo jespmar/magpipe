@@ -38,9 +38,8 @@ export default async function AgentsPage({ searchParams }: Props) {
     return (
       <>
         <PageHead
-          eyebrow="The flock"
           title="Agents"
-          description="Every bird Magpipe can send out — what it does, what it may touch, and how it has been flying."
+          description="Every bird Magpipe can send out: what it does, what it may touch, and how it has been flying."
         />
         <UnavailableState />
       </>

@@ -30,13 +30,10 @@ export function MemoryTable({ entries, agents, selectedId, onSelect, emptyMessag
   return (
     <section
       aria-label="Memories"
-      className={clsx(
-        'min-w-0 overflow-hidden rounded-md border border-hairline bg-(image:--g-card)',
-        entries.length === 0 && 'max-w-[46rem]',
-      )}
+      className={clsx('min-w-0 overflow-hidden card', entries.length === 0 && 'max-w-[46rem]')}
     >
       {entries.length > 0 ? (
-        <div className="hidden grid-cols-12 gap-3 border-b border-hairline bg-canvas-soft px-4 py-3 label-caps md:grid">
+        <div className="hidden grid-cols-12 gap-3 border-b border-hairline-soft px-5 py-3 text-caption font-medium text-mute md:grid">
           <span className="col-span-4">Key</span>
           <span className="col-span-5">Value</span>
           <span className="col-span-1">By</span>
@@ -44,7 +41,7 @@ export function MemoryTable({ entries, agents, selectedId, onSelect, emptyMessag
         </div>
       ) : null}
       {entries.length === 0 ? (
-        <p className="px-4 py-8 text-body-sm text-body">{emptyMessage}</p>
+        <p className="px-5 py-8 text-body-sm text-body">{emptyMessage}</p>
       ) : (
         <ul>
           {entries.map((e) => {
@@ -64,8 +61,8 @@ export function MemoryTable({ entries, agents, selectedId, onSelect, emptyMessag
                   aria-pressed={on}
                   onClick={() => onSelect(e.id)}
                   className={clsx(
-                    'grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-l-2 border-b-hairline-soft px-4 py-3 text-left transition-colors group-last:border-b-0 hover:bg-[rgba(255,255,255,0.03)] focus-visible:-outline-offset-3 md:grid-cols-12',
-                    on ? 'border-l-cyan bg-[rgba(34,193,220,0.06)]' : 'border-l-transparent',
+                    'grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-l-2 border-b-hairline-soft px-5 py-3 text-left transition-colors group-last:border-b-0 hover:bg-canvas-muted focus-visible:-outline-offset-3 md:grid-cols-12',
+                    on ? 'border-l-cyan bg-cyan-soft' : 'border-l-transparent',
                   )}
                 >
                   <span className="flex min-w-0 items-center gap-2 md:col-span-4">
@@ -84,7 +81,7 @@ export function MemoryTable({ entries, agents, selectedId, onSelect, emptyMessag
                       />
                     ) : null}
                     <span className="flex min-w-0 flex-col">
-                      <span className="font-mono text-code [overflow-wrap:anywhere] text-code-ink">
+                      <span className="font-mono text-code [overflow-wrap:anywhere] text-ink">
                         {breakableKey(e.key)}
                       </span>
                       <span className="truncate text-caption text-body md:hidden">{e.value}</span>
@@ -95,7 +92,7 @@ export function MemoryTable({ entries, agents, selectedId, onSelect, emptyMessag
                   </span>
                   <span className="md:col-span-1">
                     {by === 'you' ? (
-                      <span className="inline-flex h-6 items-center rounded-pill border border-hairline bg-canvas-soft px-2 font-mono text-caption font-[550] text-ink-strong">
+                      <span className="inline-flex h-6 items-center rounded-pill border border-hairline bg-canvas-soft px-2 font-mono text-caption font-medium text-ink-strong">
                         you
                       </span>
                     ) : (

@@ -64,34 +64,21 @@ export function FlightLog({ latest, agentNames, className }: Props) {
       className={clsx('min-w-0 flex-col gap-5', className)}
     >
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-col gap-1.5">
-          <span className="eyebrow">Activity</span>
-          <h2 id="flight-log-title" className="page-title">
-            Flight log
-          </h2>
-        </div>
+        <h2 id="flight-log-title" className="page-title">
+          Flight log
+        </h2>
         <ButtonLink href="/runs" variant="ghost">
           All flights
         </ButtonLink>
       </div>
-      <div className="flex min-w-0 flex-col rounded-md border border-hairline bg-(image:--g-card) p-5">
+      <div className="flex min-w-0 flex-col card p-5">
         {latest ? (
           <>
-            <div className="mb-1 flex items-center justify-between gap-4 border-b border-hairline pb-3">
-              <span className="truncate font-mono text-code text-code-ink">
+            <div className="mb-1 flex items-center justify-between gap-4 border-b border-hairline-soft pb-3">
+              <span className="truncate font-mono text-code text-ink">
                 {latest.run.displayId} · {latest.run.title}
               </span>
-              {live ? (
-                <span className="inline-flex shrink-0 items-center gap-1.5 text-caption font-medium text-ink-strong">
-                  <span
-                    aria-hidden
-                    className="size-1.5 rounded-pill bg-accent motion-safe:animate-blink"
-                  />
-                  streaming
-                </span>
-              ) : (
-                <StatusPill variant={runStatusVariant(status!)} />
-              )}
+              {live ? <Streaming /> : <StatusPill variant={runStatusVariant(status!)} />}
             </div>
             {events.length === 0 ? (
               <p className="py-6 text-body-sm text-body">
@@ -114,11 +101,21 @@ export function FlightLog({ latest, agentNames, className }: Props) {
           </>
         ) : (
           <p className="max-w-[31rem] py-2 text-body-sm text-body">
-            No flights yet. The first task you run leaves its trail here — each step, which bird
-            flew it, what it brought back — as it happens.
+            No flights yet. The first task you run leaves its trail here as it happens: each step,
+            which bird flew it, what it brought back.
           </p>
         )}
       </div>
     </section>
+  );
+}
+
+/** A live dot and the word: the trail is still being written. */
+export function Streaming() {
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1.5 text-caption font-medium text-ink-strong">
+      <span aria-hidden className="size-1.5 rounded-pill bg-cyan motion-safe:animate-blink" />
+      streaming
+    </span>
   );
 }

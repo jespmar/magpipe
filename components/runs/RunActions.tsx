@@ -12,8 +12,8 @@ type Props = {
   size?: 'sm' | 'md';
   /** Also offer "Open log", the link to the flight's own page. */
   showOpen?: boolean;
-  /** Ghost beside Open log; outline where Re-fly is the page's own action (DESIGN.md Buttons). */
-  reflyVariant?: 'ghost' | 'outline';
+  /** Ghost beside Open log; secondary where Re-fly is the page's own action. */
+  reflyVariant?: 'ghost' | 'secondary';
 };
 
 /** Re-fly (a new run with the same input) and, while the run is live, Cancel (spec §3.4). */
@@ -54,16 +54,28 @@ export function RunActions({ run, size = 'md', showOpen = false, reflyVariant = 
   return (
     <div className="flex flex-wrap items-center gap-2">
       {showOpen ? (
-        <ButtonLink href={`/runs/${run.displayId}`} variant="outline" size={size}>
+        <ButtonLink href={`/runs/${run.displayId}`} variant="secondary" size={size}>
           Open log
         </ButtonLink>
       ) : null}
-      <Button variant={reflyVariant} size={size} onClick={refly} disabled={busy !== null}>
-        {busy === 'refly' ? 'Starting…' : 'Re-fly'}
+      <Button
+        variant={reflyVariant}
+        size={size}
+        onClick={refly}
+        loading={busy === 'refly'}
+        disabled={busy === 'cancel'}
+      >
+        Re-fly
       </Button>
       {live ? (
-        <Button variant="danger" size={size} onClick={cancel} disabled={busy !== null}>
-          {busy === 'cancel' ? 'Cancelling…' : 'Cancel'}
+        <Button
+          variant="danger"
+          size={size}
+          onClick={cancel}
+          loading={busy === 'cancel'}
+          disabled={busy === 'refly'}
+        >
+          Cancel
         </Button>
       ) : null}
       {notice ? (

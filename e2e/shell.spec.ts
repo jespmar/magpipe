@@ -16,15 +16,12 @@ test('fresh workspace: nav reaches every screen, marks the active link, offers t
     page.getByRole('region', { name: 'The nest' }).getByText('no runs yet'),
   ).toBeVisible();
 
-  for (const [link, eyebrow] of [
-    ['Agents', 'The flock'],
-    ['Runs', 'Flights'],
-    ['Tools', 'Beaks & claws'],
-    ['Memory', 'The nest'],
-  ] as const) {
+  for (const link of ['Agents', 'Runs', 'Tools', 'Memory'] as const) {
     await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: link }).click();
-    await expect(page.getByRole('heading', { level: 1, name: link })).toBeVisible();
-    await expect(page.getByText(eyebrow, { exact: true })).toBeVisible();
+    // The dev server compiles each route on its first visit; production answers in a beat.
+    await expect(page.getByRole('heading', { level: 1, name: link })).toBeVisible({
+      timeout: 15_000,
+    });
     await expect(page.getByRole('link', { name: link, exact: true })).toHaveAttribute(
       'aria-current',
       'page',
@@ -87,7 +84,7 @@ test('settings loads the demo data after a confirm step and reports the result',
   await expect(page.getByText(/^took \d\d:\d\d$/)).toBeVisible();
   await expect(page.getByText('done', { exact: true }).first()).toBeVisible();
   await expect(
-    page.getByRole('list', { name: 'Flight path' }).getByRole('listitem'),
+    page.getByRole('group', { name: 'Flight path' }).getByRole('listitem'),
   ).not.toHaveCount(0);
   // The demo never touches workspace settings: the footer keeps its own region label.
   await expect(page.locator('footer')).not.toContainText('eu-north-1');

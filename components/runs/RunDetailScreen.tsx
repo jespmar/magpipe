@@ -44,7 +44,6 @@ export function RunDetailScreen({ run, events, agents, now }: Props) {
   return (
     <>
       <PageHead
-        eyebrow="Flight"
         title={headTitle(run.input.text)}
         meta={
           <>
@@ -60,7 +59,7 @@ export function RunDetailScreen({ run, events, agents, now }: Props) {
               .map((fact, i) => (
                 <span key={fact} className="inline-flex items-center gap-3">
                   {i > 0 ? (
-                    <span aria-hidden className="text-hairline">
+                    <span aria-hidden className="text-mute">
                       ·
                     </span>
                   ) : null}
@@ -69,12 +68,12 @@ export function RunDetailScreen({ run, events, agents, now }: Props) {
               ))}
           </>
         }
-        actions={<RunActions run={run} reflyVariant="outline" />}
+        actions={<RunActions run={run} reflyVariant="secondary" />}
       />
       <div className="flex flex-col gap-7 wide:grid wide:grid-cols-[minmax(0,1fr)_minmax(0,34rem)] wide:items-start">
         <section
           aria-labelledby="path-title"
-          className="flex min-w-0 flex-col gap-4 card p-6 wide:col-start-2 wide:row-start-1"
+          className="flex min-w-0 flex-col gap-5 card p-6 wide:col-start-2 wide:row-start-1"
         >
           <h2 id="path-title" className="text-display-sm text-ink-strong">
             Flight path
@@ -110,11 +109,11 @@ export function RunDetailScreen({ run, events, agents, now }: Props) {
             {run.output && run.output.artifacts.length > 0 ? (
               <ul
                 aria-label="Files produced"
-                className="flex flex-col gap-1.5 border-t border-hairline pt-4"
+                className="flex flex-col gap-1.5 border-t border-hairline-soft pt-4"
               >
                 {run.output.artifacts.map((a) => (
                   <li key={a.blobUrl} className="flex min-w-0 flex-wrap items-baseline gap-x-3">
-                    <span className="font-mono text-code text-code-ink">{a.name}</span>
+                    <span className="font-mono text-code text-ink">{a.name}</span>
                     <span className="truncate font-mono text-caption text-mute select-all">
                       {a.blobUrl}
                     </span>

@@ -13,7 +13,7 @@ export function EventRow({ event }: { event: FlightEvent }) {
       </time>
       <span
         className={clsx(
-          'w-24 shrink-0 truncate font-mono text-code font-[550]',
+          'w-24 shrink-0 truncate font-mono text-code font-medium',
           event.agentId === null ? 'text-cyan' : 'text-ink-strong',
         )}
       >
