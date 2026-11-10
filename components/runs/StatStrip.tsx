@@ -22,9 +22,9 @@ export function StatStrip({ stats }: { stats: RunsStats }) {
   return (
     <dl className="grid grid-cols-2 gap-px overflow-hidden card bg-hairline-soft md:grid-cols-4">
       {tiles.map((t) => (
-        <div key={t.label} className="flex flex-col-reverse gap-0.5 bg-canvas-raised px-5 py-4">
+        <div key={t.label} className="flex flex-col-reverse gap-0.5 bg-canvas-raised px-4 py-3">
           <dt className="text-caption text-mute">{t.label}</dt>
-          <dd className="m-0 font-mono text-display-md font-medium text-ink-strong tabular-nums">
+          <dd className="m-0 font-mono text-display-sm font-medium text-ink-strong tabular-nums">
             {t.value}
           </dd>
         </div>

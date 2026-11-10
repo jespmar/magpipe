@@ -73,7 +73,7 @@ export function RunDetailScreen({ run, events, agents, now }: Props) {
       <div className="flex flex-col gap-7 wide:grid wide:grid-cols-[minmax(0,1fr)_minmax(0,34rem)] wide:items-start">
         <section
           aria-labelledby="path-title"
-          className="flex min-w-0 flex-col gap-5 card p-6 wide:col-start-2 wide:row-start-1"
+          className="flex min-w-0 flex-col gap-4 card p-5 wide:col-start-2 wide:row-start-1"
         >
           <h2 id="path-title" className="text-display-sm text-ink-strong">
             Flight path
@@ -89,7 +89,7 @@ export function RunDetailScreen({ run, events, agents, now }: Props) {
         </section>
         <div className="flex min-w-0 flex-col gap-7 wide:col-start-1 wide:row-start-1">
           <RunEventLog run={run} initialEvents={events} agentNames={agentNames} />
-          <section aria-labelledby="result-title" className="flex min-w-0 flex-col gap-4 card p-6">
+          <section aria-labelledby="result-title" className="flex min-w-0 flex-col gap-4 card p-5">
             <h2 id="result-title" className="text-display-sm text-ink-strong">
               Result
             </h2>
@@ -122,7 +122,7 @@ export function RunDetailScreen({ run, events, agents, now }: Props) {
               </ul>
             ) : null}
           </section>
-          <section aria-labelledby="input-title" className="flex min-w-0 flex-col gap-3 card p-6">
+          <section aria-labelledby="input-title" className="flex min-w-0 flex-col gap-3 card p-5">
             <h2 id="input-title" className="text-display-sm text-ink-strong">
               Input
             </h2>

@@ -151,35 +151,40 @@ export function PromptComposer() {
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
       }}
       onDrop={onDrop}
-      className={clsx(
-        'flex flex-col gap-4 card p-5 transition-colors duration-150 wide:p-6',
-        dragging && 'border-cyan',
-      )}
+      // One box, not a card around a box: the field is the surface. Half the row at wide.
+      className="mx-auto flex w-full flex-col gap-3 wide:max-w-[50%]"
     >
       <form
         noValidate
-        className="flex flex-col gap-4"
+        className="flex flex-col gap-3"
         onSubmit={(e) => {
           e.preventDefault();
           void submit();
         }}
       >
-        <Textarea
-          ref={textarea}
-          id={`${id}-text`}
-          name="text"
-          label="Ask Magpipe"
-          rows={4}
-          placeholder="Describe the task. Magpipe picks the birds, splits the work and reports back…"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-              e.preventDefault();
-              void submit();
-            }
-          }}
-          onInput={() => problem && setProblem(null)}
-          error={problem ?? undefined}
-        />
+        <div
+          className={clsx(
+            'rounded-(--radius-control) transition-[outline-color] duration-150',
+            dragging && 'outline-2 outline-offset-4 outline-cyan',
+          )}
+        >
+          <Textarea
+            ref={textarea}
+            id={`${id}-text`}
+            name="text"
+            label="Ask Magpipe"
+            rows={3}
+            placeholder="Describe the task. Magpipe picks the birds, splits the work and reports back…"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                void submit();
+              }
+            }}
+            onInput={() => problem && setProblem(null)}
+            error={problem ?? undefined}
+          />
+        </div>
         {chips.length > 0 ? (
           <ul aria-label="Attachments" className="flex flex-wrap gap-2">
             {chips.map((c) => (
@@ -216,7 +221,7 @@ export function PromptComposer() {
             ))}
           </ul>
         ) : null}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-hairline-soft pt-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
             <input
               ref={picker}

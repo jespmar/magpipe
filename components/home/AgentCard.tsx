@@ -11,23 +11,23 @@ import { cardFooter, type AgentCardData } from '@/lib/home-util';
 export function AgentCard({ card, now }: { card: AgentCardData; now: Date }) {
   const pct = card.progress === null ? 0 : Math.round(card.progress * 100);
   return (
-    <article aria-label={card.name} className="flex min-w-0 flex-1 flex-col gap-4 card p-6">
+    <article aria-label={card.name} className="flex min-w-0 flex-1 flex-col gap-3 card p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <Avatar initials={card.initials} size={40} />
+          <Avatar initials={card.initials} size={36} />
           <div className="flex min-w-0 flex-col gap-0.5">
             <Link
               href={`/agents?agent=${card.slug}`}
-              className="truncate rounded-sm text-display-sm text-ink-strong underline-offset-4 hover:underline"
+              className="truncate rounded-sm text-body-md font-medium text-ink-strong underline-offset-4 hover:underline"
             >
               {card.name}
             </Link>
-            <span className="min-h-4 text-caption text-mute">{card.role}</span>
+            <span className="text-caption text-mute">{card.role}</span>
           </div>
         </div>
         <StatusPill variant={card.status} />
       </div>
-      <p className="line-clamp-2 min-h-10 text-body-sm text-body">
+      <p className="line-clamp-2 text-body-sm text-body">
         {card.live ? (
           card.task
         ) : card.task ? (
@@ -39,11 +39,11 @@ export function AgentCard({ card, now }: { card: AgentCardData; now: Date }) {
         )}
       </p>
       {card.progress !== null ? <Progress value={pct} label="Current run" showValue /> : null}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-hairline-soft pt-3">
-        <span className="rounded-sm bg-canvas-soft px-2 py-0.5 font-mono text-code text-ink">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-hairline-soft pt-2.5">
+        <span className="rounded-sm bg-canvas-soft px-1.5 py-0.5 font-mono text-caption text-ink">
           {card.model}
         </span>
-        <span className="font-mono text-code text-mute">{cardFooter(card, now)}</span>
+        <span className="font-mono text-caption text-mute">{cardFooter(card, now)}</span>
       </div>
     </article>
   );
