@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { clsx } from 'clsx';
 import { EventRow } from '@/components/runs/EventRow';
-import { Streaming } from '@/components/home/FlightLog';
+import { Streaming } from '@/components/ui/Streaming';
 import { runStatusVariant, StatusPill } from '@/components/ui/StatusPill';
 import { mergeEvents, toFlightEvent, type FlightEvent } from '@/lib/home-util';
 import { LIVE } from '@/lib/runs-util';

@@ -681,6 +681,7 @@ export function buildSeed(now = new Date()): SeedData {
             }
           : null,
       parentRunId: null,
+      dismissedAt: null,
       createdBy: 'seed',
       createdAt: startedAt,
     });

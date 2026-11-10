@@ -25,12 +25,20 @@ type Chip = {
 
 let nextKey = 0;
 
+type Props = {
+  /** The flight a message continues: the one selected on Home. Null asks a fresh question. */
+  target?: Pick<Run, 'id' | 'displayId'> | null;
+  onClearTarget?: () => void;
+  /** Given, the new run is handed over and the prompt clears; otherwise the run's page opens. */
+  onStarted?: (run: Run) => void;
+};
+
 /**
  * The prompt window (spec §5.6): describe the task, attach files (picker or drop), run with the
- * button or ⌘/Ctrl + Enter. Files upload as soon as they are chosen so Run only has to send ids;
- * submitting creates the run and goes to its flight.
+ * button or ⌘/Ctrl + Enter. Files upload as soon as they are chosen so Run only has to send ids.
+ * With a target the message is a follow-up to that flight (D23).
  */
-export function PromptComposer() {
+export function PromptComposer({ target = null, onClearTarget, onStarted }: Props) {
   const router = useRouter();
   const id = useId();
   const textarea = useRef<HTMLTextAreaElement>(null);
@@ -123,9 +131,17 @@ export function PromptComposer() {
         body: JSON.stringify({
           text,
           attachmentIds: chips.map((c) => c.uploadId).filter((x): x is string => !!x),
+          ...(target ? { parentRunId: target.id } : {}),
         }),
       });
-      router.push(`/runs/${run.displayId}`);
+      if (onStarted) {
+        if (textarea.current) textarea.current.value = '';
+        setChips([]);
+        setSending(false);
+        onStarted(run);
+      } else {
+        router.push(`/runs/${run.displayId}`);
+      }
     } catch (err) {
       setSending(false);
       setProblem(
@@ -162,6 +178,16 @@ export function PromptComposer() {
           void submit();
         }}
       >
+        {target ? (
+          <div className="flex items-center justify-between gap-3">
+            <p className="truncate text-caption text-mute">
+              Follow-up to <span className="font-mono text-ink">{target.displayId}</span>
+            </p>
+            <Button variant="ghost" size="sm" onClick={onClearTarget}>
+              New question
+            </Button>
+          </div>
+        ) : null}
         <div
           className={clsx(
             'rounded-(--radius-control) transition-[outline-color] duration-150',
@@ -174,7 +200,11 @@ export function PromptComposer() {
             name="text"
             label="Ask Magpipe"
             rows={3}
-            placeholder="Describe the task. Magpipe picks the birds, splits the work and reports back…"
+            placeholder={
+              target
+                ? 'Ask a follow-up. Magpipe keeps the thread in mind…'
+                : 'Describe the task. Magpipe picks the birds, splits the work and reports back…'
+            }
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();

@@ -109,10 +109,16 @@ export async function planRun(opts: {
   run: Run;
   agents: Agent[];
   memory: MemoryEntry[];
+  /** Earlier turns of the conversation this run continues, as prompt text; empty for a fresh task. */
+  conversation?: string;
   signal: AbortSignal;
 }): Promise<PlanResult> {
   const available = opts.agents.filter((a) => a.status !== 'paused');
-  const system = `${ORCHESTRATOR_SYSTEM}\n\nAgents available:\n${registryText(available) || '(none)'}\n\nShared memory worth knowing:\n${memoryText(opts.memory)}`;
+  const system = `${ORCHESTRATOR_SYSTEM}\n\nAgents available:\n${registryText(available) || '(none)'}\n\nShared memory worth knowing:\n${memoryText(opts.memory)}${
+    opts.conversation
+      ? `\n\nThe operator is continuing a conversation. Earlier turns, oldest first:\n${opts.conversation}\n\nThe task below is the next turn; read it in that light.`
+      : ''
+  }`;
   const attachments = opts.run.input.attachments.map((a) => a.name).join(', ');
   const user = `Task:\n${opts.run.input.text}${attachments ? `\n\nAttached files: ${attachments}` : ''}`;
 

@@ -11,6 +11,8 @@ import { getDb } from '../db';
 import * as t from '../db/schema';
 import { env } from '../env';
 import { listMemory } from '../memory';
+import { loadThread } from '../runs';
+import { threadText } from '../runs-util';
 import { addUsage, ZERO_USAGE } from '../pricing';
 import type { Agent, MemoryEntry, Run, Step } from '../schemas';
 import { apiBackend, type RunBackend } from './backend';
@@ -176,6 +178,8 @@ export class Engine {
     try {
       await save({ status: 'running', startedAt: run.startedAt ?? new Date() });
       const memory = await relevantMemory(db, run.input.text);
+      // A follow-up carries the conversation it continues into every prompt.
+      const conversation = threadText(await loadThread(db, run)) || undefined;
 
       // 1. plan (skipped on resume when a plan exists)
       if (run.plan.length === 0) {
@@ -187,6 +191,7 @@ export class Engine {
               run: run!,
               agents,
               memory,
+              conversation,
               signal,
             }),
           { signal, onRetry: (f, n) => void emit('error', `Retry ${n}: ${f.message}`) },
@@ -255,6 +260,7 @@ export class Engine {
                 memory,
                 attachments: run!.input.attachments,
                 sandboxDir,
+                conversation,
                 signal,
               });
               await this.finishStep(save, () => run!, step.id, {
@@ -312,6 +318,7 @@ export class Engine {
             run: run!,
             steps: run!.plan,
             agentNames: names,
+            conversation,
             signal,
           }),
         { signal, onRetry: (f, n) => void emit('error', `Retry ${n}: ${f.message}`) },

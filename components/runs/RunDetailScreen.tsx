@@ -8,7 +8,14 @@ import { PageHead } from '@/components/ui/PageHead';
 import { runStatusVariant, StatusPill } from '@/components/ui/StatusPill';
 import { formatDuration, formatTokens, relativeTime } from '@/lib/format';
 import { formatBytes, type FlightEvent } from '@/lib/home-util';
-import { formatUsd, headTitle, lastErrorText, LIVE, type AgentChip } from '@/lib/runs-util';
+import {
+  formatUsd,
+  headTitle,
+  lastErrorText,
+  LIVE,
+  resultPlaceholder,
+  type AgentChip,
+} from '@/lib/runs-util';
 import type { Run } from '@/lib/schemas';
 
 type Props = {
@@ -17,20 +24,6 @@ type Props = {
   agents: AgentChip[];
   now: Date;
 };
-
-function resultPlaceholder(status: Run['status']): string {
-  switch (status) {
-    case 'queued':
-    case 'running':
-      return 'The merged result appears here when the flight lands.';
-    case 'failed':
-      return 'This run failed before a result was merged.';
-    case 'cancelled':
-      return 'This run was cancelled before a result was merged.';
-    default:
-      return 'No result was recorded for this run.';
-  }
-}
 
 /**
  * One flight in full (spec §3.4): the head facts, its path, the streaming log, the merged result

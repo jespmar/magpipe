@@ -14,10 +14,18 @@ type Props = {
   showOpen?: boolean;
   /** Ghost beside Open log; secondary where Re-fly is the page's own action. */
   reflyVariant?: 'ghost' | 'secondary';
+  /** Given, the new run is handed over instead of opened: Home stays put. */
+  onRefly?: (run: Run) => void;
 };
 
 /** Re-fly (a new run with the same input) and, while the run is live, Cancel (spec §3.4). */
-export function RunActions({ run, size = 'md', showOpen = false, reflyVariant = 'ghost' }: Props) {
+export function RunActions({
+  run,
+  size = 'md',
+  showOpen = false,
+  reflyVariant = 'ghost',
+  onRefly,
+}: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState<'refly' | 'cancel' | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -27,10 +35,15 @@ export function RunActions({ run, size = 'md', showOpen = false, reflyVariant = 
     setBusy('refly');
     setNotice(null);
     try {
-      const { run: next } = await api<{ run: { displayId: string } }>(`/api/runs/${run.id}/refly`, {
+      const { run: next } = await api<{ run: Run }>(`/api/runs/${run.id}/refly`, {
         method: 'POST',
       });
-      router.push(`/runs/${next.displayId}`);
+      if (onRefly) {
+        setBusy(null);
+        onRefly(next);
+      } else {
+        router.push(`/runs/${next.displayId}`);
+      }
     } catch (err) {
       setBusy(null);
       setNotice(err instanceof ApiError ? err.message : 'The new run could not be started.');
