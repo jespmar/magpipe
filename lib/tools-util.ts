@@ -2,7 +2,42 @@
 import { initialsOf } from './agents-util';
 import type { McpProbe } from './mcp';
 import { plural } from './format';
-import { toolConnectInput, type Tool, type ToolConnectInput, type ToolStatus } from './schemas';
+import {
+  toolConnectInput,
+  type Tool,
+  type ToolConnectInput,
+  type ToolGrant,
+  type ToolStatus,
+} from './schemas';
+
+/**
+ * Whether a grant lets an agent call one of a server's tools (D25). A grant names the tools it
+ * allows, and an empty grant allows none: unticking every box takes the server away rather than
+ * handing over everything it exposes.
+ */
+export function grantAllows(grant: Pick<ToolGrant, 'scopes'>, name: string): boolean {
+  return grant.scopes.includes(name);
+}
+
+/**
+ * A grant made before Magpipe could list a server's tools has no names in it. When a probe first
+ * finds them, each such grant gets every tool found, as granting a server with known tools does.
+ * Returns the agent's new grants, or null when it had nothing waiting for this tool.
+ */
+export function fillPendingGrant(
+  grants: readonly ToolGrant[],
+  toolId: string,
+  found: readonly string[],
+): ToolGrant[] | null {
+  if (found.length === 0) return null;
+  let changed = false;
+  const next = grants.map((g) => {
+    if (g.toolId !== toolId || g.scopes.length > 0) return g;
+    changed = true;
+    return { ...g, scopes: [...found] };
+  });
+  return changed ? next : null;
+}
 
 /** The Connect panel's starting text — the example from the design, spec §3.5. */
 export const CONNECT_EXAMPLE = `{

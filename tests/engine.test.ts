@@ -508,6 +508,80 @@ describe('run engine with a granted MCP server', () => {
   }, 20_000);
 });
 
+describe('run engine with an empty grant', () => {
+  let db: Db;
+  let close: () => Promise<void>;
+  beforeAll(async () => {
+    ({ db, close } = await openDb('memory://'));
+  }, 30_000);
+  afterAll(() => close());
+
+  it('gives the agent none of the server’s tools and never starts the server (D25)', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'magpipe-engine-empty-'));
+    const started = path.join(dir, 'started');
+    const script = path.join(dir, 'server.js');
+    // The server leaves a file behind if it is ever started.
+    fs.writeFileSync(script, `require('fs').writeFileSync(${JSON.stringify(started)}, 'yes');`);
+    const toolId = 'tool_empty_grant';
+    await db.insert(t.tools).values({
+      id: toolId,
+      slug: 'quiet-server',
+      name: 'Quiet server',
+      glyph: 'QS',
+      kind: 'mcp',
+      category: 'Test',
+      description: 'Granted with nothing ticked',
+      transport: 'stdio',
+      url: null,
+      command: `"${process.execPath}" "${script}"`,
+      auth: { type: 'none' },
+      status: 'connected',
+      scopes: ['write_file', 'read_file'],
+      grantedAgents: ['agt_operator'],
+      stats: { calls24h: 0, lastCallAt: null },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await db
+      .update(t.agents)
+      .set({ tools: [{ toolId, scopes: [] }] })
+      .where(eq(t.agents.slug, 'operator'));
+
+    let stepTools: string[] = [];
+    const client = scripted((p) => {
+      if (isPlan(p)) {
+        // The planner is not told the agent has this tool.
+        expect(String(p.system)).not.toContain(toolId);
+        return plan([
+          {
+            id: 's1',
+            agent: 'operator',
+            title: 'Look around',
+            instructions: '',
+            dependsOn: [],
+            optional: false,
+          },
+        ]);
+      }
+      if (isMerge(p)) return text('merged');
+      stepTools = (p.tools ?? []).map((tool) => (tool as { name: string }).name);
+      return text('nothing to do');
+    });
+    const engine = new Engine({ client, getDb: async () => db });
+    const run = await createRun(db, { text: 'look around', attachments: [] });
+    engine.enqueue(run.id);
+    await engine.whenIdle();
+    expect((await getRun(db, run.id))!.status).toBe('done');
+    expect(stepTools.length).toBeGreaterThan(0); // memory and file tools are still there
+    expect(stepTools.some((n) => n.startsWith('quiet-server__'))).toBe(false);
+    expect(fs.existsSync(started)).toBe(false);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }, 20_000);
+});
+
 describe('run engine with a tool server that is down', () => {
   let db: Db;
   let close: () => Promise<void>;

@@ -82,12 +82,12 @@ export function usageOf(message: ModelMessage): Usage {
 
 export function registryText(agents: Agent[]): string {
   return agents
-    .map(
-      (a) =>
-        `- ${a.slug} (${a.name}, ${a.role}): ${a.description}\n  model ${a.model}; tools: ${
-          [...a.builtins, ...a.tools.map((g) => g.toolId)].join(', ') || 'none'
-        }; memory read: ${a.memoryScope.read.join(', ') || 'none'}; write: ${a.memoryScope.write.join(', ') || 'none'}`,
-    )
+    .map((a) => {
+      // An empty grant allows no tools (D25), so it is not a tool the agent has.
+      const granted = a.tools.filter((g) => g.scopes.length > 0).map((g) => g.toolId);
+      const tools = [...a.builtins, ...granted].join(', ') || 'none';
+      return `- ${a.slug} (${a.name}, ${a.role}): ${a.description}\n  model ${a.model}; tools: ${tools}; memory read: ${a.memoryScope.read.join(', ') || 'none'}; write: ${a.memoryScope.write.join(', ') || 'none'}`;
+    })
     .join('\n');
 }
 

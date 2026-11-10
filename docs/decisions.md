@@ -498,3 +498,23 @@ once per server start.
   tool names and scopes in the planner's registry (and an empty grant meaning none), a bound
   repository with `repo:read|write|run`, a single-writer rule in plan validation, then step data
   and artefacts, a waiting plan gate and a bounded fix-up loop.
+
+## D25 · An empty grant allows no tools
+
+- **Why.** The engine read a grant with no scopes as "every tool the server exposes, including
+  tools it adds later". Unticking every box in the agent editor therefore granted everything,
+  while the editor showed nothing ticked. It was the first gap `docs/flock.md` named.
+- **Rule.** A grant names the tools it allows; an empty grant allows none (`grantAllows` in
+  `lib/tools-util.ts`). The engine skips such a grant and never starts its server, and the
+  planner's registry no longer lists it as a tool the agent has.
+- **Grants made before a server answers.** A server whose probe failed has no known tools, so a
+  grant to it can only be empty. The first probe that finds its tools (Test again, or a changed
+  command, url or token) fills every such grant with all of them, as granting a server with known
+  tools already does (`fillPendingGrants` in `lib/tools.ts`). Once the tools are known, an empty
+  grant is the operator's choice and stays empty.
+- **Said where it is made.** Under a granted server the editor says "Nothing ticked, so this
+  agent gets no tools from this server" or that its tools are not known yet, and the agent detail
+  shows "no tools" or "tools not known yet" beside the server.
+- **No data migration.** Existing empty grants now allow nothing, which matches what the editor
+  already showed. An agent that relied on an empty grant to reach a server must have its tools
+  ticked, or the server tested again if it never answered.

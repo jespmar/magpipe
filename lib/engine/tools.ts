@@ -13,6 +13,7 @@ import { formatConfidence } from '../memory-util';
 import { memoryInput, type Agent, type Attachment, type RunEventKind } from '../schemas';
 import { readSecret } from '../secrets';
 import { authHeaders } from '../tools';
+import { grantAllows } from '../tools-util';
 import { fsRead, fsWrite, shellRun } from './sandbox';
 import type { ModelTool } from './model';
 
@@ -275,7 +276,8 @@ export async function setupTools(setup: ToolSetup): Promise<ToolRuntime> {
   }
 
   // ── registry tools: the workspace built-in and MCP servers ───────────────
-  const grants = agent.tools;
+  // A grant names the tools it allows; an empty one allows none, so its server is never started.
+  const grants = agent.tools.filter((g) => g.scopes.length > 0);
   const rows = grants.length
     ? await db
         .select()
@@ -294,7 +296,7 @@ export async function setupTools(setup: ToolSetup): Promise<ToolRuntime> {
   try {
     for (const tool of rows) {
       const grant = grants.find((g) => g.toolId === tool.id)!;
-      const allowed = (scope: string) => grant.scopes.length === 0 || grant.scopes.includes(scope);
+      const allowed = (scope: string) => grantAllows(grant, scope);
 
       if (tool.kind === 'builtin') {
         if (allowed('fs:r') || allowed('fs:rw')) {
