@@ -66,6 +66,18 @@ codesign --force --deep --sign - /Applications/Magpipe.app
 
 Signing with an Apple Developer certificate and notarizing is a later step.
 
+## Using your Claude Code login
+
+Runs reach Claude through the Messages API by default, with `ANTHROPIC_API_KEY` from
+`magpipe.env`. If Claude Code is installed on the same machine, runs can go through it instead
+and use the login it already has: set `MAGPIPE_MODEL_BACKEND=claude-code` in `magpipe.env`
+(File → Open Config File) and restart. Each plan, step and merge is then one `claude -p` on your
+machine; a step's tools (memory, the agent's MCP grants) are served back to it by Magpipe over
+MCP, so grants and memory scope hold exactly as before. Magpipe finds `claude` through your login
+shell's `PATH`; set `MAGPIPE_CLAUDE_PATH` when it lives elsewhere. Settings → Models shows which
+backend is active and where the command was found. Whether your Claude plan allows this use is
+between you and its terms; `docs/decisions.md` D22 has the details.
+
 ## Where things live (desktop app)
 
 | What             | macOS                                               | Windows                         | Linux                           |

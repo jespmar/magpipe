@@ -13,6 +13,8 @@ import { env } from '../env';
 import { listMemory } from '../memory';
 import { addUsage, ZERO_USAGE } from '../pricing';
 import type { Agent, MemoryEntry, Run, Step } from '../schemas';
+import { apiBackend, type RunBackend } from './backend';
+import { claudeCodeBackend } from './claude-code';
 import { emitEvent } from './events';
 import { mergeRun } from './merge';
 import {
@@ -29,32 +31,44 @@ import { runStep, setAgentStatus } from './step';
 import { scriptedModelClient } from './stub-model';
 
 export type EngineOptions = {
+  /** A scripted Messages API client (tests); wrapped in the API backend. */
   client?: ModelClient;
+  /** The backend outright; wins over `client`. */
+  backend?: RunBackend;
   /** Runs executing at once; steps inside a run fan out on their own. */
   concurrency?: number;
   getDb?: () => Promise<Db>;
 };
 
+/**
+ * Which backend a production run uses (D22): the scripted stub in development and tests, Claude
+ * Code when `magpipe.env` says so, the Messages API otherwise.
+ */
+function selectBackend(): RunBackend {
+  if (env.MAGPIPE_MODEL_STUB === 'scripted' && process.env.NODE_ENV !== 'production') {
+    return apiBackend(scriptedModelClient());
+  }
+  if (env.MAGPIPE_MODEL_BACKEND === 'claude-code') return claudeCodeBackend();
+  return apiBackend(anthropicModelClient());
+}
+
 export class Engine {
   private readonly queue: string[] = [];
   private readonly active = new Map<string, AbortController>();
   private readonly waiters: (() => void)[] = [];
-  private clientInstance: ModelClient | null;
+  private backendInstance: RunBackend | null;
   private readonly concurrency: number;
   private readonly db: () => Promise<Db>;
 
   constructor(opts: EngineOptions = {}) {
-    this.clientInstance = opts.client ?? null;
+    this.backendInstance = opts.backend ?? (opts.client ? apiBackend(opts.client) : null);
     this.concurrency = opts.concurrency ?? 2;
     this.db = opts.getDb ?? getDb;
   }
 
-  private client(): ModelClient {
-    this.clientInstance ??=
-      env.MAGPIPE_MODEL_STUB === 'scripted' && process.env.NODE_ENV !== 'production'
-        ? scriptedModelClient()
-        : anthropicModelClient();
-    return this.clientInstance;
+  private backend(): RunBackend {
+    this.backendInstance ??= selectBackend();
+    return this.backendInstance;
   }
 
   /** Queues a run; returns at once. */
@@ -168,7 +182,7 @@ export class Engine {
         const planned = await withRetries(
           () =>
             planRun({
-              client: this.client(),
+              backend: this.backend(),
               model: orchestratorModel,
               run: run!,
               agents,
@@ -233,7 +247,7 @@ export class Engine {
             try {
               const outcome = await runStep({
                 db,
-                client: this.client(),
+                backend: this.backend(),
                 run: run!,
                 step,
                 agent,
@@ -293,7 +307,7 @@ export class Engine {
       const merged = await withRetries(
         () =>
           mergeRun({
-            client: this.client(),
+            backend: this.backend(),
             model: orchestratorModel,
             run: run!,
             steps: run!.plan,

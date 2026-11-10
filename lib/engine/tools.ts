@@ -10,7 +10,7 @@ import * as t from '../db/schema';
 import { connectMcp, type McpConnection, type McpTarget } from '../mcp';
 import { listMemory, markRead, writeMemory } from '../memory';
 import { formatConfidence } from '../memory-util';
-import { memoryInput, type Agent, type Attachment } from '../schemas';
+import { memoryInput, type Agent, type Attachment, type RunEventKind } from '../schemas';
 import { readSecret } from '../secrets';
 import { authHeaders } from '../tools';
 import { fsRead, fsWrite, shellRun } from './sandbox';
@@ -30,6 +30,52 @@ export type ToolRuntime = {
   labels: Map<string, string>;
   close(): Promise<void>;
 };
+
+/** Where a step's events go: the run's trail, with the step and agent already filled in. */
+export type Trail = {
+  emit(kind: RunEventKind, text: string, payload?: unknown): Promise<void>;
+};
+
+/**
+ * Calls one of the step's tools and writes the call, its result (or error) and any memory
+ * write to the trail. Both backends go through here, so the trail reads the same whichever
+ * model made the call.
+ */
+export async function invokeTool(
+  runtime: ToolRuntime,
+  trail: Trail,
+  name: string,
+  input: Record<string, unknown>,
+): Promise<ToolOutcome> {
+  const label = runtime.labels.get(name) ?? name;
+  await trail.emit('tool_call', `${label}: ${JSON.stringify(input).slice(0, 300)}`, {
+    tool: name,
+    input,
+  });
+  const handler = runtime.dispatch.get(name);
+  let outcome: ToolOutcome;
+  if (!handler) outcome = { text: `Unknown tool ${name}`, isError: true };
+  else {
+    try {
+      outcome = await handler(input);
+    } catch (err) {
+      outcome = { text: err instanceof Error ? err.message : String(err), isError: true };
+    }
+  }
+  await trail.emit(
+    outcome.isError ? 'error' : 'tool_result',
+    `${label} → ${outcome.text.slice(0, 300)}`,
+    { tool: name, isError: outcome.isError ?? false },
+  );
+  if (outcome.memoryWrite) {
+    await trail.emit(
+      'memory_write',
+      `${outcome.memoryWrite.ns}/${outcome.memoryWrite.key}`,
+      outcome.memoryWrite,
+    );
+  }
+  return outcome;
+}
 
 export type ToolSetup = {
   db: Db;

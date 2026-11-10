@@ -19,8 +19,13 @@ const TEMPLATE = `# Magpipe desktop configuration. Restart Magpipe after editing
 # Footer label.
 MAGPIPE_REGION=local
 
-# Model provider key — used once the run engine lands.
+# How runs reach Claude: "api" uses the key below; "claude-code" uses the Claude Code
+# installed on this machine and the login it already has (no key needed).
+MAGPIPE_MODEL_BACKEND=api
 ANTHROPIC_API_KEY=
+
+# Only for claude-code, when the claude command is not on your PATH.
+MAGPIPE_CLAUDE_PATH=
 `;
 
 function readOrCreateSecret(file: string): string {

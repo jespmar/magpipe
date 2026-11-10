@@ -7,6 +7,7 @@ import { Kbd } from '@/components/ui/Kbd';
 import { DemoDataForm } from '@/components/settings/DemoDataForm';
 import { ScrollToHash } from '@/components/ui/ScrollToHash';
 import { dataDir, getDb } from '@/lib/db';
+import { describeModelBackend } from '@/lib/engine/claude-code';
 import { settings as settingsTable } from '@/lib/db/schema';
 import { buildSeed } from '@/lib/db/seed-data';
 import { env } from '@/lib/env';
@@ -35,11 +36,24 @@ const MODE_LABEL = {
 
 /** Read-only facts for now (spec §3.7); editing lands with the screen that first needs it. */
 export default async function SettingsPage() {
-  const [settings, user, shell] = await Promise.all([
+  const [settings, user, shell, backend] = await Promise.all([
     loadSettings(),
     currentUser(),
     getShellData(),
+    describeModelBackend(),
   ]);
+  const backendRows: (readonly [string, string])[] =
+    backend.backend === 'claude-code'
+      ? [
+          ['Backend', 'Claude Code on this machine'],
+          [
+            'Claude Code',
+            backend.cli
+              ? `${backend.cli.path}${backend.cli.version ? ` · v${backend.cli.version}` : ''}`
+              : 'not found',
+          ],
+        ]
+      : [['Backend', 'Claude API, with ANTHROPIC_API_KEY from magpipe.env']];
   const mode = accessMode();
   const dash = '—';
   const seed = buildSeed();
@@ -72,7 +86,12 @@ export default async function SettingsPage() {
             rows={[
               ['Orchestrator', settings?.models.orchestrator ?? dash],
               ['Default for new agents', settings?.models.default ?? dash],
+              ...backendRows,
             ]}
+            note={
+              backend.problem ??
+              'MAGPIPE_MODEL_BACKEND in magpipe.env picks api (a key) or claude-code (the Claude Code on this machine and its login).'
+            }
           />
           <Facts
             title="Storage"

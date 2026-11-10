@@ -1,6 +1,6 @@
 # Claude Code as a second model backend (scope)
 
-Status: scoped, not built. Decision D22 in `decisions.md` points here.
+Status: built (D22 in `decisions.md` records what changed against this scope). The code is `lib/engine/backend.ts`, `lib/engine/claude-code.ts`, `lib/engine/tool-sessions.ts` and `app/api/mcp/route.ts`; the tests are `tests/claude-code.test.ts` with the fake CLI in `tests/stubs/claude.mjs`.
 
 ## Goal
 

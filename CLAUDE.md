@@ -64,11 +64,14 @@ engine and no sign-in on desktop.
   params, and the next `router.refresh()` lands in the wrong slot and is silently dropped. Use
   `router.replace(url, { scroll: false })` for a changed address and `router.refresh()` for the
   same one; keep transient selection in state and read `?agent=`-style params only at load.
-- **Model calls go through `lib/engine/model.ts`.** `ModelClient` is the one seam (tests script
-  it); requests carry `fallbackParams(model)`, never a forced `tool_choice` (400 on the 5.5
-  family), and structured outputs for JSON. Retries are the engine's (`withRetries`), not the
-  SDK's. Tool names on the wire are `wireName(...)` and every tool schema sets
-  `additionalProperties: false`.
+- **Model calls go through `lib/engine/backend.ts`.** `RunBackend` (plan · step · merge) is the
+  seam: `apiBackend` wraps `ModelClient` (`lib/engine/model.ts`; tests script it) and
+  `claudeCodeBackend` (`lib/engine/claude-code.ts`) runs the `claude` CLI, with a step's tools
+  served back over `/api/mcp` under a per-step token (`tool-sessions.ts`). API requests carry
+  `fallbackParams(model)`, never a forced `tool_choice` (400 on the 5.5 family), and structured
+  outputs for JSON. Retries are the engine's (`withRetries`), not the SDK's. Tool names on the
+  wire are `wireName(...)` and every tool schema sets `additionalProperties: false`. Tool calls
+  are recorded through `invokeTool`, whichever backend made them.
 - **Runs are durable by their plan.** Write `runs.plan` before and after each step, append to
   `run_events` through `emitEvent`, and never hold run state only in memory: a restart resumes
   from the plan (`resumeInterrupted`).
