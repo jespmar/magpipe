@@ -89,16 +89,24 @@ export function AgentDetail({
                 {b}
               </li>
             ))}
-            {grants.map(({ tool, scopes }) => (
-              <li
-                key={tool.id}
-                className="rounded-sm bg-canvas-soft px-2 py-0.5 font-mono text-code text-ink"
-                title={scopes.length ? `${tool.name}: ${scopes.join(', ')}` : tool.name}
-              >
-                {tool.slug}
-                {scopes.length ? <span className="text-mute"> · {scopes.join(' ')}</span> : null}
-              </li>
-            ))}
+            {grants.map(({ tool, scopes }) => {
+              // An empty grant allows nothing (D25): say so rather than show the bare server.
+              const which = scopes.length
+                ? scopes.join(' ')
+                : tool.scopes.length
+                  ? 'no tools'
+                  : 'tools not known yet';
+              return (
+                <li
+                  key={tool.id}
+                  className="rounded-sm bg-canvas-soft px-2 py-0.5 font-mono text-code text-ink"
+                  title={`${tool.name}: ${scopes.length ? scopes.join(', ') : which}`}
+                >
+                  {tool.slug}
+                  <span className="text-mute"> · {which}</span>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

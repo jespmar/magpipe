@@ -7,7 +7,7 @@ import { newId } from './ids';
 import { probeMcp, type McpProbe, type McpTarget } from './mcp';
 import type { Tool, ToolAuthInput, ToolConnectInput, ToolPatch } from './schemas';
 import { deleteSecret, readSecret, storeSecret } from './secrets';
-import { glyphOf } from './tools-util';
+import { fillPendingGrant, glyphOf } from './tools-util';
 
 /** A request that is well-formed but refers to things that do not exist or are not allowed. */
 export class ToolValidationError extends Error {
@@ -40,7 +40,10 @@ export async function listAgentChips(db: Db): Promise<AgentChip[]> {
 // ─── connection ─────────────────────────────────────────────────────────────
 
 /** bearer and oauth2 tokens travel as `Authorization: Bearer`; API keys as `X-API-Key` (D13). */
-export function authHeaders(type: Tool['auth']['type'], token: string | null): Record<string, string> {
+export function authHeaders(
+  type: Tool['auth']['type'],
+  token: string | null,
+): Record<string, string> {
   if (!token || type === 'none') return {};
   return type === 'apikey' ? { 'x-api-key': token } : { authorization: `Bearer ${token}` };
 }
@@ -107,6 +110,27 @@ async function agentIdsForSlugs(db: Db, slugs: string[]): Promise<string[]> {
   const missing = slugs.filter((s) => !rows.some((r) => r.slug === s));
   if (missing.length > 0) throw new ToolValidationError(`Unknown agent: ${missing.join(', ')}`);
   return slugs.map((s) => rows.find((r) => r.slug === s)!.id);
+}
+
+/**
+ * The first probe that finds a server's tools fills the grants made while they were unknown
+ * (D25). Grants made after that already name their tools and are left as they are.
+ */
+async function fillPendingGrants(
+  db: Db,
+  before: Pick<Tool, 'scopes'>,
+  tool: Pick<Tool, 'id' | 'scopes'>,
+): Promise<void> {
+  if (before.scopes.length > 0 || tool.scopes.length === 0) return;
+  const agents = await db.select({ id: t.agents.id, tools: t.agents.tools }).from(t.agents);
+  for (const agent of agents) {
+    const next = fillPendingGrant(agent.tools, tool.id, tool.scopes);
+    if (!next) continue;
+    await db
+      .update(t.agents)
+      .set({ tools: next, updatedAt: new Date() })
+      .where(eq(t.agents.id, agent.id));
+  }
 }
 
 /** Grants every current scope to `agentIds` and removes the tool from everyone else. */
@@ -205,6 +229,7 @@ export async function retestTool(
   const probe = await probeStored(db, current);
   const tool = applyProbe(current, probe, new Date());
   await db.update(t.tools).set(tool).where(eq(t.tools.id, id));
+  await fillPendingGrants(db, current, tool);
   return { tool, probe };
 }
 
@@ -246,6 +271,7 @@ export async function updateTool(
   const probe = reconnect ? await probeStored(db, tool) : null;
   if (probe) tool = applyProbe(tool, probe, tool.updatedAt);
   await db.update(t.tools).set(tool).where(eq(t.tools.id, id));
+  await fillPendingGrants(db, current, tool);
   if (patch.grant) await setAgentGrants(db, tool, agentIds);
   return { tool, probe };
 }

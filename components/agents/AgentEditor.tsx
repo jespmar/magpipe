@@ -283,6 +283,7 @@ export function AgentEditor({
                           ))}
                         </div>
                       ) : null}
+                      {grant ? <GrantNote toolScopes={tool.scopes} granted={grant.scopes} /> : null}
                     </li>
                   );
                 })}
@@ -421,4 +422,24 @@ function Fieldset({
       {children}
     </fieldset>
   );
+}
+
+/** What an empty grant means, said where it is made (D25). */
+function GrantNote({ toolScopes, granted }: { toolScopes: string[]; granted: string[] }) {
+  if (toolScopes.length === 0) {
+    return (
+      <p className="pb-1 pl-9 text-caption text-mute">
+        Its tools are not known yet. This agent gets all of them once the server answers a test on
+        the Tools screen.
+      </p>
+    );
+  }
+  if (granted.length === 0) {
+    return (
+      <p className="pb-1 pl-9 text-caption text-mute">
+        Nothing ticked, so this agent gets no tools from this server.
+      </p>
+    );
+  }
+  return null;
 }

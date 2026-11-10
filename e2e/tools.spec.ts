@@ -79,13 +79,23 @@ test('connect a local MCP server, test it, grant it, remove it', async ({ page }
   await expect(card.getByRole('list', { name: 'Granted to' })).toContainText('Coder');
   await expect(card.getByText('0 calls · 24h')).toBeVisible();
 
-  // The grant shows up on the agent side too.
+  // The grant shows up on the agent side too, naming the tools it allows.
+  const slug = name.toLowerCase().replace(/ /g, '-');
   await page.goto('/agents?agent=coder');
+  const detail = page.getByRole('complementary', { name: 'Coder' });
+  await expect(detail.getByText(slug)).toContainText('echo ping');
+
+  // Unticking every tool takes the server away rather than granting all of it (D25).
+  await detail.getByRole('button', { name: 'Edit', exact: true }).click();
+  const edit = page.getByRole('dialog', { name: 'Edit Coder' });
+  await edit.getByRole('checkbox', { name: 'echo', exact: true }).uncheck();
+  await edit.getByRole('checkbox', { name: 'ping', exact: true }).uncheck();
   await expect(
-    page
-      .getByRole('complementary', { name: 'Coder' })
-      .getByText(name.toLowerCase().replace(/ /g, '-')),
+    edit.getByText('Nothing ticked, so this agent gets no tools from this server.'),
   ).toBeVisible();
+  await edit.getByRole('button', { name: 'Save changes' }).click();
+  await expect(edit).toBeHidden();
+  await expect(detail.getByText(slug)).toContainText('no tools');
 
   // Manage: test again, then remove after a confirm step.
   await page.goto('/tools');
