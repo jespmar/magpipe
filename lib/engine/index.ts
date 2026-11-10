@@ -18,7 +18,8 @@ import { apiBackend, type RunBackend } from './backend';
 import { claudeCodeBackend } from './claude-code';
 import { emitEvent } from './events';
 import { acquireWriteLocks, writeTargets, type WriteTarget } from './locks';
-import { foldWork, mergeWork, runArtifacts, type WorkItem } from '../work';
+import { capReached, spendCapMessage, spendToday } from '../spend';
+import { foldWork, runArtifacts, workItems, type WorkItem } from '../work';
 import { sendBackSet, threadText } from '../runs-util';
 import { mergeRun } from './merge';
 import {
@@ -128,7 +129,11 @@ export class Engine {
     return false;
   }
 
-  /** Runs left `running` by a previous process go back to work; queued ones are picked up (D5). */
+  /**
+   * Runs left `running` by a previous process go back to work; queued ones are picked up (D5).
+   * A step that was live starts again, counting the restart and keeping the work it had recorded,
+   * so its next attempt continues from there (D33).
+   */
   async resumeInterrupted(db: Db): Promise<number> {
     const rows = await db
       .select({ id: t.runs.id, status: t.runs.status, plan: t.runs.plan })
@@ -137,7 +142,9 @@ export class Engine {
     for (const row of rows) {
       if (row.status === 'running') {
         const plan = row.plan.map((s) =>
-          s.status === 'live' ? { ...s, status: 'todo' as const } : s,
+          s.status === 'live'
+            ? { ...s, status: 'todo' as const, restarts: (s.restarts ?? 0) + 1 }
+            : s,
         );
         await db.update(t.runs).set({ plan }).where(eq(t.runs.id, row.id));
         await emitEvent(db, {
@@ -227,8 +234,10 @@ export class Engine {
       // A follow-up carries the conversation it continues into every prompt.
       const conversation = threadText(await loadThread(db, run)) || undefined;
 
-      // 1. plan (skipped on resume when a plan exists)
+      // 1. plan (skipped on resume when a plan exists), unless today's spend is at the cap
       if (run.plan.length === 0) {
+        const stop = await this.spendCapStop(db, 'planning');
+        if (stop) throw stop;
         const planned = await withRetries(
           () =>
             planRun({
@@ -254,7 +263,9 @@ export class Engine {
         });
       }
 
-      // 2. the DAG: everything whose dependencies are done runs together
+      // 2. the DAG: everything whose dependencies are done runs together. Once today's spend
+      // reaches the cap no step goes live; steps already working finish, then the run stops (D32).
+      let capStop: EngineError | null = null;
       for (;;) {
         signal.throwIfAborted();
         const plan: Step[] = run.plan;
@@ -324,6 +335,14 @@ export class Engine {
                 );
               },
             );
+            // Checked as late as possible: after any wait, just before the step goes live.
+            const stop = capStop ?? (await this.spendCapStop(db, `“${step.title}”`));
+            if (stop) {
+              capStop ??= stop;
+              release();
+              await setAgentStatus(db, agent.id, 'idle');
+              return;
+            }
             const startedAt = new Date().toISOString();
             await save({
               plan: run!.plan.map((s) =>
@@ -331,8 +350,14 @@ export class Engine {
               ),
             });
             await setAgentStatus(db, agent.id, 'running');
-            // What the step's repository tools do, kept whether the step finishes or fails.
-            const work: WorkItem[] = [];
+            // What the step's repository tools do, kept whether the step finishes or fails, and
+            // saved onto the step as it grows. A step resumed after a restart starts from what it
+            // had recorded, so its record covers both attempts (D33).
+            const work: WorkItem[] = workItems(step.work);
+            const saveWork = () =>
+              save({
+                plan: run!.plan.map((s) => (s.id === step.id ? { ...s, work: foldWork(work) } : s)),
+              });
             // A reviewing agent may send the work back while rounds remain (D31).
             const remaining = agent.sendBackRounds - ((step.round ?? 1) - 1);
             const sendBack: { remaining: number; findings?: string } | undefined =
@@ -351,14 +376,14 @@ export class Engine {
                 conversation,
                 work,
                 sendBack,
+                onWork: saveWork,
                 signal,
               });
               await this.finishStep(save, () => run!, step.id, {
                 status: 'done',
                 result: { summary: outcome.summary },
                 usage: outcome.usage,
-                // A step that ran again keeps what it did before it was sent back.
-                work: mergeWork(step.work, foldWork(work)),
+                work: foldWork(work),
                 ...(sendBack?.findings ? { sentBack: sendBack.findings } : {}),
               });
               await emit('message', `${agent.name} finished: ${step.title}`, null, step.id);
@@ -371,7 +396,7 @@ export class Engine {
               await this.finishStep(save, () => run!, step.id, {
                 status: 'failed',
                 error: { code: f.code, message: f.message },
-                work: mergeWork(step.work, foldWork(work)),
+                work: foldWork(work),
               });
               await emitEvent(db, {
                 runId,
@@ -387,6 +412,7 @@ export class Engine {
             }
           }),
         );
+        if (capStop) throw capStop;
 
         // A reviewing step that sent the work back reopens it: the steps it reviews run again
         // with its findings, then it reviews once more (D31). Usage so far stays counted.
@@ -464,6 +490,10 @@ export class Engine {
         );
         return;
       }
+
+      const mergeStep = run.plan.find((s) => s.id === MERGE_STEP_ID);
+      const mergeStop = await this.spendCapStop(db, `“${mergeStep?.title ?? 'Merge results'}”`);
+      if (mergeStop) throw mergeStop;
       const mergeStartedAt = new Date().toISOString();
       await save({
         plan: run.plan.map((s) =>
@@ -542,6 +572,15 @@ export class Engine {
       for (const id of touched) await setAgentStatus(db, id, 'idle').catch(() => {});
       await wipeSandbox(runId).catch(() => {});
     }
+  }
+
+  /**
+   * The daily spend cap (D32): null while today's spend is under the cap or there is none, else
+   * the error the run stops with. Read fresh each time, so a cap raised mid-run counts at once.
+   */
+  private async spendCapStop(db: Db, before: string): Promise<EngineError | null> {
+    const spend = await spendToday(db);
+    return capReached(spend) ? new EngineError('spend_cap', spendCapMessage(spend, before)) : null;
   }
 
   private async finishStep(

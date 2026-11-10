@@ -271,7 +271,8 @@ once per server start.
 - **Housekeeping.** The nightly job marks facts stale at start-up and every 24 h; expired facts
   are kept and labelled (D14).
 - **Not yet:** streaming tokens into the log (events are per message and tool call), spend caps
-  (`settings.spendCapUsd` is recorded, not enforced), and artifacts produced by runs.
+  (`settings.spendCapUsd` is recorded, not enforced; enforced since D32), and artifacts produced
+  by runs.
 
 ## D16 · Home as built (PR 6)
 
@@ -719,7 +720,8 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
   approval, keeps its result, and the merge never reopens. Reopened steps go back to `todo`
   with `round` + 1 and a `feedback` line in their prompt: the findings for the reviewed steps,
   "your findings last round" for the reviewer. Their usage so far is added to the run's before
-  it is cleared, and their work record carries over (`mergeWork`), so tokens, cost, commits and
+  it is cleared, and their work record carries over (the step's collector starts from its saved
+  record, D33), so tokens, cost, commits and
   files across rounds all stay counted. The trail says
   `Round 2: Reviewer sent the work back to “Make the change”.`, and the flight path shows the
   round.
@@ -727,3 +729,60 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
   that the tool is not offered and the verdict stands for the operator, as before.
 - **Not covered:** a send-back cannot change the plan (no new steps), and reopening the Planner
   needs a reviewer that depends on it directly.
+
+## D32 · A daily spend cap, enforced
+
+- **Why.** `settings.spendCapUsd` (50 on a fresh install, shown on Settings as "Spend cap per
+  day") was recorded and never enforced (D15), and nothing could change it, so an unattended run
+  had no budget beyond each agent's per-step limits. It was the seventh gap in `docs/flock.md`.
+- **What counts.** Today's spend is the cost of every run asked for today in the server's local
+  day, the same day Home and the Runs screen count: a finished run's `usage`, and for a run still
+  going, its plan's cost plus its steps' usage so far (a run's `usage` takes in its steps only
+  when it ends). One aggregate query over the indexed `created_at` range reads the spend and the
+  cap together (`spendToday` in `lib/spend.ts`), so a cap changed mid-run counts at the next
+  check. Under Claude Code the dollars are what the API would have charged (D22), not a bill, and
+  Settings says so in one line.
+- **Where it stops.** Before planning, before each step goes live (after any wait for a work
+  tree, D28) and before the merge. Once the spend has reached the cap no new step starts, steps
+  already working finish, and the run fails with code `spend_cap`: "Today's spend ($50.12)
+  reached the $50.00 cap, so the run stopped before “Draft the change”. Raise the cap in Settings
+  to go on." Steps that never started are skipped; the work recorded so far stays on the run
+  (D29).
+- **0 means no cap.** A cap of 0 turns the check off rather than stopping every run, which a
+  zero budget would otherwise mean; Settings shows it as "no cap".
+- **The first editable setting.** Settings gains a Spend cap section: today's spend, the cap, one
+  field and a Save button, saved through `PATCH /api/settings` (`GET` beside it, spec §8) with
+  `requireUser`, `parseBody` and `apiError`. `settingsPatch` takes a non-negative number of
+  dollars up to $10,000, rounded to the cent; the form checks the same schema before it sends,
+  the error stays beside the field, and the button confirms in place. The page re-reads its data
+  with `router.refresh()`; nothing revalidates the layout.
+- **Not covered:** the cap is checked between steps, not inside one, so steps already working
+  can go past it by their own limits (at most three at once, D28). A run stopped at the cap does
+  not resume when the cap is raised; run it again. A run that crosses midnight counts towards the
+  day it was asked for. There is no per-run or per-agent budget and no warning before the cap.
+
+## D33 · A step resumes from where it was
+
+- **Why.** After a restart, `resumeInterrupted` sent `live` steps back to `todo` and they ran
+  again from their brief alone, and a step's work record (D29) reached the plan only when the
+  step ended, so a crash lost it. A Coder halfway through a change started over and could repeat
+  its commits; only its prompt said to continue from what was committed. It was the eighth gap in
+  `docs/flock.md`.
+- **The record is saved as it grows.** Each item a repository tool records is folded and saved
+  onto the step in `runs.plan` at once (`ToolSetup.onWork`): one save per recorded item, none for
+  other tool calls. A restart finds the branch, files, commits and checks the step had made.
+- **A resumed step is told.** `resumeInterrupted` counts the restart on the step
+  (`step.restarts`, optional in the step schema; `runs.plan` is jsonb typed from zod, so no
+  migration) and keeps its record. The step's user message gains, after its instructions: "This
+  step was interrupted by a restart after it had started. Before that, Magpipe recorded:", the
+  `workFacts` lines, and "Continue from there: check git_status and the branch, and do not redo
+  work that is already committed." With nothing recorded it says so and asks the agent to check
+  what is in place (`resumeNote` in `lib/work.ts`).
+- **One record across attempts.** The resumed attempt's collector starts from the recorded work
+  (`workItems`, the inverse of `foldWork`), so the final record, the facts later steps get and
+  the run's artefacts cover both attempts. A step put back to `todo` with its `work` kept always
+  collects on top of it.
+- **Not covered:** the step's conversation is not replayed; it starts again from its brief plus
+  the note. What it did outside bound repositories (MCP servers, memory writes) is not on the
+  record, nor is an operation the restart cut off before it reported. The run page does not show
+  the restart count yet. A live merge simply runs again.

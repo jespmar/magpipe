@@ -121,7 +121,10 @@ export const step = z.object({
   finishedAt: isoDate.optional(),
   usage: usage.optional(),
   result: z.object({ summary: z.string().max(1000) }).optional(),
-  /** Set when the step changed or ran something in a bound repository, done or failed. */
+  /**
+   * Set when the step changed or ran something in a bound repository, done or failed. Saved as
+   * each item is recorded, so a restart keeps what the step had done (D33).
+   */
   work: stepWork.optional(),
   /** When the operator let the steps after this one go on (D30), and what they added. */
   approvedAt: isoDate.optional(),
@@ -132,6 +135,8 @@ export const step = z.object({
   sentBack: z.string().max(4000).optional(),
   /** What the step must address on this round: the findings that sent it back (D31). */
   feedback: z.string().max(6000).optional(),
+  /** How many times a restart interrupted this step while it was live (D33). */
+  restarts: z.number().int().positive().optional(),
   error: z.object({ code: z.string(), message: z.string() }).optional(),
 });
 
@@ -324,10 +329,26 @@ export const settings = z.object({
   id: z.literal('settings'),
   workspaceName: z.string().min(1),
   region: z.string().min(1),
+  /** Dollars a day across all runs; 0 means no cap (D32). */
   spendCapUsd: z.number().nonnegative(),
   models: modelDefaults,
   updatedAt: z.date(),
 });
+
+/** The highest daily spend cap the Settings screen accepts, in dollars (D32). */
+export const SPEND_CAP_MAX_USD = 10_000;
+
+/** A daily spend cap as the operator types it: dollars, rounded to the cent; 0 means no cap. */
+export const spendCapInput = z
+  .number({ error: 'Enter the cap in dollars, for example 50' })
+  .nonnegative('The cap can’t be negative. Use 0 for no cap')
+  .max(SPEND_CAP_MAX_USD, `The cap can be at most $${SPEND_CAP_MAX_USD.toLocaleString('en-US')}`)
+  .transform((usd) => Math.round(usd * 100) / 100);
+
+/** PATCH /api/settings: the settings the operator may change. Only the spend cap so far (D32). */
+export const settingsPatch = z.object({ spendCapUsd: spendCapInput });
+
+export type SettingsPatch = z.infer<typeof settingsPatch>;
 
 // ─── API bodies ────────────────────────────────────────────────────────────
 

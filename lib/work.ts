@@ -1,6 +1,7 @@
 /**
  * What steps did in bound repositories (D29): the items repository tools report as they run,
- * folded into a step's record, said back as facts in later prompts, summed up for the flight path
+ * folded into a step's record, said back as facts in later prompts (and to the step itself when a
+ * restart interrupted it, D33), summed up for the flight path
  * and gathered into the run's artefacts. Pure and client-safe; tested in tests/work.test.ts.
  */
 import { plural } from './format';
@@ -59,6 +60,20 @@ export function foldWork(items: readonly WorkItem[]): StepWork | undefined {
   };
 }
 
+/**
+ * A record back as items, so a step resumed after a restart collects on top of what it had done
+ * (D33): `foldWork(workItems(w))` is `w`, and items recorded afterwards fold in as usual.
+ */
+export function workItems(work: StepWork | undefined): WorkItem[] {
+  if (!work) return [];
+  return [
+    ...work.branches.map((b) => ({ kind: 'branch' as const, ...b })),
+    ...work.files.map((f) => ({ kind: 'file' as const, ...f })),
+    ...work.commits.map((c) => ({ kind: 'commit' as const, ...c })),
+    ...work.checks.map((c) => ({ kind: 'check' as const, ...c })),
+  ];
+}
+
 /** The latest run of each script, in the order the scripts were first run. */
 export function latestChecks(work: StepWork): StepWork['checks'] {
   const last = new Map<string, StepWork['checks'][number]>();
@@ -111,6 +126,26 @@ export function workFacts(work: StepWork | undefined): string[] {
 }
 
 /**
+ * What a step resumed after a restart is told (D33): that it was interrupted, what Magpipe saw
+ * its repository tools do before that, and to continue from there rather than start over. Null
+ * for a step that was never interrupted.
+ */
+export function resumeNote(step: Pick<Step, 'restarts' | 'work'>): string | null {
+  if (!step.restarts) return null;
+  const interrupted = `This step was interrupted by a restart after it had started${
+    step.restarts > 1 ? ` (${step.restarts} times)` : ''
+  }.`;
+  const facts = workFacts(step.work);
+  return facts.length
+    ? [
+        `${interrupted} Before that, Magpipe recorded:`,
+        ...facts.map((f) => `- ${f}`),
+        'Continue from there: check git_status and the branch, and do not redo work that is already committed.',
+      ].join('\n')
+    : `${interrupted} Magpipe recorded no repository work before that. Check what is already in place before you redo anything.`;
+}
+
+/**
  * The run's artefacts from its steps: each branch committed to, with its commit count and last
  * commit, then each file created or changed. A file is "created" if any step created it.
  */
@@ -159,24 +194,4 @@ export function shownArtifacts(run: Pick<Run, 'plan' | 'output'>): RunArtifact[]
     ...runArtifacts(run.plan),
     ...(run.output?.artifacts.filter((a) => a.blobUrl !== undefined) ?? []),
   ];
-}
-
-/** A record back into items, so two records can be folded as one (D31: a step that ran again). */
-function itemsOf(work: StepWork): WorkItem[] {
-  return [
-    ...work.branches.map((b) => ({ kind: 'branch' as const, ...b })),
-    ...work.files.map((f) => ({ kind: 'file' as const, ...f })),
-    ...work.commits.map((c) => ({ kind: 'commit' as const, ...c })),
-    ...work.checks.map((c) => ({ kind: 'check' as const, ...c })),
-  ];
-}
-
-/** A step's record across rounds: what it did before it was sent back, then what it did after. */
-export function mergeWork(
-  before: StepWork | undefined,
-  after: StepWork | undefined,
-): StepWork | undefined {
-  if (!before) return after;
-  if (!after) return before;
-  return foldWork([...itemsOf(before), ...itemsOf(after)]);
 }

@@ -3,10 +3,11 @@ import { describe, expect, it } from 'vitest';
 import {
   foldWork,
   latestChecks,
-  mergeWork,
+  resumeNote,
   runArtifacts,
   shownArtifacts,
   workFacts,
+  workItems,
   workLine,
   type WorkItem,
 } from '@/lib/work';
@@ -57,6 +58,52 @@ describe('foldWork', () => {
   });
 });
 
+describe('workItems', () => {
+  it('turns a record back into items, so a resumed step collects on top of it (D33)', () => {
+    const work = foldWork(items)!;
+    expect(workItems(undefined)).toEqual([]);
+    expect(foldWork(workItems(work))).toEqual(work);
+    const resumed = foldWork([
+      ...workItems(work),
+      { kind: 'file', repo: 'App', path: 'src/a.ts', change: 'updated' },
+      { kind: 'file', repo: 'App', path: 'src/c.ts', change: 'created' },
+      { kind: 'commit', repo: 'App', branch: 'magpipe/x', sha: 'def5678', message: 'Add c' },
+    ])!;
+    expect(resumed.files.map((f) => `${f.path}:${f.change}`)).toEqual([
+      'src/a.ts:created',
+      'src/b.ts:updated',
+      'src/c.ts:created',
+    ]);
+    expect(resumed.commits.map((c) => c.sha)).toEqual(['abc1234', 'def5678']);
+    expect(resumed.branches).toEqual(work.branches);
+    expect(resumed.checks).toEqual(work.checks);
+  });
+});
+
+describe('resumeNote', () => {
+  it('says nothing to a step that was never interrupted', () => {
+    expect(resumeNote({})).toBeNull();
+    expect(resumeNote({ work: foldWork(items) })).toBeNull();
+  });
+
+  it('tells an interrupted step what it had done, or that nothing was recorded', () => {
+    const note = resumeNote({ restarts: 1, work: foldWork(items) })!;
+    expect(note.split('\n')).toEqual([
+      'This step was interrupted by a restart after it had started. Before that, Magpipe recorded:',
+      '- App: created and switched to branch magpipe/x',
+      '- App: created src/a.ts',
+      '- App: updated src/b.ts',
+      '- App: committed abc1234 on magpipe/x: Add a',
+      '- App: ran test, passed (exit 0) in 1.9 s',
+      '- App: ran lint, timed out in 600.0 s',
+      'Continue from there: check git_status and the branch, and do not redo work that is already committed.',
+    ]);
+    expect(resumeNote({ restarts: 2 })).toBe(
+      'This step was interrupted by a restart after it had started (2 times). Magpipe recorded no repository work before that. Check what is already in place before you redo anything.',
+    );
+  });
+});
+
 describe('runArtifacts', () => {
   it('lists branches with their commits, then files, across steps', () => {
     const first = foldWork(items);
@@ -94,23 +141,5 @@ describe('shownArtifacts', () => {
       'magpipe/x',
       'report.pdf',
     ]);
-  });
-});
-
-describe('mergeWork', () => {
-  it("keeps a step's work across rounds", () => {
-    const before = foldWork([
-      { kind: 'file', repo: 'App', path: 'src/a.ts', change: 'created' },
-      { kind: 'commit', repo: 'App', branch: 'magpipe/x', sha: 'abc1234', message: 'Add a' },
-    ]);
-    const after = foldWork([
-      { kind: 'file', repo: 'App', path: 'src/a.ts', change: 'updated' },
-      { kind: 'commit', repo: 'App', branch: 'magpipe/x', sha: 'def5678', message: 'Fix a' },
-    ]);
-    const merged = mergeWork(before, after)!;
-    expect(merged.files).toEqual([{ repo: 'App', path: 'src/a.ts', change: 'created' }]);
-    expect(merged.commits.map((c) => c.sha)).toEqual(['abc1234', 'def5678']);
-    expect(mergeWork(undefined, after)).toBe(after);
-    expect(mergeWork(before, undefined)).toBe(before);
   });
 });

@@ -337,7 +337,7 @@ commits and check results as "Recorded by Magpipe", whatever the Coder's summary
 There are two gates, the plan (where the run waits) and the merge (no agent pushes), and no
 per-edit gate, which matches both the
 consensus and the engine's `dontAsk` mode. Anything irreversible outside the repository has no
-tool at all. Until the spend cap is enforced, the per-step limits are the budget.
+tool at all. The per-step limits bound each step, and the daily spend cap (D32) bounds the day.
 
 ## Standing instructions
 
@@ -447,8 +447,8 @@ three are small.
 | 4     | Done (D29). Each step records what its repository tools did; later steps and the merge get it as facts; the run page lists the branches and files a run changed.                            |                                                               |                                                                                       |
 | 5     | Done (D30). An agent can wait for approval after its steps; the run waits, and the operator approves with a note or cancels, from the run page or Home.                                     |                                                               |                                                                                       |
 | 6     | Done (D31). A reviewing agent may send the work it judges back with its findings, a set number of times; the reviewed steps run again and it reviews once more. Off by default.             |                                                               |                                                                                       |
-| 7     | The spend cap is recorded, not enforced (D15)                                                                                                                                               | Unattended runs                                               | Enforce from the run's usage totals                                                   |
-| 8     | Resume re-runs a live step from scratch                                                                                                                                                     | A half-committed Coder step repeats (the prompt mitigates it) | Resume write steps with "continue from the branch"                                    |
+| 7     | Done (D32). Today's spend is checked before planning and before each step; at the cap the run stops, and Settings edits the cap (0 is none).                                                |                                                              |                                                                                                                        |
+| 8     | Done (D33). A step's work record is saved as it grows; a step resumed after a restart is told what it had done and continues from the branch.                                               |                                                              |                                                                                                                        |
 | 9     | Done (D34). Each step's prompt carries the `CLAUDE.md` or `AGENTS.md` of every repository its agent reaches; Settings shows the orchestrator's rules beside the `decisions`.                |                                                               |                                                                                       |
 | 10    | No agent import or export                                                                                                                                                                   | Shipping the roster to a fresh install                        | "Load the development flock" beside the demo data, asking for the repository's folder |
 

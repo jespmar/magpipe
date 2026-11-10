@@ -14,7 +14,7 @@ import { EngineError, withRetries } from './model';
 import { memoryText } from './plan';
 import { setupTools, type StepConventions, type Trail } from './tools';
 import { CONVENTIONS_CAP } from '../repo';
-import { workFacts, type WorkItem } from '../work';
+import { resumeNote, workFacts, type WorkItem } from '../work';
 
 export type StepOutcome = { summary: string; usage: Usage };
 
@@ -35,6 +35,8 @@ export async function runStep(opts: {
   work?: WorkItem[];
   /** Offers the send_back tool while rounds remain (D31); the caller reads `findings`. */
   sendBack?: { remaining: number; findings?: string };
+  /** Saves the record onto the step as it grows, so a restart keeps it (D33). */
+  onWork?: (work: readonly WorkItem[]) => Promise<void>;
   signal: AbortSignal;
 }): Promise<StepOutcome> {
   const { db, run, step, agent } = opts;
@@ -67,6 +69,7 @@ export async function runStep(opts: {
         onToolUnavailable: (text) => trail.emit('error', text),
         work: opts.work,
         sendBack: opts.sendBack,
+        onWork: opts.onWork,
       }),
     { signal, onRetry: (f, n) => trail.emit('error', `Retry ${n}: ${f.message}`) },
   );
@@ -100,6 +103,7 @@ export async function runStep(opts: {
       `Your step: ${step.title}\n${step.instructions ?? ''}`,
       // A step that was sent back runs again with what it must address (D31).
       step.feedback ? `Round ${step.round ?? 2}. ${step.feedback}` : '',
+      resumeNote(step) ?? '',
       context ? `Earlier results:\n${context}` : '',
       opts.attachments.length
         ? `Attached files: ${opts.attachments.map((a) => a.name).join(', ')}`

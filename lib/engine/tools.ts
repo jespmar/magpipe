@@ -116,6 +116,11 @@ export type ToolSetup = {
   work?: WorkItem[];
   /** Offered to a reviewing agent while rounds remain (D31); `findings` is set when it is used. */
   sendBack?: { remaining: number; findings?: string };
+  /**
+   * Called after each item lands in `work`, so the engine can save the record onto the step
+   * before the step ends (D33). A failure here is logged, never the tool call's.
+   */
+  onWork?: (work: readonly WorkItem[]) => Promise<void>;
 };
 
 export function wireName(...parts: string[]): string {
@@ -614,6 +619,9 @@ export async function setupTools(setup: ToolSetup): Promise<ToolRuntime> {
                   ? { ...w, repo: tool.name, path: prefix ? `${prefix}/${w.path}` : w.path }
                   : { ...w, repo: tool.name },
               );
+              await setup.onWork?.(setup.work).catch((err: unknown) => {
+                console.error('[engine] saving a step’s work record failed:', err);
+              });
             }
             return { text: res.text, isError: res.isError };
           });
