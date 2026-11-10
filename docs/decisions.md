@@ -416,7 +416,7 @@ once per server start.
   detail panels and Settings sections follow. The prompt is one field with its toolbar beneath,
   not a card around a box.
 
-## D22 · Claude Code as a second model backend (scoped, not built)
+## D22 · Claude Code as a second model backend
 
 - **Why.** The engine talks to the Messages API with an API key. Running a flight through the
   Claude Code installed on the operator's machine would let the login it already has power
@@ -430,6 +430,17 @@ once per server start.
   from the CLI's result. `MAGPIPE_MODEL_BACKEND=api|claude-code` selects it; the API backend
   stays the default. The full scope, the risks and the build order are in
   `docs/claude-code-backend.md`.
-- **Gate.** Build only after confirming that a Claude subscription may power Claude Code's print
-  mode from another app on the operator's machine, and after an afternoon with the pinned CLI
-  confirms the three print-mode details the scope names.
+- **Built as scoped, with four deviations found against CLI 2.1.322.** (1) There is no
+  `--max-turns` in print mode, so the step limit is enforced from the stream: each assistant
+  turn counts, and the process is killed at `maxSteps + 1`; tokens are summed from the turns'
+  usage the same way, with the result line as the final authority. (2) Attachments and the
+  workspace stay behind Magpipe's own tools over MCP (`files_read`, `fs_*`, `shell_run`), not the
+  CLI's `Read`; only `WebSearch` and `WebFetch` map onto CLI tools, and only when granted.
+  (3) The CLI gets a clean environment: no `MAGPIPE_*`, no `ANTHROPIC_*` (so a key left in
+  `magpipe.env` cannot silently switch the billing), no nested-session markers. (4) A failed
+  result arrives as `is_error: true` even with `subtype: success`, so `is_error` is the check.
+- **Still to confirm on a signed-in machine:** that `--system-prompt` replaces the CLI's own
+  prompt in print mode, the name of the field that carries `--json-schema` output (the adapter
+  reads `structured_output` and falls back to the result text), and whether a Claude
+  subscription may power this use at all. The tests run against a fake `claude`
+  (`tests/stubs/claude.mjs`) that speaks the shapes observed here.

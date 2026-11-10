@@ -7,7 +7,8 @@ import { z } from 'zod';
 import type { Agent, MemoryEntry, Run, Step } from '../schemas';
 import { costUsd } from '../pricing';
 import type { Usage } from '../schemas';
-import { EngineError, fallbackParams, textOf, type ModelClient, type ModelMessage } from './model';
+import type { RunBackend } from './backend';
+import { EngineError, type ModelMessage } from './model';
 
 export const MERGE_STEP_ID = 'merge';
 
@@ -103,7 +104,7 @@ export function memoryText(entries: MemoryEntry[]): string {
 export type PlanResult = { steps: Step[]; usage: Usage; summary: string };
 
 export async function planRun(opts: {
-  client: ModelClient;
+  backend: RunBackend;
   model: string;
   run: Run;
   agents: Agent[];
@@ -115,27 +116,15 @@ export async function planRun(opts: {
   const attachments = opts.run.input.attachments.map((a) => a.name).join(', ');
   const user = `Task:\n${opts.run.input.text}${attachments ? `\n\nAttached files: ${attachments}` : ''}`;
 
-  const message = await opts.client.create(
+  const { text, usage } = await opts.backend.plan(
     {
       model: opts.model,
-      max_tokens: 16_000,
       system,
-      messages: [{ role: 'user', content: user }],
-      output_config: {
-        effort: 'high',
-        format: {
-          type: 'json_schema',
-          schema: PLAN_JSON_SCHEMA as unknown as Record<string, unknown>,
-        },
-      },
-      ...fallbackParams(opts.model),
+      user,
+      schema: PLAN_JSON_SCHEMA as unknown as Record<string, unknown>,
     },
     opts.signal,
   );
-  if (message.stop_reason === 'refusal') {
-    throw new EngineError('refusal', 'The orchestrator declined to plan this task.');
-  }
-  const text = textOf(message);
   let json: unknown;
   try {
     json = JSON.parse(text);
@@ -202,7 +191,7 @@ export async function planRun(opts: {
       : named.length === 1
         ? `Route to ${named[0]}`
         : `Split into ${named.length} steps — ${named.join('; ')}`;
-  return { steps, usage: usageOf(message), summary };
+  return { steps, usage, summary };
 }
 
 function assertAcyclic(steps: Step[]): void {
