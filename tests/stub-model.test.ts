@@ -13,15 +13,21 @@ describe('the scripted model', () => {
   }, 30_000);
   afterAll(() => close());
 
-  it('picks the first agent without registry tools, else the first agent', () => {
+  it('picks the first agent without servers, else the first agent', () => {
     const registry = [
       '- coder (Coder, Writes code): x',
-      '  model claude-opus-5-5; tools: files.read, tool_github; memory read: none; write: none',
+      '  model: claude-opus-5-5',
+      '  built-in tools: files.read',
+      '  servers: GitHub (get_issue)',
+      '  memory read: none; write: none',
       '- reviewer (Reviewer, y): z',
-      '  model claude-sonnet-5-5; tools: none; memory read: none; write: none',
+      '  model: claude-sonnet-5-5',
+      '  built-in tools: files.read',
+      '  servers: none',
+      '  memory read: none; write: none',
     ].join('\n');
     expect(pickRegistrySlug(registry)).toBe('reviewer');
-    expect(pickRegistrySlug(registry.split('\n').slice(0, 2).join('\n'))).toBe('coder');
+    expect(pickRegistrySlug(registry.split('\n').slice(0, 5).join('\n'))).toBe('coder');
     expect(pickRegistrySlug('nothing here')).toBeNull();
   });
 

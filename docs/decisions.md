@@ -518,3 +518,22 @@ once per server start.
 - **No data migration.** Existing empty grants now allow nothing, which matches what the editor
   already showed. An agent that relied on an empty grant to reach a server must have its tools
   ticked, or the server tested again if it never answered.
+
+## D26 · The planner reads tools by name
+
+- **Why.** The orchestrator's registry listed an agent's grants as raw `tool_…` ids, so it could
+  not tell which agent reads files, which one commits, or which server is down. Routing leaned on
+  the description prose alone. It was the other half of the first gap in `docs/flock.md`.
+- **Shape.** Each agent's entry now has its own lines for the model, the built-in tools, the
+  servers and the memory scope. A server reads as its name and the tools granted on it, for
+  example `Repository files (read_text_file, write_file)`, with `needs auth` or `not reachable`
+  when it will not answer (`registryText` and `grantText` in `lib/engine/plan.ts`). Empty grants
+  (D25) and grants to tools that no longer exist are left out. The orchestrator's rules gain one
+  line: give a step to an agent whose tools can do it, and a server marked not reachable or needs
+  auth will not answer.
+- **Bounded and plain.** At most 20 tool names per grant are listed and the rest are counted.
+  Tool names come from the server, so only plain identifiers (letters, digits and `_ . : / -`)
+  reach the prompt; anything else is counted, never quoted. Server names are the operator's and
+  are reduced to one line.
+- **The scripted model** picks the first agent whose entry says `servers: none`, so end-to-end
+  runs still avoid the demo's servers.

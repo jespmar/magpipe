@@ -4,7 +4,7 @@
  * orchestrator's own.
  */
 import { z } from 'zod';
-import type { Agent, MemoryEntry, Run, Step } from '../schemas';
+import type { Agent, MemoryEntry, Run, Step, Tool, ToolGrant, ToolStatus } from '../schemas';
 import { costUsd } from '../pricing';
 import type { Usage } from '../schemas';
 import type { RunBackend } from './backend';
@@ -61,6 +61,7 @@ Given a task, the registry of available agents and the relevant shared memory, r
 Rules:
 - Prefer the fewest agents that can do the job; give independent steps no dependencies so they run in parallel.
 - Every step names exactly one agent by slug from the registry. Never invent an agent.
+- Give a step to an agent whose built-in tools and servers can do it. A server marked not reachable or needs auth will not answer.
 - Put the facts from shared memory that matter into the instructions of the steps that need them.
 - Steps are small and concrete; the merge of results into a final answer is done by you afterwards, so do not add a step for it.
 - If no agent fits, return an empty list of steps and the final answer will be written directly.`;
@@ -80,13 +81,56 @@ export function usageOf(message: ModelMessage): Usage {
   };
 }
 
-export function registryText(agents: Agent[]): string {
+/** What the planner is told about a registry tool: its name and whether it answers. */
+export type RegistryTool = Pick<Tool, 'id' | 'name' | 'status'>;
+
+/** Tool names past this many are counted, not listed, so one large server cannot flood the plan. */
+export const REGISTRY_TOOL_CAP = 20;
+
+const STATUS_NOTE: Record<ToolStatus, string> = {
+  connected: '',
+  needs_auth: ', needs auth',
+  error: ', not reachable',
+};
+
+// Server tool names come from the server. Only plain identifiers reach the planner's prompt; the
+// rest are counted, so a server cannot write instructions into the plan through a tool's name.
+const PLAIN_NAME = /^[A-Za-z0-9_.:/-]{1,64}$/;
+
+/** "Repository files (read_text_file, write_file)": one granted server as the planner reads it. */
+export function grantText(grant: ToolGrant, tool: RegistryTool): string {
+  const plain = grant.scopes.filter((s) => PLAIN_NAME.test(s));
+  const shown = plain.slice(0, REGISTRY_TOOL_CAP);
+  const hidden = grant.scopes.length - shown.length;
+  const name =
+    tool.name
+      .replace(/[\s;()]+/g, ' ')
+      .trim()
+      .slice(0, 64) || 'Unnamed server';
+  const list = [...shown, ...(hidden > 0 ? [`and ${hidden} more`] : [])].join(', ');
+  return `${name}${STATUS_NOTE[tool.status]} (${list})`;
+}
+
+/**
+ * The orchestrator's registry: per agent its routing copy, model, built-in tools, the servers it
+ * may use with the tools granted on each, and its memory scope. An empty grant allows no tools
+ * (D25) and a grant to a tool that no longer exists allows nothing, so neither is listed.
+ */
+export function registryText(agents: Agent[], tools: readonly RegistryTool[]): string {
+  const byId = new Map(tools.map((tool) => [tool.id, tool]));
   return agents
     .map((a) => {
-      // An empty grant allows no tools (D25), so it is not a tool the agent has.
-      const granted = a.tools.filter((g) => g.scopes.length > 0).map((g) => g.toolId);
-      const tools = [...a.builtins, ...granted].join(', ') || 'none';
-      return `- ${a.slug} (${a.name}, ${a.role}): ${a.description}\n  model ${a.model}; tools: ${tools}; memory read: ${a.memoryScope.read.join(', ') || 'none'}; write: ${a.memoryScope.write.join(', ') || 'none'}`;
+      const servers = a.tools.flatMap((g) => {
+        const tool = byId.get(g.toolId);
+        return tool && g.scopes.length > 0 ? [grantText(g, tool)] : [];
+      });
+      return [
+        `- ${a.slug} (${a.name}, ${a.role}): ${a.description}`,
+        `  model: ${a.model}`,
+        `  built-in tools: ${a.builtins.join(', ') || 'none'}`,
+        `  servers: ${servers.join('; ') || 'none'}`,
+        `  memory read: ${a.memoryScope.read.join(', ') || 'none'}; write: ${a.memoryScope.write.join(', ') || 'none'}`,
+      ].join('\n');
     })
     .join('\n');
 }
@@ -108,13 +152,15 @@ export async function planRun(opts: {
   model: string;
   run: Run;
   agents: Agent[];
+  /** The registry's tools, so the planner sees each grant by name. */
+  tools: readonly RegistryTool[];
   memory: MemoryEntry[];
   /** Earlier turns of the conversation this run continues, as prompt text; empty for a fresh task. */
   conversation?: string;
   signal: AbortSignal;
 }): Promise<PlanResult> {
   const available = opts.agents.filter((a) => a.status !== 'paused');
-  const system = `${ORCHESTRATOR_SYSTEM}\n\nAgents available:\n${registryText(available) || '(none)'}\n\nShared memory worth knowing:\n${memoryText(opts.memory)}${
+  const system = `${ORCHESTRATOR_SYSTEM}\n\nAgents available:\n${registryText(available, opts.tools) || '(none)'}\n\nShared memory worth knowing:\n${memoryText(opts.memory)}${
     opts.conversation
       ? `\n\nThe operator is continuing a conversation. Earlier turns, oldest first:\n${opts.conversation}\n\nThe task below is the next turn; read it in that light.`
       : ''

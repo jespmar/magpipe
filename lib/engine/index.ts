@@ -169,6 +169,9 @@ export class Engine {
     ) => emitEvent(db, { runId, stepId: stepId ?? null, agentId: null, kind, text, payload });
 
     const agents = await db.select().from(t.agents);
+    const tools = await db
+      .select({ id: t.tools.id, name: t.tools.name, status: t.tools.status })
+      .from(t.tools);
     const names = new Map(agents.map((a) => [a.id, a.name]));
     const [settings] = await db.select().from(t.settings);
     const orchestratorModel = settings?.models.orchestrator ?? 'claude-opus-5-5';
@@ -190,6 +193,7 @@ export class Engine {
               model: orchestratorModel,
               run: run!,
               agents,
+              tools,
               memory,
               conversation,
               signal,
