@@ -22,6 +22,8 @@ const STATUS_COLOR: Record<RunStatus, string> = {
   done: 'text-emerald',
   failed: 'text-danger',
   queued: 'text-mute',
+  // Waiting for the operator: amber means "needs you" (D30).
+  waiting: 'text-warn',
   cancelled: 'text-mute',
 };
 

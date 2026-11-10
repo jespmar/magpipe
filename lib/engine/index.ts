@@ -106,6 +106,25 @@ export class Engine {
       await emitEvent(db, { runId, kind: 'error', text: 'Run cancelled before it started.' });
       return true;
     }
+    // A run waiting for approval is in no queue: cancel it in the database (D30).
+    const db = await this.db();
+    const [row] = await db.select().from(t.runs).where(eq(t.runs.id, runId));
+    if (row?.status === 'waiting') {
+      const finishedAt = new Date();
+      await db
+        .update(t.runs)
+        .set({
+          status: 'cancelled',
+          finishedAt,
+          durationMs: finishedAt.getTime() - (row.startedAt ?? row.createdAt).getTime(),
+          plan: row.plan.map((s) =>
+            s.status === 'todo' ? { ...s, status: 'skipped' as const } : s,
+          ),
+        })
+        .where(eq(t.runs.id, runId));
+      await emitEvent(db, { runId, kind: 'error', text: 'Run cancelled by the operator.' });
+      return true;
+    }
     return false;
   }
 
@@ -177,6 +196,10 @@ export class Engine {
     ) => emitEvent(db, { runId, stepId: stepId ?? null, agentId: null, kind, text, payload });
 
     const agents = await db.select().from(t.agents);
+    // A finished step by an agent that pauses for approval holds back what depends on it (D30).
+    const pausing = new Set(agents.filter((a) => a.pauseAfter).map((a) => a.id));
+    const held = (s: Step) =>
+      s.status === 'done' && s.agentId !== null && pausing.has(s.agentId) && !s.approvedAt;
     const tools = await db
       .select({
         id: t.tools.id,
@@ -240,7 +263,10 @@ export class Engine {
           (s) =>
             s.status === 'todo' &&
             s.id !== MERGE_STEP_ID &&
-            s.dependsOn.every((d) => byId.get(d)?.status === 'done'),
+            s.dependsOn.every((d) => {
+              const dep = byId.get(d);
+              return dep?.status === 'done' && !held(dep);
+            }),
         );
         // steps whose dependencies failed or were skipped cannot run
         const blocked = plan.filter(
@@ -365,6 +391,25 @@ export class Engine {
           hardFailure.error?.code ?? 'step_failed',
           `${names.get(hardFailure.agentId ?? '') ?? 'A step'} failed: ${hardFailure.error?.message ?? hardFailure.title}`,
         );
+      }
+
+      // 2b. a step that waits for approval holds its dependants: the run waits for the operator
+      // and gives the engine back. Approving puts it in the queue again (D30).
+      const holding = run.plan.filter(
+        (s) =>
+          held(s) &&
+          run!.plan.some(
+            (d) => d.id !== MERGE_STEP_ID && d.status === 'todo' && d.dependsOn.includes(s.id),
+          ),
+      );
+      if (holding.length > 0) {
+        await save({ status: 'waiting' });
+        await emit(
+          'message',
+          `Waiting for you: approve ${holding.map((s) => `“${s.title}”`).join(' and ')} to go on.`,
+          { waitingFor: holding.map((s) => s.id) },
+        );
+        return;
       }
       const mergeStartedAt = new Date().toISOString();
       await save({

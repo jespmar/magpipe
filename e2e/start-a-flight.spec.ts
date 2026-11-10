@@ -120,3 +120,45 @@ test('the flight table filters, finds the flight, shows its path and re-flies it
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(/Summarise the attached note/);
   await expect(page.getByText('done', { exact: true }).first()).toBeVisible({ timeout: 20_000 });
 });
+
+test('a flight waits after a bird that waits for approval, and goes on with the note (D30)', async ({
+  page,
+  request,
+}) => {
+  const list = (await (await request.get('/api/agents')).json()) as {
+    agents: { id: string; slug: string }[];
+  };
+  const smoke = list.agents.find((a) => a.slug === 'smoke-bird')!;
+  expect(
+    (await request.patch(`/api/agents/${smoke.id}`, { data: { pauseAfter: true } })).status(),
+  ).toBe(200);
+
+  try {
+    await page.goto('/');
+    const composer = page.getByRole('region', { name: 'Ask Magpipe' });
+    const fresh = composer.getByRole('button', { name: 'New question' });
+    if (await fresh.isVisible()) await fresh.click();
+    const task = `Plan a careful change ${Date.now().toString(36)}`;
+    await composer.getByLabel('Ask Magpipe').fill(task);
+    await composer.getByRole('button', { name: 'Run' }).click();
+
+    // The first step lands, then the flight waits for the operator.
+    const approval = page.getByRole('region', { name: 'Approval' });
+    await expect(approval).toBeVisible({ timeout: 20_000 });
+    await expect(approval).toContainText('Waiting for you');
+    await expect(approval).toContainText('Approve “Answer the task” to let the next steps start');
+    const panel = page.getByRole('region', { name: /^flight_[0-9a-z]+$/ });
+    await expect(panel.getByText('waiting', { exact: true }).first()).toBeVisible();
+
+    await approval.getByLabel('Note for the next steps (optional)').fill('Keep it to one tenant.');
+    await approval.getByRole('button', { name: 'Approve and go on' }).click();
+    await expect(approval).toBeHidden({ timeout: 15_000 });
+    await expect(panel.getByRole('log')).toContainText(
+      'Approved by the operator: Keep it to one tenant.',
+      { timeout: 20_000 },
+    );
+    await expect(panel.getByText('done', { exact: true }).first()).toBeVisible({ timeout: 20_000 });
+  } finally {
+    await request.patch(`/api/agents/${smoke.id}`, { data: { pauseAfter: false } });
+  }
+});

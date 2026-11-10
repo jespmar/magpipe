@@ -64,6 +64,8 @@ export function resultPlaceholder(status: RunStatus): string {
     case 'queued':
     case 'running':
       return 'The merged result appears here when the flight lands.';
+    case 'waiting':
+      return 'The merged result appears here once you approve and the flight lands.';
     case 'failed':
       return 'This run failed before a result was merged.';
     case 'cancelled':
@@ -121,6 +123,20 @@ export function runAgentIds(run: Pick<Run, 'plan'>): string[] {
 }
 
 export const LIVE: ReadonlySet<RunStatus> = new Set(['queued', 'running']);
+
+/**
+ * The steps a waiting run is held on (D30): finished steps whose dependants have not started.
+ * The merge does not count; it never waits for approval.
+ */
+export function awaitingApproval<T extends Pick<Step, 'id' | 'status' | 'dependsOn'>>(
+  plan: readonly T[],
+): T[] {
+  return plan.filter(
+    (s) =>
+      s.status === 'done' &&
+      plan.some((d) => d.id !== 'merge' && d.status === 'todo' && d.dependsOn.includes(s.id)),
+  );
+}
 
 /** `6m 40s`, `48s`, `1h 02m` — the stats strip's median. */
 export function formatDurationWords(ms: number): string {

@@ -62,6 +62,7 @@ Rules:
 - Prefer the fewest agents that can do the job; give independent steps no dependencies so they run in parallel.
 - Every step names exactly one agent by slug from the registry. Never invent an agent.
 - Give a step to an agent whose built-in tools and servers can do it. A server marked not reachable or needs auth will not answer.
+- An agent that waits for approval pauses the run after its steps until the operator approves; plan the work that builds on its result as later steps in the same plan.
 - Put the facts from shared memory that matter into the instructions of the steps that need them.
 - Steps are small and concrete; the merge of results into a final answer is done by you afterwards, so do not add a step for it.
 - If no agent fits, return an empty list of steps and the final answer will be written directly.`;
@@ -129,6 +130,7 @@ export function registryText(agents: Agent[], tools: readonly RegistryTool[]): s
         `  model: ${a.model}`,
         `  built-in tools: ${a.builtins.join(', ') || 'none'}`,
         `  servers: ${servers.join('; ') || 'none'}`,
+        ...(a.pauseAfter ? ['  waits for approval: the run pauses after its steps'] : []),
         `  memory read: ${a.memoryScope.read.join(', ') || 'none'}; write: ${a.memoryScope.write.join(', ') || 'none'}`,
       ].join('\n');
     })

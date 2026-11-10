@@ -630,3 +630,29 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
 - **Not covered:** what an agent decides rather than does (a Reviewer's verdict and tiered
   findings) is still prose plus the `reviews` memory entry; and work done through MCP servers
   is not recorded, only through bound repositories.
+
+## D30 · A run can wait for the operator
+
+- **Why.** The orchestrator planned once and could not pause, so the gate every method keeps,
+  a person reading the plan before code is written, fell between two runs: a scouting run, then
+  a building run as a follow-up. It was the fifth gap in `docs/flock.md`.
+- **The setting is the agent's.** `agents.pause_after` ("Wait for approval after its steps" in
+  the editor's Approval section, migration 0004). After a step by such an agent finishes, the
+  steps that depend on it are held until the operator approves; the planner's registry says so
+  ("waits for approval: the run pauses after its steps") and its rules ask it to plan the work
+  that builds on the result in the same plan. A step that only the merge depends on never
+  holds the run: approving a summary would be ceremony.
+- **The run waits, the engine does not.** When nothing else can start and a step is holding
+  dependants, the run's status becomes `waiting` (a new run status, amber because it needs you)
+  and the engine lets it go: no process, lock or memory is held. The trail says
+  `Waiting for you: approve “Write the plan” to go on.`
+- **Approve or cancel.** `POST /api/runs/[id]/approve { note? }` marks the held steps approved
+  (`approvedAt`, `approvalNote` on the step), puts the run back in the queue and logs
+  `Approved by the operator: …`; the steps that start next read "The operator approved this
+  with a note: …" under that step's result. Cancel now reaches a waiting run too, and skips
+  what was held. The run page and Home's panel show the same box: what it waits on, a note
+  field, "Approve and go on" (the run page's primary action; secondary on Home, where Run is)
+  and "Cancel run". A waiting run's card cannot be closed.
+- **Not covered:** the sandbox folder is wiped when the run pauses, as at any run end (the
+  repository is the durable workspace); time spent waiting counts in the run's duration; and an
+  approval cannot edit the plan's later steps, only add a note to them.

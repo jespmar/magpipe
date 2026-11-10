@@ -11,7 +11,7 @@ import { Engine } from '@/lib/engine';
 import { listEvents } from '@/lib/engine/events';
 import type { ModelClient, ModelMessage, ModelParams } from '@/lib/engine/model';
 import { listMemory } from '@/lib/memory';
-import { createRun, getRun, homeStats, listRuns } from '@/lib/runs';
+import { approveRun, createRun, getRun, homeStats, listRuns } from '@/lib/runs';
 
 type Script = (params: ModelParams, call: number) => ModelMessage | Error | Promise<ModelMessage>;
 
@@ -508,6 +508,116 @@ describe('run engine with a granted MCP server', () => {
     const [tool] = await db.select().from(t.tools).where(eq(t.tools.id, toolId));
     expect(tool!.stats.calls24h).toBe(1);
     fs.rmSync(dir, { recursive: true, force: true });
+  }, 20_000);
+});
+
+describe('run engine with an approval gate', () => {
+  let db: Db;
+  let close: () => Promise<void>;
+  beforeAll(async () => {
+    ({ db, close } = await openDb('memory://'));
+    await db.update(t.agents).set({ pauseAfter: true }).where(eq(t.agents.slug, 'researcher'));
+  }, 30_000);
+  afterAll(() => close());
+
+  const twoSteps = (dependant = true) => [
+    {
+      id: 's1',
+      agent: 'researcher',
+      title: 'Plan it',
+      instructions: '',
+      dependsOn: [],
+      optional: false,
+    },
+    ...(dependant
+      ? [
+          {
+            id: 's2',
+            agent: 'coder',
+            title: 'Build it',
+            instructions: '',
+            dependsOn: ['s1'],
+            optional: false,
+          },
+        ]
+      : []),
+  ];
+
+  it('waits after a step by an agent that waits, and goes on with the note once approved (D30)', async () => {
+    let planSystem = '';
+    let builderUser = '';
+    const client = scripted((p) => {
+      if (isPlan(p)) {
+        planSystem = String(p.system);
+        return plan(twoSteps());
+      }
+      if (isMerge(p)) return text('merged');
+      if (String(p.system).includes('You are Coder')) {
+        builderUser = JSON.stringify(p.messages[0]!.content);
+        return text('Built it.');
+      }
+      return text('The plan: one change.');
+    });
+    const engine = new Engine({ client, getDb: async () => db });
+    const run = await createRun(db, { text: 'plan then build', attachments: [] });
+    engine.enqueue(run.id);
+    await engine.whenIdle();
+
+    const waiting = (await getRun(db, run.id))!;
+    expect(waiting.status).toBe('waiting');
+    expect(waiting.plan.map((s) => s.status)).toEqual(['done', 'todo', 'todo']);
+    expect(waiting.finishedAt).toBeNull();
+    expect(planSystem).toContain('  waits for approval: the run pauses after its steps');
+    const events = await listEvents(db, run.id);
+    expect(events.map((e) => e.text)).toContain('Waiting for you: approve “Plan it” to go on.');
+    const [coder] = await db.select().from(t.agents).where(eq(t.agents.slug, 'coder'));
+    expect(coder!.status).toBe('idle');
+
+    const approved = await approveRun(db, run.id, '  Skip the second tenant.  ');
+    expect(approved!.status).toBe('queued');
+    expect(approved!.plan[0]).toMatchObject({ approvalNote: 'Skip the second tenant.' });
+    expect(approved!.plan[0]!.approvedAt).toBeTruthy();
+    expect(await approveRun(db, run.id)).toBeUndefined(); // no longer waiting
+
+    engine.enqueue(run.id);
+    await engine.whenIdle();
+    const after = (await getRun(db, run.id))!;
+    expect(after.status).toBe('done');
+    expect(after.plan.map((s) => s.status)).toEqual(['done', 'done', 'done']);
+    expect(builderUser).toContain(
+      'The operator approved this with a note: Skip the second tenant.',
+    );
+  }, 20_000);
+
+  it('never waits when only the merge comes after the step', async () => {
+    const client = scripted((p) => {
+      if (isPlan(p)) return plan(twoSteps(false));
+      if (isMerge(p)) return text('merged');
+      return text('The plan: one change.');
+    });
+    const engine = new Engine({ client, getDb: async () => db });
+    const run = await createRun(db, { text: 'just plan', attachments: [] });
+    engine.enqueue(run.id);
+    await engine.whenIdle();
+    expect((await getRun(db, run.id))!.status).toBe('done');
+  }, 20_000);
+
+  it('cancels a waiting run, skipping what was held', async () => {
+    const client = scripted((p) => {
+      if (isPlan(p)) return plan(twoSteps());
+      if (isMerge(p)) return text('merged');
+      return text('ok');
+    });
+    const engine = new Engine({ client, getDb: async () => db });
+    const run = await createRun(db, { text: 'plan, then stop', attachments: [] });
+    engine.enqueue(run.id);
+    await engine.whenIdle();
+    expect((await getRun(db, run.id))!.status).toBe('waiting');
+    expect(await engine.cancel(run.id)).toBe(true);
+    const after = (await getRun(db, run.id))!;
+    expect(after.status).toBe('cancelled');
+    expect(after.plan.map((s) => s.status)).toEqual(['done', 'skipped', 'skipped']);
+    expect(after.finishedAt).not.toBeNull();
   }, 20_000);
 });
 

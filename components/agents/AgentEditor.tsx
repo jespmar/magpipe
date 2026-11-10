@@ -41,6 +41,7 @@ function draftFrom(agent: Agent | null, defaultModel: string): Draft {
       builtins: [],
       memoryScope: { read: [], write: [] },
       limits: { maxTokens: 100_000, maxSteps: 30, timeoutSec: 600 },
+      pauseAfter: false,
     };
   }
   const {
@@ -54,6 +55,7 @@ function draftFrom(agent: Agent | null, defaultModel: string): Draft {
     builtins,
     memoryScope,
     limits,
+    pauseAfter,
   } = agent;
   return {
     name,
@@ -66,6 +68,7 @@ function draftFrom(agent: Agent | null, defaultModel: string): Draft {
     builtins,
     memoryScope,
     limits,
+    pauseAfter,
   };
 }
 
@@ -351,6 +354,15 @@ export function AgentEditor({
                 />
               ))}
             </div>
+          </Fieldset>
+
+          <Fieldset legend="Approval" hint="Where you step in before the work goes on.">
+            <Checkbox
+              label="Wait for approval after its steps"
+              description="Steps that build on this bird's work start once you approve it, with an optional note. Use it for a planner."
+              checked={draft.pauseAfter}
+              onCheckedChange={(on) => set('pauseAfter', on === true)}
+            />
           </Fieldset>
 
           {/* The commit row stays in view however long the form is; errors sit beside it. */}

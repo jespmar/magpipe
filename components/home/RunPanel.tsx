@@ -1,6 +1,7 @@
 'use client';
 
 import { clsx } from 'clsx';
+import { ApprovalBar } from '@/components/runs/ApprovalBar';
 import { ArtifactList } from '@/components/runs/ArtifactList';
 import { RunActions } from '@/components/runs/RunActions';
 import { RunEventLog } from '@/components/runs/RunEventLog';
@@ -58,6 +59,7 @@ export function RunPanel({
         </div>
         <RunActions run={run} size="sm" showOpen onRefly={onRefly} />
       </div>
+      <ApprovalBar run={run} emphasis="secondary" />
       <div className="flex min-w-0 flex-col gap-4 card p-4">
         {earlier.length > 0 ? (
           <ol

@@ -80,9 +80,13 @@ export async function runStep(opts: {
       .filter((s) => s.result?.summary)
       .map((s) => {
         const facts = workFacts(s.work);
+        // The operator approved this result before your step could start (D30).
+        const approval = s.approvedAt
+          ? `\nThe operator approved this${s.approvalNote ? ` with a note: ${s.approvalNote}` : '.'}`
+          : '';
         return `Result of "${s.title}":\n${s.result!.summary}${
           facts.length ? `\nRecorded by Magpipe:\n${facts.map((f) => `- ${f}`).join('\n')}` : ''
-        }`;
+        }${approval}`;
       })
       .join('\n\n');
     const user = [

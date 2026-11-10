@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 type Ctx = { params: Promise<{ id: string }> };
 
-/** POST /api/runs/[id]/cancel — aborts a queued or running run (spec §7.2 step 5). */
+/** POST /api/runs/[id]/cancel — aborts a queued, running or waiting run (spec §7.2 step 5, D30). */
 export async function POST(_req: Request, { params }: Ctx) {
   const user = await requireUser();
   if (user instanceof NextResponse) return user;
@@ -17,7 +17,7 @@ export async function POST(_req: Request, { params }: Ctx) {
     const db = await getDb();
     const run = await getRun(db, id);
     if (!run) return apiError('not_found', 'No such run', 404);
-    if (run.status !== 'queued' && run.status !== 'running') {
+    if (run.status !== 'queued' && run.status !== 'running' && run.status !== 'waiting') {
       return apiError(
         'not_running',
         `This run already ${run.status === 'done' ? 'finished' : run.status}.`,
