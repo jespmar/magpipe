@@ -4,6 +4,7 @@
  * app's own MCP client. Tool names must match /^[a-zA-Z0-9_-]{1,64}$/ on the wire.
  */
 import fs from 'node:fs/promises';
+import path from 'node:path';
 import { eq, inArray } from 'drizzle-orm';
 import type { Db } from '../db';
 import * as t from '../db/schema';
@@ -23,8 +24,10 @@ import {
   repoRun,
   repoSearch,
   repoWrite,
+  type RepoOutcome,
   type RepoToolName,
 } from '../repo';
+import type { WorkItem } from '../work';
 import type { RepositoryConfig } from '../schemas';
 import { authHeaders } from '../tools';
 import { grantAllows } from '../tools-util';
@@ -102,6 +105,8 @@ export type ToolSetup = {
   onRejectedWrite: (text: string) => Promise<void>;
   /** Called when a granted tool server cannot be reached: the step goes on without it (D19). */
   onToolUnavailable: (text: string) => Promise<void>;
+  /** Where repository tools record what they did, for the step's record (D29). */
+  work?: WorkItem[];
 };
 
 export function wireName(...parts: string[]): string {
@@ -149,7 +154,7 @@ type RepoOp = {
   /** The wire name, `<tool slug>__<operation>`. */
   name: string;
   tool: ModelTool;
-  run: (input: Record<string, unknown>) => Promise<ToolOutcome>;
+  run: (input: Record<string, unknown>) => Promise<RepoOutcome>;
 };
 
 /**
@@ -177,14 +182,14 @@ export function repositoryOps(
       run,
     },
   ];
-  const path = { type: 'string', description: 'Relative to the repository folder' };
+  const relPath = { type: 'string', description: 'Relative to the repository folder' };
   return new Map([
     op(
       'read',
       'Read a text file with line numbers, or list a folder. Use startLine and maxLines for long files.',
       objectSchema(
         {
-          path,
+          path: relPath,
           startLine: { type: 'integer', description: 'First line to show (1-based, optional)' },
           maxLines: { type: 'integer', description: 'How many lines (optional, up to 2000)' },
         },
@@ -211,7 +216,7 @@ export function repositoryOps(
     op(
       'write',
       'Create or replace a text file with the full contents given.',
-      objectSchema({ path, contents: { type: 'string' } }, ['path', 'contents']),
+      objectSchema({ path: relPath, contents: { type: 'string' } }, ['path', 'contents']),
       (input) => repoWrite(at, str(input, 'path'), str(input, 'contents')),
       true,
     ),
@@ -546,6 +551,12 @@ export async function setupTools(setup: ToolSetup): Promise<ToolRuntime> {
           continue;
         }
         const ops = repositoryOps(tool.slug, tool.name, tool.repository, setup.signal);
+        // Files are recorded relative to the work tree, so a plans folder bound on its own still
+        // names docs/plans/… (D29).
+        const [realRoot, realFolder] = await Promise.all(
+          [found.root, tool.repository.path].map((p) => fs.realpath(p).catch(() => p)),
+        );
+        const prefix = path.relative(realRoot!, realFolder!).split(path.sep).join('/');
         for (const [opName, op] of ops) {
           if (!allowed(opName) || (opName === 'run' && tool.repository.scripts.length === 0)) {
             continue;
@@ -554,7 +565,16 @@ export async function setupTools(setup: ToolSetup): Promise<ToolRuntime> {
           labels.set(op.name, `${tool.name} · ${opName}`);
           dispatch.set(op.name, async (input) => {
             countCall(tool);
-            return op.run(input);
+            const res = await op.run(input);
+            const w = res.work;
+            if (w && setup.work) {
+              setup.work.push(
+                w.kind === 'file'
+                  ? { ...w, repo: tool.name, path: prefix ? `${prefix}/${w.path}` : w.path }
+                  : { ...w, repo: tool.name },
+              );
+            }
+            return { text: res.text, isError: res.isError };
           });
         }
         continue;

@@ -511,6 +511,199 @@ describe('run engine with a granted MCP server', () => {
   }, 20_000);
 });
 
+describe('run engine recording what steps did in a repository', () => {
+  let db: Db;
+  let close: () => Promise<void>;
+  let dir: string;
+  beforeAll(async () => {
+    ({ db, close } = await openDb('memory://'));
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const { execFileSync } = await import('node:child_process');
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'magpipe-engine-work-'));
+    fs.mkdirSync(path.join(dir, 'docs', 'plans'), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'package.json'),
+      JSON.stringify({ scripts: { test: `node -e "console.log('1 passed')"` } }),
+    );
+    const sh = (args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' });
+    sh(['init', '-q', '-b', 'main']);
+    sh(['config', 'user.name', 'Test']);
+    sh(['config', 'user.email', 'test@example.com']);
+    sh(['add', '-A']);
+    sh(['commit', '-q', '-m', 'init']);
+    const repoRow = (
+      id: string,
+      slug: string,
+      name: string,
+      folder: string,
+      scripts: string[],
+    ) => ({
+      id,
+      slug,
+      name,
+      glyph: 'RP',
+      kind: 'repository' as const,
+      category: 'npm',
+      description: `Folder ${folder}`,
+      transport: 'repository' as const,
+      url: null,
+      command: null,
+      repository: { path: folder, scripts, timeoutSec: 60 },
+      auth: { type: 'none' as const },
+      status: 'connected' as const,
+      scopes: ['read', 'write', 'run', 'git_branch', 'git_commit'],
+      grantedAgents: ['agt_operator'],
+      stats: { calls24h: 0, lastCallAt: null },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await db
+      .insert(t.tools)
+      .values([
+        repoRow('tool_work_app', 'app', 'App', dir, ['test']),
+        repoRow('tool_work_plans', 'plans', 'App plans', path.join(dir, 'docs', 'plans'), []),
+      ]);
+    await db
+      .update(t.agents)
+      .set({
+        tools: [
+          { toolId: 'tool_work_app', scopes: ['read', 'write', 'run', 'git_branch', 'git_commit'] },
+          { toolId: 'tool_work_plans', scopes: ['write'] },
+        ],
+      })
+      .where(eq(t.agents.slug, 'operator'));
+  }, 30_000);
+  afterAll(async () => {
+    await close();
+    (await import('node:fs')).rmSync(dir, { recursive: true, force: true });
+  });
+
+  const resultsIn = (p: ModelParams) =>
+    p.messages.filter(
+      (m) =>
+        Array.isArray(m.content) &&
+        m.content.some((b) => (b as { type: string }).type === 'tool_result'),
+    ).length;
+
+  it('records the branch, files, commit and check, and hands them on as facts (D29)', async () => {
+    const script: [string, Record<string, unknown>][] = [
+      ['app__git_branch', { name: 'magpipe/x', create: true }],
+      ['app__write', { path: 'src/a.ts', contents: 'export const a = 1;\n' }],
+      ['plans__write', { path: 'x.md', contents: '# Plan\n' }],
+      ['app__git_commit', { message: 'Add a', paths: ['src/a.ts', 'docs/plans/x.md'] }],
+      ['app__run', { script: 'test' }],
+    ];
+    let readerUser = '';
+    let mergeUser = '';
+    const client = scripted((p) => {
+      if (isPlan(p)) {
+        return plan([
+          {
+            id: 's1',
+            agent: 'operator',
+            title: 'Make the change',
+            instructions: '',
+            dependsOn: [],
+            optional: false,
+          },
+          {
+            id: 's2',
+            agent: 'researcher',
+            title: 'Look it over',
+            instructions: '',
+            dependsOn: ['s1'],
+            optional: false,
+          },
+        ]);
+      }
+      if (isMerge(p)) {
+        mergeUser = JSON.stringify(p.messages[0]!.content);
+        return text('merged');
+      }
+      if (String(p.system).includes('You are Researcher')) {
+        readerUser = JSON.stringify(p.messages[0]!.content);
+        return text('Looked it over.');
+      }
+      const n = resultsIn(p);
+      if (n > 0) {
+        const last = JSON.stringify(p.messages[p.messages.length - 1]!.content);
+        expect(last).not.toContain('"is_error":true');
+      }
+      const next = script[n];
+      return next ? toolUse(next[0], next[1]) : text('Done on magpipe/x.');
+    });
+    const engine = new Engine({ client, getDb: async () => db });
+    const run = await createRun(db, { text: 'make the change', attachments: [] });
+    engine.enqueue(run.id);
+    await engine.whenIdle();
+    const after = (await getRun(db, run.id))!;
+    expect(after.status).toBe('done');
+
+    const sha = (await import('node:child_process'))
+      .execFileSync('git', ['rev-parse', '--short', 'magpipe/x'], { cwd: dir })
+      .toString()
+      .trim();
+    const s1 = after.plan.find((st) => st.id === 's1')!;
+    expect(s1.work).toEqual({
+      branches: [{ repo: 'App', name: 'magpipe/x', created: true }],
+      files: [
+        { repo: 'App', path: 'src/a.ts', change: 'created' },
+        { repo: 'App plans', path: 'docs/plans/x.md', change: 'created' },
+      ],
+      commits: [{ repo: 'App', branch: 'magpipe/x', sha, message: 'Add a' }],
+      checks: [
+        { repo: 'App', script: 'test', exit: 0, seconds: expect.any(Number), timedOut: false },
+      ],
+    });
+    expect(after.plan.find((st) => st.id === 's2')!.work).toBeUndefined();
+
+    // The next step and the merge are told what the tools did, not only what the agent said.
+    for (const prompt of [readerUser, mergeUser]) {
+      expect(prompt).toContain('Recorded by Magpipe:');
+      expect(prompt).toContain(`- App: committed ${sha} on magpipe/x: Add a`);
+      expect(prompt).toContain('- App: ran test, passed (exit 0)');
+    }
+    expect(after.output!.artifacts).toEqual([
+      { kind: 'branch', repo: 'App', name: 'magpipe/x', detail: `1 commit · last ${sha} Add a` },
+      { kind: 'file', repo: 'App', name: 'src/a.ts', detail: 'created' },
+      { kind: 'file', repo: 'App plans', name: 'docs/plans/x.md', detail: 'created' },
+    ]);
+  }, 30_000);
+
+  it('keeps the work of a step that fails partway', async () => {
+    let calls = 0;
+    const client = scripted((p) => {
+      if (isPlan(p)) {
+        return plan([
+          {
+            id: 's1',
+            agent: 'operator',
+            title: 'Start the change',
+            instructions: '',
+            dependsOn: [],
+            optional: false,
+          },
+        ]);
+      }
+      calls += 1;
+      if (resultsIn(p) === 0) return toolUse('app__write', { path: 'src/b.ts', contents: 'b\n' });
+      return Object.assign(new Error('The model refused to continue'), { status: 400 });
+    });
+    const engine = new Engine({ client, getDb: async () => db });
+    const run = await createRun(db, { text: 'start a change', attachments: [] });
+    engine.enqueue(run.id);
+    await engine.whenIdle();
+    const after = (await getRun(db, run.id))!;
+    expect(after.status).toBe('failed');
+    const s1 = after.plan.find((st) => st.id === 's1')!;
+    expect(s1.status).toBe('failed');
+    expect(s1.work?.files).toEqual([{ repo: 'App', path: 'src/b.ts', change: 'created' }]);
+    expect(calls).toBeGreaterThan(1);
+  }, 30_000);
+});
+
 describe('run engine with one writer per work tree', () => {
   let db: Db;
   let close: () => Promise<void>;

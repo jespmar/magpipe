@@ -80,6 +80,30 @@ export const agent = z.object({
 
 export const stepStatus = z.enum(['todo', 'live', 'done', 'failed', 'skipped']);
 
+/**
+ * What a step did in bound repositories (D29), recorded by the engine from the tool calls
+ * themselves, never from the model's account. Paths are relative to the git work tree; `repo` is
+ * the repository tool's name.
+ */
+export const stepWork = z.object({
+  files: z.array(
+    z.object({ repo: z.string(), path: z.string(), change: z.enum(['created', 'updated']) }),
+  ),
+  branches: z.array(z.object({ repo: z.string(), name: z.string(), created: z.boolean() })),
+  commits: z.array(
+    z.object({ repo: z.string(), branch: z.string(), sha: z.string(), message: z.string() }),
+  ),
+  checks: z.array(
+    z.object({
+      repo: z.string(),
+      script: z.string(),
+      exit: z.number().int().nullable(),
+      seconds: z.number().nonnegative(),
+      timedOut: z.boolean(),
+    }),
+  ),
+});
+
 /** One planned unit of work, stored in `runs.plan`. `agentId: null` = the orchestrator. */
 export const step = z.object({
   id: stepId,
@@ -92,7 +116,9 @@ export const step = z.object({
   startedAt: isoDate.optional(),
   finishedAt: isoDate.optional(),
   usage: usage.optional(),
-  result: z.object({ summary: z.string().max(1000), data: z.unknown().optional() }).optional(),
+  result: z.object({ summary: z.string().max(1000) }).optional(),
+  /** Set when the step changed or ran something in a bound repository, done or failed. */
+  work: stepWork.optional(),
   error: z.object({ code: z.string(), message: z.string() }).optional(),
 });
 
@@ -108,9 +134,22 @@ export const attachment = z.object({
 });
 
 export const runInput = z.object({ text: z.string().min(1), attachments: z.array(attachment) });
+/**
+ * Something a run produced. An uploaded or hosted file has a `blobUrl`; a file a step created or
+ * changed, or a branch it committed to, in a bound repository has `kind`, `repo` and `detail`
+ * (D29).
+ */
+export const runArtifact = z.object({
+  name: z.string(),
+  blobUrl: z.string().optional(),
+  kind: z.enum(['file', 'branch']).optional(),
+  repo: z.string().optional(),
+  detail: z.string().optional(),
+});
+
 export const runOutput = z.object({
   markdown: z.string(),
-  artifacts: z.array(z.object({ blobUrl: z.string(), name: z.string() })),
+  artifacts: z.array(runArtifact),
 });
 
 export const run = z.object({
@@ -445,6 +484,8 @@ export type Agent = z.infer<typeof agent>;
 export type AgentStatus = z.infer<typeof agentStatus>;
 export type ToolGrant = z.infer<typeof toolGrant>;
 export type Step = z.infer<typeof step>;
+export type StepWork = z.infer<typeof stepWork>;
+export type RunArtifact = z.infer<typeof runArtifact>;
 export type StepStatus = z.infer<typeof stepStatus>;
 export type Run = z.infer<typeof run>;
 export type Attachment = z.infer<typeof attachment>;

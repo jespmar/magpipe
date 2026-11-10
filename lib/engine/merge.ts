@@ -1,4 +1,5 @@
 /** The orchestrator's last move (spec §7.1): compose the run's output from the steps' results. */
+import { workFacts } from '../work';
 import type { Run, Step, Usage } from '../schemas';
 import type { RunBackend } from './backend';
 
@@ -14,10 +15,14 @@ export async function mergeRun(opts: {
 }): Promise<{ markdown: string; usage: Usage }> {
   const done = opts.steps.filter((s) => s.agentId && s.status === 'done' && s.result?.summary);
   const failed = opts.steps.filter((s) => s.agentId && s.status === 'failed');
+  // Each report, then what Magpipe saw the step's tools do (D29): the answer may rely on those.
   const results = done
-    .map(
-      (s) => `### ${opts.agentNames.get(s.agentId!) ?? 'Agent'} — ${s.title}\n${s.result!.summary}`,
-    )
+    .map((s) => {
+      const facts = workFacts(s.work);
+      return `### ${opts.agentNames.get(s.agentId!) ?? 'Agent'} — ${s.title}\n${s.result!.summary}${
+        facts.length ? `\nRecorded by Magpipe:\n${facts.map((f) => `- ${f}`).join('\n')}` : ''
+      }`;
+    })
     .join('\n\n');
   const failures = failed.map((s) => `- ${s.title}: ${s.error?.message ?? 'failed'}`).join('\n');
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { clsx } from 'clsx';
+import { ArtifactList } from '@/components/runs/ArtifactList';
 import { RunActions } from '@/components/runs/RunActions';
 import { RunEventLog } from '@/components/runs/RunEventLog';
 import { RunOutput } from '@/components/runs/RunOutput';
@@ -10,6 +11,7 @@ import { formatDuration, formatTokens } from '@/lib/format';
 import { formatBytes, type FlightEvent } from '@/lib/home-util';
 import { formatUsd, LIVE, resultPlaceholder } from '@/lib/runs-util';
 import type { Run } from '@/lib/schemas';
+import { shownArtifacts } from '@/lib/work';
 
 type Props = {
   run: Run;
@@ -108,18 +110,7 @@ export function RunPanel({
           ) : (
             <p className="max-w-[34rem] text-body-sm text-body">{resultPlaceholder(run.status)}</p>
           )}
-          {run.output && run.output.artifacts.length > 0 ? (
-            <ul aria-label="Files produced" className="flex flex-col gap-1.5">
-              {run.output.artifacts.map((a) => (
-                <li key={a.blobUrl} className="flex min-w-0 flex-wrap items-baseline gap-x-3">
-                  <span className="font-mono text-code text-ink">{a.name}</span>
-                  <span className="truncate font-mono text-caption text-mute select-all">
-                    {a.blobUrl}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
+          <ArtifactList artifacts={shownArtifacts(run)} />
         </section>
         <RunEventLog
           run={run}

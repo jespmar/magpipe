@@ -1,5 +1,6 @@
 'use client';
 
+import { ArtifactList } from './ArtifactList';
 import { RunActions } from './RunActions';
 import { RunEventLog } from './RunEventLog';
 import { RunFlightPath } from './RunFlightPath';
@@ -17,6 +18,7 @@ import {
   type AgentChip,
 } from '@/lib/runs-util';
 import type { Run } from '@/lib/schemas';
+import { shownArtifacts } from '@/lib/work';
 
 type Props = {
   run: Run;
@@ -99,21 +101,10 @@ export function RunDetailScreen({ run, events, agents, now }: Props) {
                 ) : null}
               </p>
             )}
-            {run.output && run.output.artifacts.length > 0 ? (
-              <ul
-                aria-label="Files produced"
-                className="flex flex-col gap-1.5 border-t border-hairline-soft pt-4"
-              >
-                {run.output.artifacts.map((a) => (
-                  <li key={a.blobUrl} className="flex min-w-0 flex-wrap items-baseline gap-x-3">
-                    <span className="font-mono text-code text-ink">{a.name}</span>
-                    <span className="truncate font-mono text-caption text-mute select-all">
-                      {a.blobUrl}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
+            <ArtifactList
+              artifacts={shownArtifacts(run)}
+              className="border-t border-hairline-soft pt-4"
+            />
           </section>
           <section aria-labelledby="input-title" className="flex min-w-0 flex-col gap-3 card p-5">
             <h2 id="input-title" className="text-display-sm text-ink-strong">

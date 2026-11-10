@@ -13,6 +13,7 @@ import { emitEvent } from './events';
 import { EngineError, withRetries } from './model';
 import { memoryText } from './plan';
 import { setupTools, type Trail } from './tools';
+import { workFacts, type WorkItem } from '../work';
 
 export type StepOutcome = { summary: string; usage: Usage };
 
@@ -29,6 +30,8 @@ export async function runStep(opts: {
   sandboxDir: string;
   /** Earlier turns of the conversation this run continues, as prompt text. */
   conversation?: string;
+  /** Collects what repository tools do in this step (D29); the caller keeps it, done or failed. */
+  work?: WorkItem[];
   signal: AbortSignal;
 }): Promise<StepOutcome> {
   const { db, run, step, agent } = opts;
@@ -59,6 +62,7 @@ export async function runStep(opts: {
         signal,
         onRejectedWrite: (text) => trail.emit('error', text),
         onToolUnavailable: (text) => trail.emit('error', text),
+        work: opts.work,
       }),
     { signal, onRetry: (f, n) => trail.emit('error', `Retry ${n}: ${f.message}`) },
   );
@@ -71,9 +75,15 @@ export async function runStep(opts: {
       readable.length ? `\nShared memory you may rely on:\n${memoryText(readable)}` : '',
     ].join('\n');
 
+    // Each earlier result, then what Magpipe saw its tools do: the branch, the files, the checks.
     const context = opts.upstream
       .filter((s) => s.result?.summary)
-      .map((s) => `Result of "${s.title}":\n${s.result!.summary}`)
+      .map((s) => {
+        const facts = workFacts(s.work);
+        return `Result of "${s.title}":\n${s.result!.summary}${
+          facts.length ? `\nRecorded by Magpipe:\n${facts.map((f) => `- ${f}`).join('\n')}` : ''
+        }`;
+      })
       .join('\n\n');
     const user = [
       opts.conversation ? `Earlier in this conversation:\n${opts.conversation}` : '',
