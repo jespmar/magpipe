@@ -1,6 +1,7 @@
 'use client';
 
 import { clsx } from 'clsx';
+import type { ReactNode } from 'react';
 import { Avatar } from '@/components/ui/Avatar';
 import { StatusPill } from '@/components/ui/StatusPill';
 import type { AgentRow } from '@/lib/agents';
@@ -15,7 +16,7 @@ export function AgentList({
   agents: AgentRow[];
   selectedId: string | null;
   onSelect: (id: string) => void;
-  emptyMessage: string;
+  emptyMessage: ReactNode;
 }) {
   return (
     <section

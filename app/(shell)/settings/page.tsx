@@ -7,6 +7,7 @@ import { Kbd } from '@/components/ui/Kbd';
 import { DemoDataForm } from '@/components/settings/DemoDataForm';
 import { StandingInstructions } from '@/components/settings/StandingInstructions';
 import { SpendCapForm } from '@/components/settings/SpendCapForm';
+import { FlockForm } from '@/components/settings/FlockForm';
 import { ScrollToHash } from '@/components/ui/ScrollToHash';
 import { TextBlock } from '@/components/ui/TextBlock';
 import { dataDir, getDb } from '@/lib/db';
@@ -17,6 +18,7 @@ import { buildSeed } from '@/lib/db/seed-data';
 import { env } from '@/lib/env';
 import { listMemory } from '@/lib/memory';
 import { STANDING_NS } from '@/lib/memory-util';
+import { DEFAULT_FLOCK_SCRIPTS, FLOCK_DECISIONS } from '@/lib/flock';
 import { accessMode } from '@/lib/auth-mode';
 import { currentUser } from '@/lib/session';
 import { formatUsd } from '@/lib/runs-util';
@@ -178,6 +180,24 @@ export default async function SettingsPage() {
           </p>
           <DemoDataForm
             counts={demoCounts}
+            disabledReason={
+              shell.dbError
+                ? 'Needs the database. See the notice at the top of the page.'
+                : undefined
+            }
+          />
+        </Section>
+
+        <Section id="flock" title="Development flock">
+          <p className="text-body-sm text-body">
+            Five birds for software work on one repository: Researcher reads, Planner writes a plan
+            file, Coder commits on a branch, Verifier runs the checks and Reviewer reads the diff.
+            None of them pushes or merges; that stays with you. Loading it again puts them back as
+            written.
+          </p>
+          <FlockForm
+            defaultScripts={DEFAULT_FLOCK_SCRIPTS}
+            decisions={FLOCK_DECISIONS.length}
             disabledReason={
               shell.dbError
                 ? 'Needs the database. See the notice at the top of the page.'

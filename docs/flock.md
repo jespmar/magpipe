@@ -174,7 +174,7 @@ web, which keeps the injection surface away from the writer.
 - **Role:** Turns a task into a plan file
 - **Description:** Writes docs/plans/<slug>.md for a code change: goal, files to touch, steps,
   tests to add first and the commands that define done. Reads the repository; writes only plan
-  files. A run that plans ends for the operator to approve the plan.
+  files. The run waits after it for the operator to approve the plan.
 
 ```text
 You plan one code change. You write a plan file; you never edit source code.
@@ -367,6 +367,9 @@ Two things belong in the repository rather than in Magpipe: the check commands i
 
 Release 1 and the runner need no code.
 
+Settings → Development flock now does steps 2 and 4 to 7 in one action (D35), given the
+repository's folder and the scripts agents may run. The steps below stay for doing it by hand.
+
 1. **Create the plan folder** in the repository (`docs/plans/`), with a short README so git keeps
    it.
 2. **Bind the repository twice** on the Tools screen (Connect tool, then "Use the repository
@@ -439,18 +442,18 @@ Release 1 and the runner need no code.
 Ordered by how much of the proposal each unblocks against how much engine it touches. The first
 three are small.
 
-| Order | Gap today                                                                                                                                                                                   | What it blocks                                                | Smallest change                                                                       |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| 1     | Done (D25, D26). The planner's registry names each server and the tools granted on it, marks servers that will not answer, and leaves empty grants out.                                     |                                                               |                                                                                       |
-| 2     | Done (D27). A repository is a built-in tool bound to a folder in a git work tree: read, search, write, named scripts with a timeout, and git without push or commits to the default branch. |                                                               |                                                                                       |
-| 3     | Done (D28). One step at a time changes a work tree, across runs; readers run beside it; at most three steps of a run work at once.                                                          |                                                               |                                                                                       |
-| 4     | Done (D29). Each step records what its repository tools did; later steps and the merge get it as facts; the run page lists the branches and files a run changed.                            |                                                               |                                                                                       |
-| 5     | Done (D30). An agent can wait for approval after its steps; the run waits, and the operator approves with a note or cancels, from the run page or Home.                                     |                                                               |                                                                                       |
-| 6     | Done (D31). A reviewing agent may send the work it judges back with its findings, a set number of times; the reviewed steps run again and it reviews once more. Off by default.             |                                                               |                                                                                       |
-| 7     | Done (D32). Today's spend is checked before planning and before each step; at the cap the run stops, and Settings edits the cap (0 is none).                                                |                                                              |                                                                                                                        |
-| 8     | Done (D33). A step's work record is saved as it grows; a step resumed after a restart is told what it had done and continues from the branch.                                               |                                                              |                                                                                                                        |
-| 9     | Done (D34). Each step's prompt carries the `CLAUDE.md` or `AGENTS.md` of every repository its agent reaches; Settings shows the orchestrator's rules beside the `decisions`.                |                                                               |                                                                                       |
-| 10    | No agent import or export                                                                                                                                                                   | Shipping the roster to a fresh install                        | "Load the development flock" beside the demo data, asking for the repository's folder |
+| Order | Gap today                                                                                                                                                                                   | What it blocks | Smallest change |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | --------------- |
+| 1     | Done (D25, D26). The planner's registry names each server and the tools granted on it, marks servers that will not answer, and leaves empty grants out.                                     |                |                 |
+| 2     | Done (D27). A repository is a built-in tool bound to a folder in a git work tree: read, search, write, named scripts with a timeout, and git without push or commits to the default branch. |                |                 |
+| 3     | Done (D28). One step at a time changes a work tree, across runs; readers run beside it; at most three steps of a run work at once.                                                          |                |                 |
+| 4     | Done (D29). Each step records what its repository tools did; later steps and the merge get it as facts; the run page lists the branches and files a run changed.                            |                |                 |
+| 5     | Done (D30). An agent can wait for approval after its steps; the run waits, and the operator approves with a note or cancels, from the run page or Home.                                     |                |                 |
+| 6     | Done (D31). A reviewing agent may send the work it judges back with its findings, a set number of times; the reviewed steps run again and it reviews once more. Off by default.             |                |                 |
+| 7     | Done (D32). Today's spend is checked before planning and before each step; at the cap the run stops, and Settings edits the cap (0 is none).                                                |                |                 |
+| 8     | Done (D33). A step's work record is saved as it grows; a step resumed after a restart is told what it had done and continues from the branch.                                               |                |                 |
+| 9     | Done (D34). Each step's prompt carries the `CLAUDE.md` or `AGENTS.md` of every repository its agent reaches; Settings shows the orchestrator's rules beside the `decisions`.                |                |                 |
+| 10    | Done (D35). Settings loads the flock onto a repository folder: both bindings, the namespaces, the six entries, the five agents with their grants, and Operator paused.                      |                |                 |
 
 ## Releases
 

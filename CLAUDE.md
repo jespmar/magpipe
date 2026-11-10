@@ -96,6 +96,10 @@ engine and no sign-in on desktop.
   sheet and Settings read the same list); single keys must stay out of text fields and open
   dialogs (`[role="dialog"]`, Arc's `Dialog`). Search fields are `<input type="search">` so `/`
   can find them.
+- **`lib/flock.ts` mirrors `docs/flock.md`.** The development flock's prompts, roles, models,
+  scopes, limits, grants and standing instructions live in both; `tests/flock.test.ts` parses the
+  document, so change them together. A new agent setting the flock should carry goes into
+  `FlockAgent` and the fields `upsertAgents` sets, in the same change.
 - **Tests never need model credentials.** Unit tests script `ModelClient`; the Playwright
   server runs with `MAGPIPE_MODEL_STUB=scripted` (`lib/engine/stub-model.ts`), which the engine
   ignores in production builds.
