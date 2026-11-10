@@ -56,7 +56,7 @@ export function RunEventLog({ run, initialEvents, agentNames, className }: Props
   return (
     <section
       aria-labelledby="run-log-title"
-      className={clsx('flex min-w-0 flex-col gap-3 card p-6', className)}
+      className={clsx('flex min-w-0 flex-col gap-3 card p-5', className)}
     >
       <div className="flex items-center justify-between gap-4">
         <h2 id="run-log-title" className="text-display-sm text-ink-strong">

@@ -30,8 +30,8 @@ export default async function HomePage() {
   const agentNames = Object.fromEntries(data.agents.map((a) => [a.id, a.name]));
 
   return (
-    <div className="flex flex-col gap-12 wide:gap-8">
-      <div className="flex flex-col gap-12 wide:grid wide:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)] wide:items-stretch wide:gap-x-10">
+    <div className="flex flex-col gap-10 wide:gap-8">
+      <div className="flex flex-col gap-10 wide:grid wide:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)] wide:items-stretch wide:gap-x-10">
         <section aria-label="The flock" className="flex min-w-0 flex-col gap-5">
           <PageHead
             title="Birds on the wire"
@@ -42,7 +42,7 @@ export default async function HomePage() {
             }
           />
           {data.agents.length > 0 ? (
-            <ul className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
               {data.agents.map((card) => (
                 <li key={card.id} className="flex min-w-0">
                   <AgentCard card={card} now={now} />

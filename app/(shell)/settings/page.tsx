@@ -176,7 +176,7 @@ function Section({
       id={id}
       aria-labelledby={`${id}-title`}
       // scroll-mt clears the sticky header when linked as /settings#demo
-      className={`flex scroll-mt-24 flex-col gap-5 card p-6 ${className ?? ''}`}
+      className={`flex scroll-mt-24 flex-col gap-4 card p-5 ${className ?? ''}`}
     >
       <h2 id={`${id}-title`} className="text-display-sm text-ink-strong">
         {title}

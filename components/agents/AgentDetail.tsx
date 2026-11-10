@@ -32,7 +32,7 @@ export function AgentDetail({
   return (
     <aside
       aria-labelledby="agent-detail-name"
-      className="flex min-w-0 flex-[1_1_380px] flex-col gap-5 card p-6 wide:flex-[0_1_600px]"
+      className="flex min-w-0 flex-[1_1_380px] flex-col gap-4 card p-5 wide:flex-[0_1_600px]"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">

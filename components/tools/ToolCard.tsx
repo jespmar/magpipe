@@ -64,11 +64,11 @@ export function ToolCard({
   return (
     <article
       aria-labelledby={`${ids}-name`}
-      className="flex min-w-0 flex-1 flex-col gap-3.5 card p-5"
+      className="flex min-w-0 flex-1 flex-col gap-3 card p-4"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <Avatar initials={tool.glyph} size={40} />
+          <Avatar initials={tool.glyph} size={36} />
           <div className="flex min-w-0 flex-col gap-0.5">
             <h2 id={`${ids}-name`} className="truncate text-body-md font-medium text-ink-strong">
               {tool.name}
@@ -101,7 +101,7 @@ export function ToolCard({
         <p className="text-caption text-mute">No tool names discovered yet.</p>
       )}
 
-      <div className="mt-auto flex items-center justify-between gap-3 border-t border-hairline-soft pt-3">
+      <div className="mt-auto flex items-center justify-between gap-3 border-t border-hairline-soft pt-2.5">
         <ul aria-label="Granted to" className="flex gap-1">
           {holders.length === 0 ? (
             <li className="text-caption text-mute">No agent holds this</li>

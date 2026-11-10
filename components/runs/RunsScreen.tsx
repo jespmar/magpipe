@@ -177,7 +177,7 @@ function SelectedRun({
     <section
       ref={ref}
       aria-labelledby="selected-run-title"
-      className={clsx('flex min-w-0 flex-col gap-5 card p-6', className)}
+      className={clsx('flex min-w-0 flex-col gap-4 card p-5', className)}
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1">
