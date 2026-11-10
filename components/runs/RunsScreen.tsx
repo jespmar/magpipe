@@ -109,7 +109,7 @@ export function RunsScreen({ runs, counts, agents, stats, fresh, initialId, now 
         {head}
         <EmptyState
           title="No flights yet"
-          description={`A flight is one task handed to Magpipe, from plan to merged result. Start one from the prompt on the home screen${fresh ? ', or load the demo data to look at a few finished ones' : ''}.`}
+          description="A flight is one task handed to Magpipe, from plan to merged result. Start one from the prompt on the home screen."
           actions={fresh ? <DemoLink /> : undefined}
         />
       </>

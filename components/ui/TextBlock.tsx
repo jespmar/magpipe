@@ -21,7 +21,8 @@ export function TextBlock({
   return (
     <section
       aria-label={title}
-      className="flex min-w-0 flex-col overflow-hidden rounded-(--radius-panel) border border-hairline bg-canvas-raised"
+      // Inside a card with 24 px padding, so the corner is the card's radius minus that padding.
+      className="flex min-w-0 flex-col overflow-hidden rounded-[max(6px,calc(var(--radius-surface)-24px))] border border-hairline bg-canvas-raised"
     >
       <header className="flex min-h-[52px] items-center justify-between gap-3 border-b border-hairline-soft py-2 pr-2 pl-5">
         <span className="text-body-sm font-medium text-ink">{title}</span>

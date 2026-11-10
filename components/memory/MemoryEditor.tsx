@@ -136,6 +136,7 @@ export function MemoryEditor({ entry, namespaces, defaultNs, onClose, onSaved }:
       <DialogContent
         title={title}
         style={{ width: 'min(calc(100vw - 2rem), 640px)' }}
+        aria-describedby={undefined}
         onOpenAutoFocus={(e) => {
           // A new fact starts at its key, an existing one at its value; never at the close control.
           e.preventDefault();
@@ -203,7 +204,7 @@ export function MemoryEditor({ entry, namespaces, defaultNs, onClose, onSaved }:
             />
           </div>
 
-          <div className="sticky -bottom-6 -mx-6 -mb-6 flex flex-col gap-3 border-t border-hairline bg-canvas-soft px-6 py-4">
+          <div className="sticky bottom-0 -mx-6 -mb-6 flex flex-col gap-3 border-t border-hairline bg-canvas-soft px-6 py-4">
             {error ? (
               <p role="alert" className="text-body-sm text-danger">
                 {error}

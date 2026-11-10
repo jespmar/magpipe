@@ -388,7 +388,12 @@ once per server start.
   live step is current, a failed step carries its error, later steps stay upcoming. Filters are a
   segmented control. The stat strip is one bordered group. Busy buttons show Arc's spinner in
   place instead of changing their label.
-- **Two overrides, named.** A Tailwind class cannot beat an Arc module rule on the same element
+- **Three overrides, named.** A Tailwind class cannot beat an Arc module rule on the same element
   (Arc's CSS is unlayered, Tailwind's utilities are layered), so a dialog's width and a field's
-  mono face are inline styles, and the toolbar search's label is hidden through a parent
-  selector. Nothing else touches Arc's internals.
+  mono face are inline styles, the toolbar search's label is hidden through a parent selector,
+  and `ButtonLink` dresses a Next link in the button module's own classes so navigation and
+  actions share one shape. Nothing else touches Arc's internals.
+- **The orbit means live.** The orb's dashed ring turns only while agents are flying (Arc: a loop
+  shows live status or does not run), so `e2e/motion.spec.ts` now asserts a still orb on a
+  quiet workspace in both motion settings; D18's "at least one animation without reduced
+  motion" no longer holds.

@@ -166,8 +166,9 @@ export function ToolsScreen({
               value={query}
               onChange={setQuery}
             />
+            {/* One primary per surface: while the panel is open, its submit is the main action. */}
             <Button
-              variant="primary"
+              variant={panel ? 'secondary' : 'primary'}
               onClick={() => setPanel((v) => !v)}
               aria-expanded={panel}
               aria-controls="connect-panel"
@@ -189,7 +190,7 @@ export function ToolsScreen({
       {tools.length === 0 ? (
         <EmptyState
           title="No tools connected yet"
-          description={`Birds reach the world through tools: MCP servers you connect here, plus the built-ins (web search, file reading, a sandboxed workspace). Press “Connect tool”, paste a server’s JSON, and it is tested and listed in one go${fresh ? ', or load the demo data to look at nine examples' : ''}.`}
+          description="Birds reach the world through MCP servers you connect here, plus the built-ins. Paste a server’s JSON and it is tested and listed in one go."
           actions={fresh ? <DemoLink /> : undefined}
         />
       ) : visible.length === 0 ? (

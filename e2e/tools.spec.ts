@@ -51,7 +51,7 @@ test('connect a local MCP server, test it, grant it, remove it', async ({ page }
   const editor = panel.getByLabel('Connection JSON');
   await editor.fill('{"name": "x", "transport": "http"}');
   await expect(panel.getByText('An http server needs a url')).toBeVisible();
-  await expect(panel.getByRole('button', { name: 'Connect & test' })).toBeDisabled();
+  await expect(panel.getByRole('button', { name: 'Connect and test' })).toBeDisabled();
 
   await editor.fill(
     JSON.stringify({
@@ -62,7 +62,7 @@ test('connect a local MCP server, test it, grant it, remove it', async ({ page }
       grant: ['coder'],
     }),
   );
-  await panel.getByRole('button', { name: 'Connect & test' }).click();
+  await panel.getByRole('button', { name: 'Connect and test' }).click();
   await expect(panel).toBeHidden();
   await expect(
     page.getByRole('status').filter({ hasText: `${name} connected · 2 tools found.` }),
@@ -112,7 +112,7 @@ test('a server that cannot be reached is saved with an honest error', async ({ p
   await panel
     .getByLabel('Connection JSON')
     .fill(JSON.stringify({ name, transport: 'http', url: 'http://127.0.0.1:9/mcp' }));
-  await panel.getByRole('button', { name: 'Connect & test' }).click();
+  await panel.getByRole('button', { name: 'Connect and test' }).click();
   await expect(
     page.getByRole('status').filter({ hasText: `${name} saved · Could not reach 127.0.0.1:9` }),
   ).toBeVisible({ timeout: 15_000 });

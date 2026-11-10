@@ -31,7 +31,7 @@ export function NamespaceNav({ namespaces, total, value, onChange, onCreate, bus
 
   const row = (on: boolean) =>
     clsx(
-      'flex w-full items-center justify-between gap-2 rounded-(--radius-control) px-3 py-2.5 text-left text-body-sm transition-colors',
+      'flex w-full items-center justify-between gap-2 rounded-(--radius-panel) px-3 py-2.5 text-left text-body-sm transition-colors',
       on
         ? 'bg-cyan-soft font-medium text-ink-strong'
         : 'text-body hover:bg-canvas-muted hover:text-ink',

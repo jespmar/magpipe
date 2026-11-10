@@ -67,7 +67,7 @@ export function KeyboardShortcuts() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent title="Keyboard shortcuts">
+      <DialogContent title="Keyboard shortcuts" aria-describedby={undefined}>
         <div className="flex flex-col gap-5">
           <dl className="flex flex-col gap-3">
             {SHORTCUTS.map((s) => (

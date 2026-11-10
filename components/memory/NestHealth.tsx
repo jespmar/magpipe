@@ -41,14 +41,11 @@ export function NestHealth({ health }: { health: NestHealthSummary }) {
         <Row label="Conflicts" value={health.conflicts} tone="danger" />
         {health.expired > 0 ? <Row label="Expired" value={health.expired} /> : null}
       </dl>
-      <Progress
-        value={pct ?? 0}
-        label="Facts verified in the last 30 days"
-        className="[&>div:first-child]:sr-only"
-      />
-      <p className="text-caption text-mute">
-        {pct === null ? 'Nothing to verify yet.' : `${pct}% of facts verified in the last 30 days`}
-      </p>
+      {pct === null ? (
+        <p className="text-caption text-mute">Nothing to verify yet.</p>
+      ) : (
+        <Progress value={pct} label="Verified in the last 30 days" showValue />
+      )}
     </section>
   );
 }
