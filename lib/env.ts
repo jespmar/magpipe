@@ -15,7 +15,7 @@ const schema = z.object({
   MAGPIPE_SECRET_KEY: z.string().optional(),
   /** `scripted` swaps the model for a local stub — development and tests only, never production. */
   MAGPIPE_MODEL_STUB: z.enum(['scripted']).optional(),
-  /** How runs reach Claude (D22): the Messages API with a key, or the Claude Code on this machine. */
+  /** How runs reach Claude (D22): the Claude Code on this machine (default) or the Messages API with a key. */
   MAGPIPE_MODEL_BACKEND: z.enum(['api', 'claude-code']).optional(),
   /** Where the `claude` command is, when it is not on the login shell's PATH. */
   MAGPIPE_CLAUDE_PATH: z.string().optional(),

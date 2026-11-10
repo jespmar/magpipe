@@ -427,8 +427,9 @@ once per server start.
   folder with `--bare`, a restricted tool list by grant, `dontAsk` permissions and a Magpipe MCP
   server (`/api/mcp`, per-step token) that carries the memory tools and the agent's MCP grants.
   Plan and merge are single print-mode calls, the plan with `--json-schema`. Usage and cost come
-  from the CLI's result. `MAGPIPE_MODEL_BACKEND=api|claude-code` selects it; the API backend
-  stays the default. The full scope, the risks and the build order are in
+  from the CLI's result. `MAGPIPE_MODEL_BACKEND=api|claude-code` selects it; Claude Code is the
+  default, so a fresh install needs no key, and `api` is the choice for a machine without
+  Claude Code or for a hosted build. The full scope, the risks and the build order are in
   `docs/claude-code-backend.md`.
 - **Built as scoped, with four deviations found against CLI 2.1.322.** (1) There is no
   `--max-turns` in print mode, so the step limit is enforced from the stream: each assistant

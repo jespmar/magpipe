@@ -90,7 +90,7 @@ export default async function SettingsPage() {
             ]}
             note={
               backend.problem ??
-              'MAGPIPE_MODEL_BACKEND in magpipe.env picks api (a key) or claude-code (the Claude Code on this machine and its login).'
+              'Runs go through the Claude Code on this machine unless magpipe.env sets MAGPIPE_MODEL_BACKEND=api with a key.'
             }
           />
           <Facts

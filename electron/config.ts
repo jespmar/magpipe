@@ -19,12 +19,12 @@ const TEMPLATE = `# Magpipe desktop configuration. Restart Magpipe after editing
 # Footer label.
 MAGPIPE_REGION=local
 
-# How runs reach Claude: "api" uses the key below; "claude-code" uses the Claude Code
-# installed on this machine and the login it already has (no key needed).
-MAGPIPE_MODEL_BACKEND=api
+# How runs reach Claude. "claude-code" (the default) uses the Claude Code installed on this
+# machine and the login it already has; "api" uses the key below instead.
+MAGPIPE_MODEL_BACKEND=claude-code
 ANTHROPIC_API_KEY=
 
-# Only for claude-code, when the claude command is not on your PATH.
+# When the claude command is not on your PATH.
 MAGPIPE_CLAUDE_PATH=
 `;
 

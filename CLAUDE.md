@@ -66,8 +66,9 @@ engine and no sign-in on desktop.
   same one; keep transient selection in state and read `?agent=`-style params only at load.
 - **Model calls go through `lib/engine/backend.ts`.** `RunBackend` (plan · step · merge) is the
   seam: `apiBackend` wraps `ModelClient` (`lib/engine/model.ts`; tests script it) and
-  `claudeCodeBackend` (`lib/engine/claude-code.ts`) runs the `claude` CLI, with a step's tools
-  served back over `/api/mcp` under a per-step token (`tool-sessions.ts`). API requests carry
+  `claudeCodeBackend` (`lib/engine/claude-code.ts`, the default) runs the `claude` CLI, with a
+  step's tools served back over `/api/mcp` under a per-step token (`tool-sessions.ts`);
+  `MAGPIPE_MODEL_BACKEND=api` picks the API. API requests carry
   `fallbackParams(model)`, never a forced `tool_choice` (400 on the 5.5 family), and structured
   outputs for JSON. Retries are the engine's (`withRetries`), not the SDK's. Tool names on the
   wire are `wireName(...)` and every tool schema sets `additionalProperties: false`. Tool calls

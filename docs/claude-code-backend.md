@@ -6,8 +6,9 @@ Status: built (D22 in `decisions.md` records what changed against this scope). T
 
 Let a flight run through the Claude Code that is installed on the operator's machine, so the
 login Claude Code already has (a Claude subscription, or an API key it was given) powers Magpipe
-without an `ANTHROPIC_API_KEY` in `magpipe.env`. The API backend stays, stays the default, and
-the two are selectable. Nothing about what a run is changes: plan, steps, merge, the trail, the
+without an `ANTHROPIC_API_KEY` in `magpipe.env`. The API backend stays and the two are
+selectable; Claude Code is the default (changed from the scope's "API by default" when it was
+built, so a fresh install needs no key). Nothing about what a run is changes: plan, steps, merge, the trail, the
 limits and the memory rules are the same whichever backend answers.
 
 ## Not in scope
@@ -124,7 +125,7 @@ this backend was used. The daily spend cap applies to that number.
 
 ### Choosing the backend and finding the CLI
 
-- `MAGPIPE_MODEL_BACKEND=api|claude-code` in `magpipe.env` (default `api`), and
+- `MAGPIPE_MODEL_BACKEND=api|claude-code` in `magpipe.env` (default `claude-code`), and
   `MAGPIPE_CLAUDE_PATH` to point at a binary.
 - Discovery on desktop: `MAGPIPE_CLAUDE_PATH`, then `claude` on the login shell's `PATH` (an app
   launched from Finder gets a minimal `PATH`, so `electron/config.ts` asks `/bin/zsh -lc
