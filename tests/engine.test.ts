@@ -11,7 +11,7 @@ import { Engine } from '@/lib/engine';
 import { listEvents } from '@/lib/engine/events';
 import type { ModelClient, ModelMessage, ModelParams } from '@/lib/engine/model';
 import { listMemory } from '@/lib/memory';
-import { createRun, getRun, homeStats, listRuns } from '@/lib/runs';
+import { approveRun, createRun, getRun, homeStats, listRuns } from '@/lib/runs';
 
 type Script = (params: ModelParams, call: number) => ModelMessage | Error | Promise<ModelMessage>;
 
@@ -508,6 +508,223 @@ describe('run engine with a granted MCP server', () => {
     const [tool] = await db.select().from(t.tools).where(eq(t.tools.id, toolId));
     expect(tool!.stats.calls24h).toBe(1);
     fs.rmSync(dir, { recursive: true, force: true });
+  }, 20_000);
+});
+
+describe('run engine with an approval gate', () => {
+  let db: Db;
+  let close: () => Promise<void>;
+  beforeAll(async () => {
+    ({ db, close } = await openDb('memory://'));
+    await db.update(t.agents).set({ pauseAfter: true }).where(eq(t.agents.slug, 'researcher'));
+  }, 30_000);
+  afterAll(() => close());
+
+  const twoSteps = (dependant = true) => [
+    {
+      id: 's1',
+      agent: 'researcher',
+      title: 'Plan it',
+      instructions: '',
+      dependsOn: [],
+      optional: false,
+    },
+    ...(dependant
+      ? [
+          {
+            id: 's2',
+            agent: 'coder',
+            title: 'Build it',
+            instructions: '',
+            dependsOn: ['s1'],
+            optional: false,
+          },
+        ]
+      : []),
+  ];
+
+  it('waits after a step by an agent that waits, and goes on with the note once approved (D30)', async () => {
+    let planSystem = '';
+    let builderUser = '';
+    const client = scripted((p) => {
+      if (isPlan(p)) {
+        planSystem = String(p.system);
+        return plan(twoSteps());
+      }
+      if (isMerge(p)) return text('merged');
+      if (String(p.system).includes('You are Coder')) {
+        builderUser = JSON.stringify(p.messages[0]!.content);
+        return text('Built it.');
+      }
+      return text('The plan: one change.');
+    });
+    const engine = new Engine({ client, getDb: async () => db });
+    const run = await createRun(db, { text: 'plan then build', attachments: [] });
+    engine.enqueue(run.id);
+    await engine.whenIdle();
+
+    const waiting = (await getRun(db, run.id))!;
+    expect(waiting.status).toBe('waiting');
+    expect(waiting.plan.map((s) => s.status)).toEqual(['done', 'todo', 'todo']);
+    expect(waiting.finishedAt).toBeNull();
+    expect(planSystem).toContain('  waits for approval: the run pauses after its steps');
+    const events = await listEvents(db, run.id);
+    expect(events.map((e) => e.text)).toContain('Waiting for you: approve “Plan it” to go on.');
+    const [coder] = await db.select().from(t.agents).where(eq(t.agents.slug, 'coder'));
+    expect(coder!.status).toBe('idle');
+
+    const approved = await approveRun(db, run.id, '  Skip the second tenant.  ');
+    expect(approved!.status).toBe('queued');
+    expect(approved!.plan[0]).toMatchObject({ approvalNote: 'Skip the second tenant.' });
+    expect(approved!.plan[0]!.approvedAt).toBeTruthy();
+    expect(await approveRun(db, run.id)).toBeUndefined(); // no longer waiting
+
+    engine.enqueue(run.id);
+    await engine.whenIdle();
+    const after = (await getRun(db, run.id))!;
+    expect(after.status).toBe('done');
+    expect(after.plan.map((s) => s.status)).toEqual(['done', 'done', 'done']);
+    expect(builderUser).toContain(
+      'The operator approved this with a note: Skip the second tenant.',
+    );
+  }, 20_000);
+
+  it('never waits when only the merge comes after the step', async () => {
+    const client = scripted((p) => {
+      if (isPlan(p)) return plan(twoSteps(false));
+      if (isMerge(p)) return text('merged');
+      return text('The plan: one change.');
+    });
+    const engine = new Engine({ client, getDb: async () => db });
+    const run = await createRun(db, { text: 'just plan', attachments: [] });
+    engine.enqueue(run.id);
+    await engine.whenIdle();
+    expect((await getRun(db, run.id))!.status).toBe('done');
+  }, 20_000);
+
+  it('cancels a waiting run, skipping what was held', async () => {
+    const client = scripted((p) => {
+      if (isPlan(p)) return plan(twoSteps());
+      if (isMerge(p)) return text('merged');
+      return text('ok');
+    });
+    const engine = new Engine({ client, getDb: async () => db });
+    const run = await createRun(db, { text: 'plan, then stop', attachments: [] });
+    engine.enqueue(run.id);
+    await engine.whenIdle();
+    expect((await getRun(db, run.id))!.status).toBe('waiting');
+    expect(await engine.cancel(run.id)).toBe(true);
+    const after = (await getRun(db, run.id))!;
+    expect(after.status).toBe('cancelled');
+    expect(after.plan.map((s) => s.status)).toEqual(['done', 'skipped', 'skipped']);
+    expect(after.finishedAt).not.toBeNull();
+  }, 20_000);
+});
+
+describe('run engine with a reviewer that may send work back', () => {
+  let db: Db;
+  let close: () => Promise<void>;
+  beforeAll(async () => {
+    ({ db, close } = await openDb('memory://'));
+  }, 30_000);
+  afterAll(() => close());
+
+  const plannedPair = () =>
+    plan([
+      {
+        id: 's1',
+        agent: 'coder',
+        title: 'Make the change',
+        instructions: '',
+        dependsOn: [],
+        optional: false,
+      },
+      {
+        id: 's2',
+        agent: 'reviewer',
+        title: 'Review the change',
+        instructions: '',
+        dependsOn: ['s1'],
+        optional: false,
+      },
+    ]);
+  const names = (p: ModelParams) => (p.tools ?? []).map((tool) => (tool as { name: string }).name);
+  const userOf = (p: ModelParams) => JSON.stringify(p.messages[0]!.content);
+  const sawResult = (p: ModelParams) =>
+    p.messages.some(
+      (m) =>
+        Array.isArray(m.content) &&
+        m.content.some((b) => (b as { type: string }).type === 'tool_result'),
+    );
+
+  it('reruns the reviewed step with the findings, then reviews once more (D31)', async () => {
+    await db.update(t.agents).set({ sendBackRounds: 1 }).where(eq(t.agents.slug, 'reviewer'));
+    const coderUsers: string[] = [];
+    const reviewerTools: string[][] = [];
+    let reviewerRound2 = '';
+    let planSystem = '';
+    const client = scripted((p) => {
+      if (isPlan(p)) {
+        planSystem = String(p.system);
+        return plannedPair();
+      }
+      if (isMerge(p)) return text('merged');
+      if (String(p.system).includes('You are Coder')) {
+        coderUsers.push(userOf(p));
+        return text(coderUsers.length === 1 ? 'Made it.' : 'Fixed the tenant check.');
+      }
+      reviewerTools.push(names(p));
+      const user = userOf(p);
+      if (user.includes('Your findings last round sent the work back')) {
+        reviewerRound2 = user;
+        return text('Approve.');
+      }
+      if (sawResult(p)) return text('Changes requested.');
+      return toolUse('send_back', { findings: 'The tenant check is missing in src/a.ts:12.' });
+    });
+    const engine = new Engine({ client, getDb: async () => db });
+    const run = await createRun(db, { text: 'change with a review', attachments: [] });
+    engine.enqueue(run.id);
+    await engine.whenIdle();
+    const after = (await getRun(db, run.id))!;
+    expect(after.status).toBe('done');
+    expect(planSystem).toContain('  may send work back: up to 1 time, to the steps it depends on');
+
+    // The Coder ran twice, the second time with the findings; the Reviewer reviewed again.
+    expect(coderUsers).toHaveLength(2);
+    expect(coderUsers[0]).not.toContain('sent the work back');
+    expect(coderUsers[1]).toContain(
+      'Round 2. Reviewer sent the work back after round 1: The tenant check is missing in src/a.ts:12.',
+    );
+    expect(reviewerRound2).toContain('The tenant check is missing');
+    expect(reviewerTools[0]).toContain('send_back');
+    expect(reviewerTools.at(-1)).not.toContain('send_back'); // no rounds left
+    const [s1, s2] = after.plan;
+    expect([s1!.round, s2!.round]).toEqual([2, 2]);
+    expect(s2!.sentBack).toBeUndefined();
+    const events = await listEvents(db, run.id);
+    expect(events.map((e) => e.text)).toContain(
+      'Round 2: Reviewer sent the work back to “Make the change”.',
+    );
+    // Every model call is still counted after the steps were reopened.
+    expect(after.usage.inputTokens).toBe(100 * client.calls.length);
+  }, 20_000);
+
+  it('never offers send_back to an agent with no rounds', async () => {
+    await db.update(t.agents).set({ sendBackRounds: 0 }).where(eq(t.agents.slug, 'reviewer'));
+    const seen: string[][] = [];
+    const client = scripted((p) => {
+      if (isPlan(p)) return plannedPair();
+      if (isMerge(p)) return text('merged');
+      if (!String(p.system).includes('You are Coder')) seen.push(names(p));
+      return text('ok');
+    });
+    const engine = new Engine({ client, getDb: async () => db });
+    const run = await createRun(db, { text: 'change without a loop', attachments: [] });
+    engine.enqueue(run.id);
+    await engine.whenIdle();
+    expect((await getRun(db, run.id))!.status).toBe('done');
+    expect(seen.flat()).not.toContain('send_back');
   }, 20_000);
 });
 

@@ -12,14 +12,14 @@ import * as t from '../db/schema';
 import { env } from '../env';
 import { listMemory } from '../memory';
 import { loadThread } from '../runs';
-import { threadText } from '../runs-util';
 import { addUsage, ZERO_USAGE } from '../pricing';
 import type { Agent, MemoryEntry, Run, Step } from '../schemas';
 import { apiBackend, type RunBackend } from './backend';
 import { claudeCodeBackend } from './claude-code';
 import { emitEvent } from './events';
 import { acquireWriteLocks, writeTargets, type WriteTarget } from './locks';
-import { foldWork, runArtifacts, type WorkItem } from '../work';
+import { foldWork, mergeWork, runArtifacts, type WorkItem } from '../work';
+import { sendBackSet, threadText } from '../runs-util';
 import { mergeRun } from './merge';
 import {
   abortError,
@@ -106,6 +106,25 @@ export class Engine {
       await emitEvent(db, { runId, kind: 'error', text: 'Run cancelled before it started.' });
       return true;
     }
+    // A run waiting for approval is in no queue: cancel it in the database (D30).
+    const db = await this.db();
+    const [row] = await db.select().from(t.runs).where(eq(t.runs.id, runId));
+    if (row?.status === 'waiting') {
+      const finishedAt = new Date();
+      await db
+        .update(t.runs)
+        .set({
+          status: 'cancelled',
+          finishedAt,
+          durationMs: finishedAt.getTime() - (row.startedAt ?? row.createdAt).getTime(),
+          plan: row.plan.map((s) =>
+            s.status === 'todo' ? { ...s, status: 'skipped' as const } : s,
+          ),
+        })
+        .where(eq(t.runs.id, runId));
+      await emitEvent(db, { runId, kind: 'error', text: 'Run cancelled by the operator.' });
+      return true;
+    }
     return false;
   }
 
@@ -177,6 +196,10 @@ export class Engine {
     ) => emitEvent(db, { runId, stepId: stepId ?? null, agentId: null, kind, text, payload });
 
     const agents = await db.select().from(t.agents);
+    // A finished step by an agent that pauses for approval holds back what depends on it (D30).
+    const pausing = new Set(agents.filter((a) => a.pauseAfter).map((a) => a.id));
+    const held = (s: Step) =>
+      s.status === 'done' && s.agentId !== null && pausing.has(s.agentId) && !s.approvedAt;
     const tools = await db
       .select({
         id: t.tools.id,
@@ -240,7 +263,10 @@ export class Engine {
           (s) =>
             s.status === 'todo' &&
             s.id !== MERGE_STEP_ID &&
-            s.dependsOn.every((d) => byId.get(d)?.status === 'done'),
+            s.dependsOn.every((d) => {
+              const dep = byId.get(d);
+              return dep?.status === 'done' && !held(dep);
+            }),
         );
         // steps whose dependencies failed or were skipped cannot run
         const blocked = plan.filter(
@@ -307,6 +333,10 @@ export class Engine {
             await setAgentStatus(db, agent.id, 'running');
             // What the step's repository tools do, kept whether the step finishes or fails.
             const work: WorkItem[] = [];
+            // A reviewing agent may send the work back while rounds remain (D31).
+            const remaining = agent.sendBackRounds - ((step.round ?? 1) - 1);
+            const sendBack: { remaining: number; findings?: string } | undefined =
+              remaining > 0 ? { remaining } : undefined;
             try {
               const outcome = await runStep({
                 db,
@@ -320,13 +350,16 @@ export class Engine {
                 sandboxDir,
                 conversation,
                 work,
+                sendBack,
                 signal,
               });
               await this.finishStep(save, () => run!, step.id, {
                 status: 'done',
                 result: { summary: outcome.summary },
                 usage: outcome.usage,
-                work: foldWork(work),
+                // A step that ran again keeps what it did before it was sent back.
+                work: mergeWork(step.work, foldWork(work)),
+                ...(sendBack?.findings ? { sentBack: sendBack.findings } : {}),
               });
               await emit('message', `${agent.name} finished: ${step.title}`, null, step.id);
             } catch (err) {
@@ -338,7 +371,7 @@ export class Engine {
               await this.finishStep(save, () => run!, step.id, {
                 status: 'failed',
                 error: { code: f.code, message: f.message },
-                work: foldWork(work),
+                work: mergeWork(step.work, foldWork(work)),
               });
               await emitEvent(db, {
                 runId,
@@ -354,6 +387,52 @@ export class Engine {
             }
           }),
         );
+
+        // A reviewing step that sent the work back reopens it: the steps it reviews run again
+        // with its findings, then it reviews once more (D31). Usage so far stays counted.
+        for (const step of wave) {
+          const current = run.plan.find((s) => s.id === step.id);
+          const agent = agents.find((a) => a.id === current?.agentId);
+          if (!current || !agent || current.status !== 'done' || !current.sentBack) continue;
+          const round = current.round ?? 1;
+          if (round > agent.sendBackRounds) continue;
+          const reopen = sendBackSet(run.plan, current.id);
+          const spent = run.plan
+            .filter((s) => reopen.has(s.id) && s.usage)
+            .reduce((acc, s) => addUsage(acc, s.usage!), ZERO_USAGE);
+          const findings = current.sentBack;
+          await save({
+            usage: addUsage(run.usage, spent),
+            plan: run.plan.map((s) =>
+              reopen.has(s.id)
+                ? {
+                    ...s,
+                    status: 'todo' as const,
+                    round: (s.round ?? 1) + 1,
+                    feedback:
+                      s.id === current.id
+                        ? `Your findings last round sent the work back: ${findings} Check whether they were addressed.`
+                        : `${agent.name} sent the work back after round ${round}: ${findings}`,
+                    result: undefined,
+                    usage: undefined,
+                    error: undefined,
+                    startedAt: undefined,
+                    finishedAt: undefined,
+                    sentBack: undefined,
+                    approvedAt: undefined,
+                    approvalNote: undefined,
+                  }
+                : s,
+            ),
+          });
+          const others = run.plan.filter((s) => reopen.has(s.id) && s.id !== current.id);
+          await emit(
+            'message',
+            `Round ${round + 1}: ${agent.name} sent the work back to ${others.map((s) => `“${s.title}”`).join(' and ')}.`,
+            { round: round + 1, findings },
+            current.id,
+          );
+        }
       }
 
       // 3. merge, unless a required step failed
@@ -365,6 +444,25 @@ export class Engine {
           hardFailure.error?.code ?? 'step_failed',
           `${names.get(hardFailure.agentId ?? '') ?? 'A step'} failed: ${hardFailure.error?.message ?? hardFailure.title}`,
         );
+      }
+
+      // 2b. a step that waits for approval holds its dependants: the run waits for the operator
+      // and gives the engine back. Approving puts it in the queue again (D30).
+      const holding = run.plan.filter(
+        (s) =>
+          held(s) &&
+          run!.plan.some(
+            (d) => d.id !== MERGE_STEP_ID && d.status === 'todo' && d.dependsOn.includes(s.id),
+          ),
+      );
+      if (holding.length > 0) {
+        await save({ status: 'waiting' });
+        await emit(
+          'message',
+          `Waiting for you: approve ${holding.map((s) => `“${s.title}”`).join(' and ')} to go on.`,
+          { waitingFor: holding.map((s) => s.id) },
+        );
+        return;
       }
       const mergeStartedAt = new Date().toISOString();
       await save({

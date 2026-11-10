@@ -33,6 +33,8 @@ export async function runStep(opts: {
   conversation?: string;
   /** Collects what repository tools do in this step (D29); the caller keeps it, done or failed. */
   work?: WorkItem[];
+  /** Offers the send_back tool while rounds remain (D31); the caller reads `findings`. */
+  sendBack?: { remaining: number; findings?: string };
   signal: AbortSignal;
 }): Promise<StepOutcome> {
   const { db, run, step, agent } = opts;
@@ -64,6 +66,7 @@ export async function runStep(opts: {
         onRejectedWrite: (text) => trail.emit('error', text),
         onToolUnavailable: (text) => trail.emit('error', text),
         work: opts.work,
+        sendBack: opts.sendBack,
       }),
     { signal, onRetry: (f, n) => trail.emit('error', `Retry ${n}: ${f.message}`) },
   );
@@ -82,15 +85,21 @@ export async function runStep(opts: {
       .filter((s) => s.result?.summary)
       .map((s) => {
         const facts = workFacts(s.work);
+        // The operator approved this result before your step could start (D30).
+        const approval = s.approvedAt
+          ? `\nThe operator approved this${s.approvalNote ? ` with a note: ${s.approvalNote}` : '.'}`
+          : '';
         return `Result of "${s.title}":\n${s.result!.summary}${
           facts.length ? `\nRecorded by Magpipe:\n${facts.map((f) => `- ${f}`).join('\n')}` : ''
-        }`;
+        }${approval}`;
       })
       .join('\n\n');
     const user = [
       opts.conversation ? `Earlier in this conversation:\n${opts.conversation}` : '',
       `Task given to Magpipe:\n${run.input.text}`,
       `Your step: ${step.title}\n${step.instructions ?? ''}`,
+      // A step that was sent back runs again with what it must address (D31).
+      step.feedback ? `Round ${step.round ?? 2}. ${step.feedback}` : '',
       context ? `Earlier results:\n${context}` : '',
       opts.attachments.length
         ? `Attached files: ${opts.attachments.map((a) => a.name).join(', ')}`

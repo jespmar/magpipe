@@ -160,3 +160,23 @@ export function shownArtifacts(run: Pick<Run, 'plan' | 'output'>): RunArtifact[]
     ...(run.output?.artifacts.filter((a) => a.blobUrl !== undefined) ?? []),
   ];
 }
+
+/** A record back into items, so two records can be folded as one (D31: a step that ran again). */
+function itemsOf(work: StepWork): WorkItem[] {
+  return [
+    ...work.branches.map((b) => ({ kind: 'branch' as const, ...b })),
+    ...work.files.map((f) => ({ kind: 'file' as const, ...f })),
+    ...work.commits.map((c) => ({ kind: 'commit' as const, ...c })),
+    ...work.checks.map((c) => ({ kind: 'check' as const, ...c })),
+  ];
+}
+
+/** A step's record across rounds: what it did before it was sent back, then what it did after. */
+export function mergeWork(
+  before: StepWork | undefined,
+  after: StepWork | undefined,
+): StepWork | undefined {
+  if (!before) return after;
+  if (!after) return before;
+  return foldWork([...itemsOf(before), ...itemsOf(after)]);
+}

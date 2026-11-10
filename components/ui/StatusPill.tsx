@@ -15,7 +15,9 @@ export type StatusVariant =
   | 'conflict'
   | 'expired'
   | 'queued'
-  | 'cancelled';
+  | 'cancelled'
+  /** A run held for the operator's approval (D30); it reads "waiting". */
+  | 'held';
 
 /** Status means status: cyan is alive, emerald done, amber needs you, red failed; the rest neutral. */
 const TONE: Record<StatusVariant, BadgeTone> = {
@@ -32,12 +34,15 @@ const TONE: Record<StatusVariant, BadgeTone> = {
   conflict: 'danger',
   'needs-auth': 'warning',
   stale: 'warning',
+  held: 'warning',
 };
+
+const LABEL: Partial<Record<StatusVariant, string>> = { held: 'waiting' };
 
 /** Status labels are precise words, never the metaphor: a run is "running", not "flying". */
 export function StatusPill({
   variant,
-  label = variant,
+  label = LABEL[variant] ?? variant,
   className,
 }: {
   variant: StatusVariant;
@@ -51,6 +56,7 @@ export function StatusPill({
   );
 }
 
+/** A waiting run needs the operator, so it reads amber; an agent waiting on a lock does not. */
 export function runStatusVariant(status: RunStatus): StatusVariant {
-  return status;
+  return status === 'waiting' ? 'held' : status;
 }

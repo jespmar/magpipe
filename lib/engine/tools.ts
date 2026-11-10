@@ -114,6 +114,8 @@ export type ToolSetup = {
   onToolUnavailable: (text: string) => Promise<void>;
   /** Where repository tools record what they did, for the step's record (D29). */
   work?: WorkItem[];
+  /** Offered to a reviewing agent while rounds remain (D31); `findings` is set when it is used. */
+  sendBack?: { remaining: number; findings?: string };
 };
 
 export function wireName(...parts: string[]): string {
@@ -453,6 +455,35 @@ export async function setupTools(setup: ToolSetup): Promise<ToolRuntime> {
       return {
         text: `${created ? 'Wrote' : 'Updated'} ${entry.ns}/${entry.key}${entry.conflict ? ' (flagged as a conflict: confidence moved by more than 0.3)' : ''}.`,
         memoryWrite: { ns: entry.ns, key: entry.key },
+      };
+    });
+  }
+
+  // ── send back: a reviewing step returns its findings to the work it reviews (D31) ──
+  const sendBack = setup.sendBack;
+  if (sendBack && sendBack.remaining > 0) {
+    tools.push(
+      clientTool(
+        'send_back',
+        `Send the work you review back to the steps you depend on, with your findings. They run again with your findings, then you review once more. Use it only for problems that keep the plan's definition of done from being met; ${sendBack.remaining} ${sendBack.remaining === 1 ? 'round' : 'rounds'} left. Finish your step as usual after calling it.`,
+        objectSchema(
+          {
+            findings: {
+              type: 'string',
+              description: 'What must change, each finding with path:line where you can',
+            },
+          },
+          ['findings'],
+        ),
+      ),
+    );
+    labels.set('send_back', 'Send back');
+    dispatch.set('send_back', async (input) => {
+      const findings = str(input, 'findings').trim();
+      if (!findings) return { text: 'Give the findings to send back.', isError: true };
+      sendBack.findings = findings.slice(0, 4000);
+      return {
+        text: 'Sent back. Finish your step with a short summary of your verdict; the steps you depend on will run again with your findings.',
       };
     });
   }

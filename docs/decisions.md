@@ -673,3 +673,57 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
   repository can change the file that later steps read; the change is recorded (D29) and shows
   in the diff, but nothing prevents it. The number of repositories whose files join one prompt
   has no cap beyond the 8,000 characters each.
+
+## D30 · A run can wait for the operator
+
+- **Why.** The orchestrator planned once and could not pause, so the gate every method keeps,
+  a person reading the plan before code is written, fell between two runs: a scouting run, then
+  a building run as a follow-up. It was the fifth gap in `docs/flock.md`.
+- **The setting is the agent's.** `agents.pause_after` ("Wait for approval after its steps" in
+  the editor's Approval section, migration 0004). After a step by such an agent finishes, the
+  steps that depend on it are held until the operator approves; the planner's registry says so
+  ("waits for approval: the run pauses after its steps") and its rules ask it to plan the work
+  that builds on the result in the same plan. A step that only the merge depends on never
+  holds the run: approving a summary would be ceremony.
+- **The run waits, the engine does not.** When nothing else can start and a step is holding
+  dependants, the run's status becomes `waiting` (a new run status, amber because it needs you)
+  and the engine lets it go: no process, lock or memory is held. The trail says
+  `Waiting for you: approve “Write the plan” to go on.`
+- **Approve or cancel.** `POST /api/runs/[id]/approve { note? }` marks the held steps approved
+  (`approvedAt`, `approvalNote` on the step), puts the run back in the queue and logs
+  `Approved by the operator: …`; the steps that start next read "The operator approved this
+  with a note: …" under that step's result. Cancel now reaches a waiting run too, and skips
+  what was held. The run page and Home's panel show the same box: what it waits on, a note
+  field, "Approve and go on" (the run page's primary action; secondary on Home, where Run is)
+  and "Cancel run". A waiting run's card cannot be closed.
+- **Not covered:** the sandbox folder is wiped when the run pauses, as at any run end (the
+  repository is the durable workspace); time spent waiting counts in the run's duration; and an
+  approval cannot edit the plan's later steps, only add a note to them.
+
+## D31 · A reviewer may send the work back
+
+- **Why.** A review with blocking findings ended the run, and fixing them took a follow-up run
+  started by hand, even for a finding the Coder could address in a minute. The evidence favours
+  the evaluator-optimizer loop when it is bounded and tied to evidence, and the human cycle as
+  the default. It was the sixth gap in `docs/flock.md`.
+- **The setting is the agent's, and off by default.** `agents.send_back_rounds` ("Times it may
+  send work back" in the editor's Approval and review section, 0 to 5, migration 0005). The
+  planner's registry says "may send work back: up to N times, to the steps it depends on", and
+  its rules ask it to make such an agent depend directly on the steps whose work it judges.
+- **A tool, not a parsed verdict.** While rounds remain, the agent's steps get `send_back
+{ findings }`. Calling it records the findings on the step (`sentBack`); the step then finishes
+  as usual with its verdict as the summary.
+- **What reopens.** After the wave, a done step with findings reopens the steps it depends on,
+  every step on a path from them to it (the Verifier between the Coder and the Reviewer), and
+  itself (`sendBackSet` in `lib/runs-util.ts`). Earlier work, such as the Planner's and its
+  approval, keeps its result, and the merge never reopens. Reopened steps go back to `todo`
+  with `round` + 1 and a `feedback` line in their prompt: the findings for the reviewed steps,
+  "your findings last round" for the reviewer. Their usage so far is added to the run's before
+  it is cleared, and their work record carries over (`mergeWork`), so tokens, cost, commits and
+  files across rounds all stay counted. The trail says
+  `Round 2: Reviewer sent the work back to “Make the change”.`, and the flight path shows the
+  round.
+- **Bounded.** A step on round N may send back while N is at most the agent's setting; after
+  that the tool is not offered and the verdict stands for the operator, as before.
+- **Not covered:** a send-back cannot change the plan (no new steps), and reopening the Planner
+  needs a reviewer that depends on it directly.

@@ -43,7 +43,10 @@ const ALL_NS = NAMESPACES.map((n) => n.key);
 
 // ─── agents ────────────────────────────────────────────────────────────────
 
-const AGENTS: Omit<Agent, 'id' | 'tools' | 'status' | 'createdAt' | 'updatedAt'>[] = [
+const AGENTS: Omit<
+  Agent,
+  'id' | 'tools' | 'pauseAfter' | 'sendBackRounds' | 'status' | 'createdAt' | 'updatedAt'
+>[] = [
   {
     slug: 'researcher',
     name: 'Researcher',
@@ -571,6 +574,8 @@ export function buildSeed(now = new Date()): SeedData {
       const scopes = tool.grants[a.slug as AgentSlug];
       return scopes ? [{ toolId: toolIdOf(tool.slug), scopes }] : [];
     }),
+    pauseAfter: false,
+    sendBackRounds: 0,
     status: 'idle',
     createdAt: at(30 * DAY),
     updatedAt: at(30 * DAY),

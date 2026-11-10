@@ -71,6 +71,10 @@ export const agent = z.object({
   builtins: z.array(z.enum(builtinTools)),
   memoryScope,
   limits: agentLimits,
+  /** After a step by this agent, the steps that depend on it wait for the operator (D30). */
+  pauseAfter: z.boolean(),
+  /** How many times this agent's steps may send the work they review back (D31); 0 = never. */
+  sendBackRounds: z.number().int().min(0).max(5),
   status: agentStatus,
   createdAt: z.date(),
   updatedAt: z.date(),
@@ -119,10 +123,19 @@ export const step = z.object({
   result: z.object({ summary: z.string().max(1000) }).optional(),
   /** Set when the step changed or ran something in a bound repository, done or failed. */
   work: stepWork.optional(),
+  /** When the operator let the steps after this one go on (D30), and what they added. */
+  approvedAt: isoDate.optional(),
+  approvalNote: z.string().max(2000).optional(),
+  /** Which attempt this is: 2 and up after a reviewing step sent the work back (D31). */
+  round: z.number().int().min(1).optional(),
+  /** Findings this step sent back to the steps it depends on (D31). */
+  sentBack: z.string().max(4000).optional(),
+  /** What the step must address on this round: the findings that sent it back (D31). */
+  feedback: z.string().max(6000).optional(),
   error: z.object({ code: z.string(), message: z.string() }).optional(),
 });
 
-export const runStatuses = ['queued', 'running', 'done', 'failed', 'cancelled'] as const;
+export const runStatuses = ['queued', 'running', 'waiting', 'done', 'failed', 'cancelled'] as const;
 export const runStatus = z.enum(runStatuses);
 
 export const attachment = z.object({
@@ -423,6 +436,9 @@ export const runCreateInput = z.object({
   parentRunId: runId.optional(),
 });
 
+/** POST /api/runs/[id]/approve: let a waiting run go on, with a note for the next steps. */
+export const runApproveInput = z.object({ note: z.string().trim().max(2000).optional() });
+
 /** PATCH /api/runs/[id]: close or reopen its card on Home. */
 export const runPatchInput = z.object({ dismissed: z.boolean() });
 
@@ -459,6 +475,8 @@ const agentFields = z.object({
   builtins: z.array(z.enum(builtinTools)),
   memoryScope,
   limits: agentLimits,
+  pauseAfter: z.boolean(),
+  sendBackRounds: z.number().int().min(0, 'At least 0').max(5, 'At most 5 rounds'),
 });
 
 /** POST /api/agents. Slug and (unless given) initials are derived from the name. */
@@ -470,6 +488,8 @@ export const agentInput = agentFields.extend({
   builtins: agentFields.shape.builtins.default([]),
   memoryScope: memoryScope.default({ read: [], write: [] }),
   limits: agentLimits.default({ maxTokens: 100_000, maxSteps: 30, timeoutSec: 600 }),
+  pauseAfter: agentFields.shape.pauseAfter.default(false),
+  sendBackRounds: agentFields.shape.sendBackRounds.default(0),
 });
 
 /** PATCH /api/agents/[id]: any subset of the fields, plus pause/resume. */

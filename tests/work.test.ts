@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   foldWork,
   latestChecks,
+  mergeWork,
   runArtifacts,
   shownArtifacts,
   workFacts,
@@ -93,5 +94,23 @@ describe('shownArtifacts', () => {
       'magpipe/x',
       'report.pdf',
     ]);
+  });
+});
+
+describe('mergeWork', () => {
+  it("keeps a step's work across rounds", () => {
+    const before = foldWork([
+      { kind: 'file', repo: 'App', path: 'src/a.ts', change: 'created' },
+      { kind: 'commit', repo: 'App', branch: 'magpipe/x', sha: 'abc1234', message: 'Add a' },
+    ]);
+    const after = foldWork([
+      { kind: 'file', repo: 'App', path: 'src/a.ts', change: 'updated' },
+      { kind: 'commit', repo: 'App', branch: 'magpipe/x', sha: 'def5678', message: 'Fix a' },
+    ]);
+    const merged = mergeWork(before, after)!;
+    expect(merged.files).toEqual([{ repo: 'App', path: 'src/a.ts', change: 'created' }]);
+    expect(merged.commits.map((c) => c.sha)).toEqual(['abc1234', 'def5678']);
+    expect(mergeWork(undefined, after)).toBe(after);
+    expect(mergeWork(before, undefined)).toBe(before);
   });
 });

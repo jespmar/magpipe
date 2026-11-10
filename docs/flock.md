@@ -192,7 +192,7 @@ You plan one code change. You write a plan file; you never edit source code.
 4. Prefer the smallest change that meets the goal. Do not plan refactors the task did not ask for.
 5. Write a memory entry plans/<slug> with the file path and a one-paragraph summary.
 
-Finish with the plan path, the summary, and this line: "Approve or edit the plan, then ask for it to be built."
+Finish with the plan path, the summary, and this line: "Edit the plan file if you need to, then approve the run to build it."
 ```
 
 The Planner is not the orchestrator. The orchestrator decides which agents run in this run; the
@@ -243,7 +243,8 @@ You review one change you did not write. You read; you never edit.
 4. Report only what affects correctness, security, data loss or the plan's definition of done. Skip style, naming and anything a linter or formatter would catch.
 5. Give each finding a tier (blocking, should fix, note), a path:line and a concrete fix.
 6. Give a verdict: approve, or changes requested. Any blocking finding means changes requested. Write the verdict and findings to memory as reviews/<branch>; if an entry already exists, say which of its findings were addressed.
-7. Finish your step even when the verdict is changes requested. The verdict is your result, not a failure.
+7. If the send_back tool is offered and there are blocking findings, call it with them: the steps you review run again with your findings and you review once more.
+8. Finish your step even when the verdict is changes requested. The verdict is your result, not a failure.
 
 Finish with: Verdict, Blocking, Should fix, Notes, Plan items not covered.
 ```
@@ -295,22 +296,30 @@ Coder's own "Checks" line is confirmed by an agent that did not write the code.
 
 ## Run shapes and gates
 
-The orchestrator plans once and cannot pause, so the operator's gates fall between runs.
+The orchestrator plans once, but since D30 a run can wait: with "Wait for approval after its
+steps" set on the Planner, the steps that build on the plan start only when the operator
+approves it, so one run carries a whole change.
 
-1. **Scouting run**, for any change that is not trivially small: one to three Researcher steps
+1. **Planned change**, for any change that is not trivially small: one to three Researcher steps
    with no dependencies and marked optional (the area of the code, the external docs, the
-   existing tests), then one Planner step, then the merge. The operator reads
-   `docs/plans/<slug>.md` in their editor, strikes or answers the assumptions, and that edit is
-   the approval.
-2. **Building run**, started as a follow-up so the thread carries the context: a Coder step that
-   names the plan file, a Verifier step that depends on it, a Reviewer step that depends on
-   both, then the merge, which reports the branch, the commits, the check results, the verdict
-   and what was not done. The operator pushes, opens the pull request and merges. If the
-   verdict was changes requested, another follow-up ("address the review on magpipe/<slug>")
-   runs the three again, and the Reviewer reads its own earlier entry.
+   existing tests), the Planner, then a Coder step that names the plan file, a Verifier step
+   that depends on it and a Reviewer step that depends on both, then the merge. The run waits
+   after the Planner. The operator reads `docs/plans/<slug>.md` in their editor, strikes or
+   answers the assumptions in the file, and approves on the run page or Home, with a note when
+   the next steps should know something; the Coder then reads the edited plan. Cancel ends the
+   run there. The merge reports the branch, the commits, the check results, the verdict and
+   what was not done; the operator pushes, opens the pull request and merges.
+2. **Fix-up round**: with "Times it may send work back" above 0 on the Reviewer (D31), a review
+   with blocking findings sends them back inside the same run: the Coder and the Verifier run
+   again with the findings, then the Reviewer reviews once more, at most that many times. When
+   the rounds are spent, or the setting is 0, a follow-up ("address the review on
+   magpipe/<slug>") does the same as a new run, and the Reviewer reads its own earlier entry.
 3. **Short hop**, for a change the operator calls small or one file with a named test: Coder,
    Verifier and Reviewer in one run, no plan file.
 4. **A question about the code** routes to the Researcher alone.
+
+Without the setting the same work takes two runs, as it did before D30: a scouting run that ends
+with the plan file, and a building run started as a follow-up.
 
 Handoffs carry artefacts, because a step's summary is 1,000 characters and the thread clips each
 turn at 2,000. The engine hands on the facts itself: a Reviewer step is told the Coder's branch,
@@ -325,7 +334,8 @@ commits and check results as "Recorded by Magpipe", whatever the Coder's summary
 | Reviewer to operator  | Verdict and tiered findings                        | `reviews/<branch>`; the merged result             | Operator; Coder in a fix-up run                |
 | Verifier to Reviewer  | Script, exit status, output tail                   | Step summary; `incidents/*` on failure            | Reviewer, through the upstream summary         |
 
-There are two gates, the plan and the merge, and no per-edit gate, which matches both the
+There are two gates, the plan (where the run waits) and the merge (no agent pushes), and no
+per-edit gate, which matches both the
 consensus and the engine's `dontAsk` mode. Anything irreversible outside the repository has no
 tool at all. Until the spend cap is enforced, the per-step limits are the budget.
 
@@ -340,14 +350,14 @@ reach the repository (D34). Settings shows the orchestrator's rules beside the `
 Write these from the Memory screen with confidence 1 and source "operator". They reach every
 plan, including plans for work that is not software, so each one says when it applies.
 
-| Key                 | Value                                                                                                                                                                                                                                                   |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dev.workflow`      | For code changes: the change takes two runs. The first ends with a plan file under docs/plans/ that the operator approves. The second implements it. Give the Coder a step only when the task names a plan file or the operator calls the change small. |
-| `dev.single-writer` | For code changes: plan at most one Coder step per run. The engine already keeps writers to the same repository from overlapping, so a second one only waits; Researcher steps may run in parallel.                                                      |
-| `dev.review`        | For code changes: every Coder step is followed by a Verifier step that depends on it and a Reviewer step that depends on both. The Reviewer reads the diff itself; a Coder summary is not evidence.                                                     |
-| `dev.branches`      | For code changes: the Coder works on magpipe/<plan-slug>, never on the default branch. No agent pushes or merges; the operator does.                                                                                                                    |
-| `dev.checks`        | For code changes: done means the plan's definition-of-done scripts pass when the Verifier runs them. Nothing an agent did not run counts as passing.                                                                                                    |
-| `dev.small-change`  | For code changes: when the operator calls a change small, or it touches one file with a named test, skip the planning run and plan Coder, Verifier and Reviewer in one run.                                                                             |
+| Key                 | Value                                                                                                                                                                                                                                                                                                                         |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dev.workflow`      | For code changes: plan first. A Planner step writes a plan file under docs/plans/, and the Coder, Verifier and Reviewer steps that build it come after it in the same plan; the run waits there for the operator's approval. Give the Coder a step without a Planner before it only when the operator calls the change small. |
+| `dev.single-writer` | For code changes: plan at most one Coder step per run. The engine already keeps writers to the same repository from overlapping, so a second one only waits; Researcher steps may run in parallel.                                                                                                                            |
+| `dev.review`        | For code changes: every Coder step is followed by a Verifier step that depends on it and a Reviewer step that depends on both. The Reviewer reads the diff itself; a Coder summary is not evidence.                                                                                                                           |
+| `dev.branches`      | For code changes: the Coder works on magpipe/<plan-slug>, never on the default branch. No agent pushes or merges; the operator does.                                                                                                                                                                                          |
+| `dev.checks`        | For code changes: done means the plan's definition-of-done scripts pass when the Verifier runs them. Nothing an agent did not run counts as passing.                                                                                                                                                                          |
+| `dev.small-change`  | For code changes: when the operator calls a change small, or it touches one file with a named test, skip the planning run and plan Coder, Verifier and Reviewer in one run.                                                                                                                                                   |
 
 Two things belong in the repository rather than in Magpipe: the check commands in its
 `CLAUDE.md` (for this repository, the `typecheck`, `lint` and `test` scripts), and a
@@ -416,8 +426,9 @@ Release 1 and the runner need no code.
 4. **Add the namespaces** `plans` and `reviews` from the Memory screen.
 5. **Write the six `decisions` entries** above.
 6. **Edit Researcher, Coder and Reviewer, and add Planner and Verifier**, with the roles,
-   descriptions, prompts, models, memory scopes, limits and grants above. Pause or delete
-   Operator.
+   descriptions, prompts, models, memory scopes, limits and grants above, tick "Wait for
+   approval after its steps" on the Planner, and set "Times it may send work back" to 1 on the
+   Reviewer. Pause or delete Operator.
 7. **Tick the tools each agent needs.** A grant names the tools it allows, and a grant with
    nothing ticked allows none (D25). Granting a repository ticks all nine operations; untick what
    the role should not have.
@@ -428,18 +439,18 @@ Release 1 and the runner need no code.
 Ordered by how much of the proposal each unblocks against how much engine it touches. The first
 three are small.
 
-| Order | Gap today                                                                                                                                                                                   | What it blocks                                                | Smallest change                                                                                                        |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| 1     | Done (D25, D26). The planner's registry names each server and the tools granted on it, marks servers that will not answer, and leaves empty grants out.                                     |                                                               |                                                                                                                        |
-| 2     | Done (D27). A repository is a built-in tool bound to a folder in a git work tree: read, search, write, named scripts with a timeout, and git without push or commits to the default branch. |                                                               |                                                                                                                        |
-| 3     | Done (D28). One step at a time changes a work tree, across runs; readers run beside it; at most three steps of a run work at once.                                                          |                                                               |                                                                                                                        |
-| 4     | Done (D29). Each step records what its repository tools did; later steps and the merge get it as facts; the run page lists the branches and files a run changed.                            |                                                               |                                                                                                                        |
-| 5     | No approval step; nothing sets `waiting`                                                                                                                                                    | One run per feature with a real plan gate                     | A step kind that sets the run to waiting after the Planner and resumes on an operator action, re-reading the plan file |
-| 6     | No bounded loop or re-plan                                                                                                                                                                  | A review-and-fix cycle inside one run                         | Retry a dependant with the Reviewer's findings at most N times, off by default                                         |
-| 7     | The spend cap is recorded, not enforced (D15)                                                                                                                                               | Unattended runs                                               | Enforce from the run's usage totals                                                                                    |
-| 8     | Resume re-runs a live step from scratch                                                                                                                                                     | A half-committed Coder step repeats (the prompt mitigates it) | Resume write steps with "continue from the branch"                                                                     |
-| 9     | Done (D34). Each step's prompt carries the `CLAUDE.md` or `AGENTS.md` of every repository its agent reaches; Settings shows the orchestrator's rules beside the `decisions`.                |                                                               |                                                                                                                        |
-| 10    | No agent import or export                                                                                                                                                                   | Shipping the roster to a fresh install                        | "Load the development flock" beside the demo data, asking for the repository's folder                                  |
+| Order | Gap today                                                                                                                                                                                   | What it blocks                                                | Smallest change                                                                       |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| 1     | Done (D25, D26). The planner's registry names each server and the tools granted on it, marks servers that will not answer, and leaves empty grants out.                                     |                                                               |                                                                                       |
+| 2     | Done (D27). A repository is a built-in tool bound to a folder in a git work tree: read, search, write, named scripts with a timeout, and git without push or commits to the default branch. |                                                               |                                                                                       |
+| 3     | Done (D28). One step at a time changes a work tree, across runs; readers run beside it; at most three steps of a run work at once.                                                          |                                                               |                                                                                       |
+| 4     | Done (D29). Each step records what its repository tools did; later steps and the merge get it as facts; the run page lists the branches and files a run changed.                            |                                                               |                                                                                       |
+| 5     | Done (D30). An agent can wait for approval after its steps; the run waits, and the operator approves with a note or cancels, from the run page or Home.                                     |                                                               |                                                                                       |
+| 6     | Done (D31). A reviewing agent may send the work it judges back with its findings, a set number of times; the reviewed steps run again and it reviews once more. Off by default.             |                                                               |                                                                                       |
+| 7     | The spend cap is recorded, not enforced (D15)                                                                                                                                               | Unattended runs                                               | Enforce from the run's usage totals                                                   |
+| 8     | Resume re-runs a live step from scratch                                                                                                                                                     | A half-committed Coder step repeats (the prompt mitigates it) | Resume write steps with "continue from the branch"                                    |
+| 9     | Done (D34). Each step's prompt carries the `CLAUDE.md` or `AGENTS.md` of every repository its agent reaches; Settings shows the orchestrator's rules beside the `decisions`.                |                                                               |                                                                                       |
+| 10    | No agent import or export                                                                                                                                                                   | Shipping the roster to a fresh install                        | "Load the development flock" beside the demo data, asking for the repository's folder |
 
 ## Releases
 
