@@ -254,6 +254,8 @@ type RunOptions = {
   signal: AbortSignal;
   /** Each JSON line of `stream-json` as it arrives; may stop the run by throwing. */
   onLine?: (line: StreamLine) => Promise<void> | void;
+  /** Added to the CLI's environment. */
+  env?: Record<string, string>;
 };
 
 /** Spawns the CLI once and resolves with its `result` line; throws `EngineError` when it never produced one. */
@@ -262,7 +264,7 @@ export async function runCli(cli: ClaudeCli, args: string[], opts: RunOptions): 
   const shell = process.platform === 'win32' && /\.cmd$/i.test(cli.path);
   const child = spawn(cli.path, [...(cli.argsPrefix ?? []), ...args], {
     cwd: opts.cwd,
-    env: childEnv(),
+    env: { ...childEnv(), ...opts.env },
     stdio: ['pipe', 'pipe', 'pipe'],
     shell,
   });
@@ -576,7 +578,15 @@ async function runStepOnce(
       }
     };
 
-    const res = await runCli(cli, args, { cwd: req.sandboxDir, input: req.user, signal, onLine });
+    const res = await runCli(cli, args, {
+      cwd: req.sandboxDir,
+      input: req.user,
+      signal,
+      onLine,
+      // A repository's test run can take minutes (D27); the step's own limit is the only clock,
+      // so the CLI must not give up on a Magpipe tool call before it.
+      env: { MCP_TOOL_TIMEOUT: String(agent.limits.timeoutSec * 1000) },
+    });
     if (res.is_error) throw failureFrom(res, agent.name);
     const final = usageFrom(res.usage, res.total_cost_usd);
     // The result line is the authority on tokens and cost when it carries them.

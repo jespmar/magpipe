@@ -12,7 +12,16 @@ import * as t from '@/lib/db/schema';
 import { grantText, registryText, REGISTRY_TOOL_CAP, type RegistryTool } from '@/lib/engine/plan';
 import type { Agent } from '@/lib/schemas';
 import { connectTool, retestTool, updateTool } from '@/lib/tools';
-import { fillPendingGrant, grantAllows } from '@/lib/tools-util';
+import { execFileSync } from 'node:child_process';
+import { REPO_TOOLS } from '@/lib/repo';
+import { testConnection } from '@/lib/tools';
+import {
+  fillPendingGrant,
+  grantAllows,
+  kindLabel,
+  parseConnectJson,
+  pruneGrant,
+} from '@/lib/tools-util';
 
 describe('grantAllows', () => {
   it('allows the tools a grant names and nothing else', () => {
@@ -45,6 +54,38 @@ describe('fillPendingGrant', () => {
     expect(fillPendingGrant(grants, 'tool_c', ['x', 'y'])).toBeNull();
     expect(fillPendingGrant(grants, 'tool_missing', ['x'])).toBeNull();
     expect(fillPendingGrant(grants, 'tool_a', [])).toBeNull();
+  });
+});
+
+describe('pruneGrant', () => {
+  it('drops names a server no longer offers, and reports nothing to do otherwise', () => {
+    const grants = [
+      { toolId: 'tool_repo', scopes: ['read', 'run'] },
+      { toolId: 'tool_other', scopes: ['run'] },
+    ];
+    expect(pruneGrant(grants, 'tool_repo', ['read', 'write'])).toEqual([
+      { toolId: 'tool_repo', scopes: ['read'] },
+      { toolId: 'tool_other', scopes: ['run'] },
+    ]);
+    expect(pruneGrant(grants, 'tool_repo', ['read', 'run', 'write'])).toBeNull();
+  });
+});
+
+describe('repository connect bodies', () => {
+  it('need a path, take no auth, and label the card', () => {
+    expect(parseConnectJson('{"name":"app","transport":"repository"}')).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('A repository needs a path'),
+    });
+    expect(
+      parseConnectJson(
+        '{"name":"app","transport":"repository","path":"/x","auth":{"type":"bearer","token":"t"}}',
+      ),
+    ).toMatchObject({ ok: false, error: expect.stringContaining('A repository takes no auth') });
+    expect(
+      parseConnectJson('{"name":"app","transport":"repository","path":"/x","scripts":["rm -rf"]}'),
+    ).toMatchObject({ ok: false });
+    expect(kindLabel({ kind: 'repository', category: 'npm' })).toBe('Repository · npm');
   });
 });
 
@@ -167,4 +208,72 @@ describe('grants made before a server answers', () => {
     await retestTool(db, tool.id);
     expect(await coderGrant(tool.id)).toEqual({ toolId: tool.id, scopes: [] });
   }, 20_000);
+});
+
+describe('a bound repository', () => {
+  let db: Db;
+  let close: () => Promise<void>;
+  let dir: string;
+  beforeAll(async () => {
+    ({ db, close } = await openDb('memory://'));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'magpipe-repo-tool-'));
+    fs.writeFileSync(
+      path.join(dir, 'package.json'),
+      JSON.stringify({ scripts: { test: 'node -e "0"', lint: 'node -e "0"' } }),
+    );
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
+  }, 30_000);
+  afterAll(async () => {
+    await close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const grantOf = async (slug: string, toolId: string) => {
+    const [agent] = await db.select().from(t.agents).where(eq(t.agents.slug, slug));
+    return agent!.tools.find((g) => g.toolId === toolId);
+  };
+  const body = {
+    name: 'x',
+    transport: 'repository' as const,
+    auth: { type: 'none' as const },
+    grant: [],
+  };
+
+  it('connects with its operations as tools, and drops run when no script is left', async () => {
+    expect(await testConnection({ ...body, path: 'relative' })).toMatchObject({ ok: false });
+    expect(await testConnection({ ...body, path: dir, scripts: ['deploy'] })).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('no script named deploy'),
+    });
+
+    const { tool, probe } = await connectTool(db, {
+      name: 'App repo',
+      transport: 'repository',
+      path: dir,
+      scripts: ['test', 'lint'],
+      auth: { type: 'none' },
+      grant: ['coder'],
+    });
+    expect(probe.ok).toBe(true);
+    expect(tool).toMatchObject({
+      kind: 'repository',
+      transport: 'repository',
+      status: 'connected',
+      category: 'npm',
+      description: `Folder ${dir}`,
+      repository: { path: dir, scripts: ['test', 'lint'], timeoutSec: 600 },
+      scopes: [...REPO_TOOLS],
+    });
+    expect((await grantOf('coder', tool.id))!.scopes).toEqual([...REPO_TOOLS]);
+
+    const updated = await updateTool(db, tool.id, { scripts: [] });
+    expect(updated!.tool.scopes).not.toContain('run');
+    expect((await grantOf('coder', tool.id))!.scopes).toEqual(
+      REPO_TOOLS.filter((n) => n !== 'run'),
+    );
+
+    await expect(updateTool(db, tool.id, { command: 'npx something' })).rejects.toThrow(
+      /path, scripts and timeout/,
+    );
+  }, 30_000);
 });

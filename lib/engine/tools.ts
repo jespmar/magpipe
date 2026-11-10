@@ -12,6 +12,20 @@ import { listMemory, markRead, writeMemory } from '../memory';
 import { formatConfidence } from '../memory-util';
 import { memoryInput, type Agent, type Attachment, type RunEventKind } from '../schemas';
 import { readSecret } from '../secrets';
+import {
+  gitBranch,
+  gitCommit,
+  gitDiff,
+  gitLog,
+  gitStatus,
+  inspectRepository,
+  repoRead,
+  repoRun,
+  repoSearch,
+  repoWrite,
+  type RepoToolName,
+} from '../repo';
+import type { RepositoryConfig } from '../schemas';
 import { authHeaders } from '../tools';
 import { grantAllows } from '../tools-util';
 import { fsRead, fsWrite, shellRun } from './sandbox';
@@ -124,6 +138,161 @@ function clientTool(
 function str(input: Record<string, unknown>, key: string): string {
   const v = input[key];
   return typeof v === 'string' ? v : '';
+}
+
+function num(input: Record<string, unknown>, key: string): number | undefined {
+  const v = input[key];
+  return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+}
+
+type RepoOp = {
+  /** The wire name, `<tool slug>__<operation>`. */
+  name: string;
+  tool: ModelTool;
+  run: (input: Record<string, unknown>) => Promise<ToolOutcome>;
+};
+
+/**
+ * A bound repository's operations as step tools (D27), each named `<tool slug>__<operation>`.
+ * Every call goes through lib/repo.ts, which keeps paths inside the folder and never shells out.
+ */
+export function repositoryOps(
+  slug: string,
+  label: string,
+  config: RepositoryConfig,
+  signal: AbortSignal,
+): Map<RepoToolName, RepoOp> {
+  const at = config.path;
+  const op = (
+    name: RepoToolName,
+    description: string,
+    schema: ReturnType<typeof objectSchema>,
+    run: RepoOp['run'],
+    strict = false,
+  ): [RepoToolName, RepoOp] => [
+    name,
+    {
+      name: wireName(slug, name),
+      tool: clientTool(wireName(slug, name), `${label}: ${description}`, schema, strict),
+      run,
+    },
+  ];
+  const path = { type: 'string', description: 'Relative to the repository folder' };
+  return new Map([
+    op(
+      'read',
+      'Read a text file with line numbers, or list a folder. Use startLine and maxLines for long files.',
+      objectSchema(
+        {
+          path,
+          startLine: { type: 'integer', description: 'First line to show (1-based, optional)' },
+          maxLines: { type: 'integer', description: 'How many lines (optional, up to 2000)' },
+        },
+        ['path'],
+      ),
+      (input) =>
+        repoRead(at, str(input, 'path'), {
+          startLine: num(input, 'startLine'),
+          maxLines: num(input, 'maxLines'),
+        }),
+    ),
+    op(
+      'search',
+      'Find lines that contain some text, in tracked and new files. Answers path:line:text.',
+      objectSchema(
+        {
+          query: { type: 'string', description: 'The exact text to look for' },
+          path: { type: 'string', description: 'A folder or file to search in (optional)' },
+        },
+        ['query'],
+      ),
+      (input) => repoSearch(at, str(input, 'query'), str(input, 'path') || '.', signal),
+    ),
+    op(
+      'write',
+      'Create or replace a text file with the full contents given.',
+      objectSchema({ path, contents: { type: 'string' } }, ['path', 'contents']),
+      (input) => repoWrite(at, str(input, 'path'), str(input, 'contents')),
+      true,
+    ),
+    op(
+      'run',
+      `Run one of the package scripts the operator allowed and get its output and exit code. Allowed: ${config.scripts.join(', ') || 'none'}.`,
+      objectSchema({ script: { type: 'string', enum: config.scripts } }, ['script']),
+      (input) => repoRun(config, str(input, 'script'), { signal }),
+      true,
+    ),
+    op(
+      'git_status',
+      'The current branch and which files changed.',
+      objectSchema({}, []),
+      () => gitStatus(at, signal),
+      true,
+    ),
+    op(
+      'git_diff',
+      'The diff of the branch against a base (for example main), or of uncommitted work when no base is given.',
+      objectSchema(
+        { base: { type: 'string', description: 'Branch or commit to compare against (optional)' } },
+        [],
+      ),
+      (input) => gitDiff(at, str(input, 'base') || undefined, signal),
+    ),
+    op(
+      'git_log',
+      'Recent commits, or the commits since a base branch.',
+      objectSchema(
+        {
+          since: {
+            type: 'string',
+            description: 'Show commits after this branch or commit (optional)',
+          },
+          limit: { type: 'integer', description: 'At most this many (optional, up to 100)' },
+        },
+        [],
+      ),
+      (input) =>
+        gitLog(at, { since: str(input, 'since') || undefined, limit: num(input, 'limit') }, signal),
+    ),
+    op(
+      'git_branch',
+      'Switch to a branch, or create it from the current commit. Refused while there are uncommitted changes.',
+      objectSchema(
+        {
+          name: { type: 'string' },
+          create: { type: 'boolean', description: 'true to create the branch' },
+        },
+        ['name', 'create'],
+      ),
+      (input) => gitBranch(at, str(input, 'name'), input.create === true, signal),
+      true,
+    ),
+    op(
+      'git_commit',
+      'Commit the files named (new, changed or deleted) on the current branch. Never on the default branch; nothing is pushed.',
+      objectSchema(
+        {
+          message: { type: 'string' },
+          paths: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'The files to commit, relative to the repository folder',
+          },
+        },
+        ['message', 'paths'],
+      ),
+      (input) =>
+        gitCommit(
+          at,
+          str(input, 'message'),
+          Array.isArray(input.paths)
+            ? input.paths.filter((p): p is string => typeof p === 'string')
+            : [],
+          signal,
+        ),
+      true,
+    ),
+  ]);
 }
 
 /** Builds the tool list and dispatch table for one step. */
@@ -293,6 +462,20 @@ export async function setupTools(setup: ToolSetup): Promise<ToolRuntime> {
     await Promise.all(connections.map((c) => c.close().catch(() => {})));
   };
 
+  // The tool card's 24-hour call count; best effort, never in the way of the call.
+  const countCall = (tool: (typeof rows)[number]) => {
+    tool.stats = {
+      ...tool.stats,
+      calls24h: tool.stats.calls24h + 1,
+      lastCallAt: new Date().toISOString(),
+    };
+    void db
+      .update(t.tools)
+      .set({ stats: tool.stats })
+      .where(eq(t.tools.id, tool.id))
+      .catch(() => {});
+  };
+
   try {
     for (const tool of rows) {
       const grant = grants.find((g) => g.toolId === tool.id)!;
@@ -352,6 +535,31 @@ export async function setupTools(setup: ToolSetup): Promise<ToolRuntime> {
         continue;
       }
 
+      if (tool.kind === 'repository') {
+        // A folder that is gone loses the step these tools, not the step itself (D19).
+        const found = tool.repository ? await inspectRepository(tool.repository.path) : null;
+        if (!tool.repository || !found?.ok) {
+          const reason = found && !found.ok ? found.error : 'no folder is set';
+          await setup.onToolUnavailable(
+            `${tool.name} is unreachable (${reason}); the step runs without its tools.`,
+          );
+          continue;
+        }
+        const ops = repositoryOps(tool.slug, tool.name, tool.repository, setup.signal);
+        for (const [opName, op] of ops) {
+          if (!allowed(opName) || (opName === 'run' && tool.repository.scripts.length === 0)) {
+            continue;
+          }
+          tools.push(op.tool);
+          labels.set(op.name, `${tool.name} · ${opName}`);
+          dispatch.set(op.name, async (input) => {
+            countCall(tool);
+            return op.run(input);
+          });
+        }
+        continue;
+      }
+
       // MCP server: connect once per step, list its tools, expose the granted ones.
       const token = tool.auth.secretRef ? await readSecret(db, tool.auth.secretRef) : null;
       const target: McpTarget | null =
@@ -386,17 +594,7 @@ export async function setupTools(setup: ToolSetup): Promise<ToolRuntime> {
         labels.set(name, `${tool.name} · ${def.name}`);
         dispatch.set(name, async (input) => {
           const res = await conn.callTool(def.name, input);
-          void db
-            .update(t.tools)
-            .set({
-              stats: {
-                ...tool.stats,
-                calls24h: tool.stats.calls24h + 1,
-                lastCallAt: new Date().toISOString(),
-              },
-            })
-            .where(eq(t.tools.id, tool.id))
-            .catch(() => {});
+          countCall(tool);
           const text = res.content
             .map((c) => (c.type === 'text' && typeof c.text === 'string' ? c.text : `[${c.type}]`))
             .join('\n');

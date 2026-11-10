@@ -78,6 +78,11 @@ engine and no sign-in on desktop.
   from the plan (`resumeInterrupted`).
 - New public routes must be added to the matcher in `middleware.ts`; everything else is behind
   the desktop token (desktop) or a session (hosted).
+- **Repositories stay typed.** Agents reach a bound repository only through the named operations
+  in `lib/repo.ts` (D27): paths stay inside the folder, `.git` and env files are refused, `run`
+  takes a script the operator allowed, commits name their files and never land on the default
+  branch, and nothing pushes. A new capability is a new named operation with its guard and a
+  test, never a shell or a free-form command.
 - **Home stays on Home.** The prompt never navigates: a run started there is selected in place
   (`HomeScreen`), the panel shows it and the next message follows it up (`parentRunId`;
   `loadThread` puts the thread into every prompt). Closing a card sets `dismissedAt`; the Runs

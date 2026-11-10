@@ -176,19 +176,30 @@ export const toolStats = z.object({
   lastError: z.string().optional(),
 });
 
+/** A bound repository (D27): the folder agents work in and the package scripts they may run. */
+export const repositoryConfig = z.object({
+  /** Absolute path of a folder inside a git work tree. */
+  path: z.string().min(1),
+  scripts: z.array(z.string().regex(/^[A-Za-z0-9][\w:.-]{0,63}$/, 'Not a script name')).max(20),
+  /** How long one `run` may take before it is stopped. */
+  timeoutSec: z.number().int().min(10).max(3600),
+});
+
 export const tool = z.object({
   id: toolId,
   slug,
   name: z.string().min(1),
   /** UI-only: two-letter tile on the ToolCard, e.g. `VN`. */
   glyph: z.string().min(1).max(3),
-  kind: z.enum(['mcp', 'builtin']),
+  kind: z.enum(['mcp', 'builtin', 'repository']),
   /** UI-only: the part after "MCP ·", e.g. `ERP`. */
   category: z.string(),
   description: z.string(),
-  transport: z.enum(['http', 'stdio', 'builtin']),
+  transport: z.enum(['http', 'stdio', 'builtin', 'repository']),
   url: z.url().nullable(),
   command: z.string().nullable(),
+  /** Set for a bound repository, null for every other tool. */
+  repository: repositoryConfig.nullable(),
   auth: toolAuth,
   status: toolStatus,
   /** Tool names discovered from the server (or declared for built-ins). */
@@ -277,9 +288,13 @@ export const toolAuthInput = z.object({
 
 const toolFields = z.object({
   name: z.string().trim().min(1, 'Give the tool a name').max(64),
-  transport: z.enum(['http', 'stdio']),
+  transport: z.enum(['http', 'stdio', 'repository']),
   url: z.url('The url must be a full http(s) address').optional(),
   command: z.string().trim().min(1).optional(),
+  /** A repository: the folder, the package scripts agents may run, and the run timeout. */
+  path: z.string().trim().min(1).optional(),
+  scripts: repositoryConfig.shape.scripts.optional(),
+  timeoutSec: repositoryConfig.shape.timeoutSec.optional(),
   auth: toolAuthInput,
   /** Agent slugs that may use every tool the server exposes. */
   grant: z.array(slug),
@@ -289,9 +304,23 @@ const toolFields = z.object({
 });
 
 const needsTarget = (
-  v: { transport?: 'http' | 'stdio'; url?: string; command?: string },
+  v: {
+    transport?: 'http' | 'stdio' | 'repository';
+    url?: string;
+    command?: string;
+    path?: string;
+    auth?: { type?: string };
+  },
   ctx: z.RefinementCtx,
 ) => {
+  if (v.transport === 'repository') {
+    if (!v.path) {
+      ctx.addIssue({ code: 'custom', path: ['path'], message: 'A repository needs a path' });
+    }
+    if (v.auth?.type && v.auth.type !== 'none') {
+      ctx.addIssue({ code: 'custom', path: ['auth'], message: 'A repository takes no auth' });
+    }
+  }
   if (v.transport === 'http' && !v.url) {
     ctx.addIssue({ code: 'custom', path: ['url'], message: 'An http server needs a url' });
   }
@@ -377,6 +406,7 @@ export type Usage = z.infer<typeof usage>;
 export type ToolAuthInput = z.infer<typeof toolAuthInput>;
 export type ToolConnectInput = z.infer<typeof toolConnectInput>;
 export type ToolPatch = z.infer<typeof toolPatch>;
+export type RepositoryConfig = z.infer<typeof repositoryConfig>;
 
 /** The editable fields of an agent, without defaults, so a PATCH never resets what it omits. */
 const agentFields = z.object({

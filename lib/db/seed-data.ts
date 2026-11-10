@@ -550,6 +550,7 @@ export function buildSeed(now = new Date()): SeedData {
     ...tool,
     url: url ?? null,
     command: null,
+    repository: null,
     id: toolIdOf(tool.slug),
     grantedAgents: (Object.keys(grants) as AgentSlug[]).map(agentIdOf),
     stats: { calls24h, lastCallAt: calls24h > 0 ? at(10 * MIN).toISOString() : null },
