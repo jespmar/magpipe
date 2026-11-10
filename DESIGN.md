@@ -332,7 +332,7 @@ Body Small left, mono version · region right.
 - **Orchestrator orb:** the disc inside two hairline rings (one cyan at 30 %) and one dashed cyan
   orbit that turns once every 24 seconds while agents are flying, and only for people who have
   not asked for less motion. The screen's one memorable detail; it does not glow and never loops
-  at rest.
+  at rest. At rest the orb, its line and the prompt are the whole of Home (D21).
 - **The flight log line:** `time · agent · text` in mono, the orchestrator's lines in cyan,
   errors in red.
 

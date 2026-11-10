@@ -8,7 +8,9 @@ test.describe('reduced motion', () => {
 
   test('nothing animates on Home when the system asks for less motion', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByRole('heading', { level: 1, name: 'Birds on the wire' })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { level: 1, name: 'No agents flying right now' }),
+    ).toBeVisible();
     const running = await page.evaluate(
       () => document.getAnimations().filter((a) => a.playState === 'running').length,
     );
@@ -21,7 +23,9 @@ test.describe('motion allowed', () => {
 
   test('the orb rests while nothing is flying', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByRole('heading', { level: 1, name: 'Birds on the wire' })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { level: 1, name: 'No agents flying right now' }),
+    ).toBeVisible();
     await expect(page.getByRole('region', { name: 'The nest' })).toContainText(
       'No agents flying right now',
     );

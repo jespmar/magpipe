@@ -9,6 +9,7 @@ import { FilterControl } from '@/components/ui/FilterControl';
 import { PageHead } from '@/components/ui/PageHead';
 import { SearchInput } from '@/components/ui/SearchInput';
 import { RunActions } from './RunActions';
+import { RunEventLog } from './RunEventLog';
 import { RunFlightPath } from './RunFlightPath';
 import { RunTable } from './RunTable';
 import { StatStrip } from './StatStrip';
@@ -195,6 +196,15 @@ function SelectedRun({
         emptyMessage={
           LIVE.has(run.status) ? 'The plan is being drawn up.' : 'No steps were planned.'
         }
+      />
+      <RunEventLog
+        key={run.id}
+        run={run}
+        initialEvents={[]}
+        agentNames={Object.fromEntries(agents.map((a) => [a.id, a.name]))}
+        replay
+        frame="plain"
+        className="border-t border-hairline-soft pt-4"
       />
     </section>
   );

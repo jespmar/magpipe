@@ -18,9 +18,8 @@ type Props = {
 };
 
 /**
- * The flight log (spec §3.2 zone 3): the latest run's trail, `time · agent · text`, streaming
- * while the run is live. Mounted at every width (it also drives the screen's live refresh) and
- * shown only where there is room for it, from 1600 px.
+ * The flight log (spec §3.2 zone 3, D21): the live run's trail, `time · agent · text`, streaming
+ * as it happens. It also drives Home's live refresh, so the cards and counters keep up.
  */
 export function FlightLog({ latest, agentNames, className }: Props) {
   const router = useRouter();

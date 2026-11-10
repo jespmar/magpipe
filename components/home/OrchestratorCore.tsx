@@ -11,22 +11,25 @@ type Props = {
   className?: string;
 };
 
-/** The nest (spec §3.2 zone 2): the orb, what Magpipe is doing, and today's three counters. */
+/**
+ * The nest (spec §3.2 zone 2): the orb, what Magpipe is doing (the screen's h1), and today's
+ * three counters. At rest this is Home.
+ */
 export function OrchestratorCore({ stats, hasRuns, fresh, className }: Props) {
   const n = stats.activeAgents;
   return (
     <section
       aria-label="The nest"
       className={clsx(
-        'flex flex-col items-center gap-6 border-y border-hairline-soft px-4 py-8 text-center wide:justify-center wide:border-x wide:border-y-0 wide:px-8',
+        'flex flex-col items-center gap-6 px-4 text-center wide:justify-center wide:px-8',
         className,
       )}
     >
       <OrchestratorOrb live={n > 0} />
-      <div className="flex flex-col items-center gap-2">
-        <h2 id="nest-title" className="text-display-md text-ink-strong">
+      <div className="flex flex-col items-center gap-3">
+        <h1 id="nest-title" className="page-title">
           {n > 0 ? `Magpipe is flying ${plural(n, 'agent')}` : 'No agents flying right now'}
-        </h2>
+        </h1>
         <p className="max-w-[31rem] text-body-sm text-body">
           Sends each task out to the flock, collects the shiny bits they bring back and keeps the
           nest (shared memory) tidy.
@@ -52,7 +55,7 @@ function Counter({ value, label }: { value: string; label: string }) {
   return (
     <div className="flex flex-col-reverse items-center gap-0.5">
       <dt className="text-caption text-mute">{label}</dt>
-      <dd className="m-0 font-mono text-display-sm font-medium text-ink-strong tabular-nums wide:text-display-md">
+      <dd className="m-0 font-mono text-display-sm font-medium text-ink-strong tabular-nums">
         {value}
       </dd>
     </div>

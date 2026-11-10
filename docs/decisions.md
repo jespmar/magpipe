@@ -397,3 +397,21 @@ once per server start.
   shows live status or does not run), so `e2e/motion.spec.ts` now asserts a still orb on a
   quiet workspace in both motion settings; D18's "at least one animation without reduced
   motion" no longer holds.
+
+## D21 · Home is what is happening now
+
+- **At rest, Home is the nest and the prompt.** The orb, the line that is the screen's h1 ("No
+  agents flying right now" / "Magpipe is flying 2 agents"), today's three counters and the
+  prompt field, centred at a reading width (half the row from 1600 px). Nothing else: the roster
+  is the Agents screen, finished trails are the Runs screen, so spec §3.2's three zones no
+  longer show on a quiet workspace.
+- **While a flight is live** the screen widens into three columns: the birds that are flying
+  (only those; the roster stays on Agents), the nest, and the live trail (`FlightLog`, which also
+  drives the refresh of cards and counters). The prompt stays underneath.
+- **The trail of a finished flight lives on Runs.** The selected flight's card shows its path and,
+  under it, its log, replayed from the events stream (`RunEventLog` with `replay`, which opens the
+  SSE endpoint once; the server replays the trail and closes with `end`). The run's own page
+  keeps the full-height log.
+- **Density.** Cards are 16 px inside with 36 px avatars and body-size names; the stat strip,
+  detail panels and Settings sections follow. The prompt is one field with its toolbar beneath,
+  not a card around a box.
