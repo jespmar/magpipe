@@ -511,6 +511,98 @@ describe('run engine with a granted MCP server', () => {
   }, 20_000);
 });
 
+describe('run engine with a bound repository', () => {
+  let db: Db;
+  let close: () => Promise<void>;
+  beforeAll(async () => {
+    ({ db, close } = await openDb('memory://'));
+  }, 30_000);
+  afterAll(() => close());
+
+  it('runs an allowed script for an agent granted run, and offers nothing it was not granted (D27)', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const { execFileSync } = await import('node:child_process');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'magpipe-engine-repo-'));
+    fs.writeFileSync(
+      path.join(dir, 'package.json'),
+      JSON.stringify({ scripts: { test: `node -e "console.log('3 passed')"` } }),
+    );
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
+    const toolId = 'tool_app_repo';
+    await db.insert(t.tools).values({
+      id: toolId,
+      slug: 'app-repo',
+      name: 'App repo',
+      glyph: 'AR',
+      kind: 'repository',
+      category: 'npm',
+      description: `Folder ${dir}`,
+      transport: 'repository',
+      url: null,
+      command: null,
+      repository: { path: dir, scripts: ['test'], timeoutSec: 60 },
+      auth: { type: 'none' },
+      status: 'connected',
+      scopes: ['read', 'search', 'write', 'run', 'git_status'],
+      grantedAgents: ['agt_operator'],
+      stats: { calls24h: 0, lastCallAt: null },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await db
+      .update(t.agents)
+      .set({ tools: [{ toolId, scopes: ['read', 'run'] }] })
+      .where(eq(t.agents.slug, 'operator'));
+
+    const client = scripted((p) => {
+      if (isPlan(p)) {
+        expect(String(p.system)).toContain('  servers: App repo (read, run)\n');
+        return plan([
+          {
+            id: 's1',
+            agent: 'operator',
+            title: 'Run the tests',
+            instructions: '',
+            dependsOn: [],
+            optional: false,
+          },
+        ]);
+      }
+      if (isMerge(p)) return text('merged');
+      const names = (p.tools ?? []).map((tool) => (tool as { name: string }).name);
+      expect(names).toEqual(expect.arrayContaining(['app-repo__read', 'app-repo__run']));
+      expect(names).not.toContain('app-repo__write');
+      expect(names).not.toContain('app-repo__git_status');
+      const last = p.messages[p.messages.length - 1]!;
+      if (
+        Array.isArray(last.content) &&
+        last.content.some((b) => (b as { type: string }).type === 'tool_result')
+      ) {
+        const result = JSON.stringify(last.content);
+        expect(result).toContain('$ npm run test');
+        expect(result).toContain('3 passed');
+        expect(result).toContain('exit 0');
+        return text('The tests pass: 3 passed.');
+      }
+      return toolUse('app-repo__run', { script: 'test' });
+    });
+    const engine = new Engine({ client, getDb: async () => db });
+    const run = await createRun(db, { text: 'run the tests', attachments: [] });
+    engine.enqueue(run.id);
+    await engine.whenIdle();
+    expect((await getRun(db, run.id))!.status).toBe('done');
+    const events = await listEvents(db, run.id);
+    expect(events.some((e) => e.kind === 'tool_call' && e.text.startsWith('App repo · run'))).toBe(
+      true,
+    );
+    const [tool] = await db.select().from(t.tools).where(eq(t.tools.id, toolId));
+    expect(tool!.stats.calls24h).toBe(1);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }, 30_000);
+});
+
 describe('run engine with an empty grant', () => {
   let db: Db;
   let close: () => Promise<void>;

@@ -147,7 +147,7 @@ export function ToolsScreen({
     <>
       <PageHead
         title="Tools"
-        description="MCP servers and integrations the flock can use. Each tool is scoped per bird: nothing is reachable unless it is granted here."
+        description="MCP servers, repositories and integrations the flock can use. Each tool is scoped per bird: nothing is reachable unless it is granted here."
         actions={
           <>
             {/* Lives in the head so a notice never moves the columns below. */}

@@ -537,3 +537,38 @@ once per server start.
   are reduced to one line.
 - **The scripted model** picks the first agent whose entry says `servers: none`, so end-to-end
   runs still avoid the demo's servers.
+
+## D27 · A bound repository, with a runner
+
+- **Why.** Agents could not run anything: the sandbox is an empty folder with 13 read-only
+  commands, so no agent could see a test fail or pass, and the flock's Verifier had nothing to
+  run. It was the second gap in `docs/flock.md`. D6 deferred running commands to "a per-run temp
+  dir under the data folder, behind an explicit setting"; this is the explicit setting, applied
+  to the operator's own repository instead of a copy.
+- **Shape.** A third kind of tool, `repository` (kind and transport), connected from the Tools
+  screen with `{ name, transport: "repository", path, scripts, timeoutSec? }`. The probe checks
+  that the path is an absolute folder inside a git work tree and that every allowed script exists
+  in its `package.json`; the card shows the folder, the scripts and the run limit. The tools
+  table gains a nullable `repository` column (migration 0003).
+- **Nine operations, no shell** (`lib/repo.ts`, exposed per step by `repositoryOps` in
+  `lib/engine/tools.ts` as `<slug>__<operation>`): `read` (line-numbered, or a folder listing),
+  `search` (`git grep` over tracked and new files), `write`, `run` (a named script through the
+  folder's package manager, its own timeout, the process group killed on timeout or cancel, the
+  last 20 000 characters kept), `git_status`, `git_diff` (against a base, or uncommitted work with
+  new files listed), `git_log`, `git_branch` and `git_commit`. A grant ticks operations like any
+  tool's names (D25), and the planner reads them by name (D26).
+- **Guards in code, not prompts.** Paths stay inside the folder, symlinks included; `.git` is
+  refused; env files are refused for reading (`.env.example` excepted) and every `.env*` name for
+  writing and committing. `git_branch` refuses to switch while tracked files have uncommitted
+  changes. `git_commit` names its files and commits only those (`--only`), so the operator's own
+  untracked or staged work stays out, and it refuses `main`, `master` and the remote's default
+  branch. There is no push. Commands get the operator's login `PATH` and environment minus
+  Magpipe's secrets, with `CI=1`.
+- **Two smaller changes.** A probe that finds fewer tools than before drops the vanished names
+  from grants, so an agent whose repository lost `run` can still be saved in the editor. The
+  Claude Code step sets `MCP_TOOL_TIMEOUT` to the agent's own time limit, so a long test run is
+  not cut off by the CLI before the step's clock.
+- **Not yet.** Nothing stops two runs, or two steps, writing to the same repository at once
+  (gap 3). Agents work in the operator's checkout, not a worktree, which is why branch switches
+  stop at uncommitted changes. Only package scripts run; a repository without a `package.json`
+  offers every operation except `run`.

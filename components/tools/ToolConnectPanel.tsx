@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { api, ApiError } from '@/lib/client-api';
 import type { McpProbe } from '@/lib/mcp';
 import type { Tool } from '@/lib/schemas';
-import { CONNECT_EXAMPLE, parseConnectJson } from '@/lib/tools-util';
+import { CONNECT_EXAMPLE, parseConnectJson, REPOSITORY_EXAMPLE } from '@/lib/tools-util';
 
 type Props = {
   onClose: () => void;
@@ -18,7 +18,8 @@ type Props = {
 
 /**
  * The inline connect panel (spec §3.5): a JSON editor pre-filled with the example, validated as
- * you type, and one button that saves the tool with whatever the connection test found.
+ * you type, and one button that saves the tool with whatever the connection test found. The same
+ * panel binds a repository (D27), from its own example.
  */
 export function ToolConnectPanel({ onClose, onConnected, secretsReady }: Props) {
   const ids = useId();
@@ -45,11 +46,14 @@ export function ToolConnectPanel({ onClose, onConnected, secretsReady }: Props) 
     }
   }
 
-  const hint = `name · transport (http or stdio) · url or command · auth { type, token? } · grant [agent slugs]. ${
-    wantsToken && !secretsReady
-      ? 'Tokens can’t be stored until MAGPIPE_SECRET_KEY is set.'
-      : 'A token is stored encrypted and never shown again.'
-  }`;
+  const repository = parsed.ok && parsed.data.transport === 'repository';
+  const hint = repository
+    ? 'name · path (an absolute folder inside a git repository) · scripts agents may run · timeoutSec per run (600 if left out) · grant [agent slugs]. Agents never push, and never commit to the default branch.'
+    : `name · transport (http, stdio or repository) · url or command · auth { type, token? } · grant [agent slugs]. ${
+        wantsToken && !secretsReady
+          ? 'Tokens can’t be stored until MAGPIPE_SECRET_KEY is set.'
+          : 'A token is stored encrypted and never shown again.'
+      }`;
 
   return (
     <section
@@ -59,7 +63,7 @@ export function ToolConnectPanel({ onClose, onConnected, secretsReady }: Props) 
     >
       <div className="flex items-center justify-between gap-3">
         <h2 id={`${ids}-title`} className="text-display-sm text-ink-strong">
-          Connect an MCP server
+          Connect a tool
         </h2>
         <Button variant="ghost" onClick={onClose} aria-label="Close the connect panel">
           <X size={16} strokeWidth={1.75} aria-hidden />
@@ -90,6 +94,15 @@ export function ToolConnectPanel({ onClose, onConnected, secretsReady }: Props) 
           </p>
         ) : null}
         <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="mr-auto"
+            onClick={() => setText(repository ? CONNECT_EXAMPLE : REPOSITORY_EXAMPLE)}
+            disabled={busy}
+          >
+            {repository ? 'Use the server example' : 'Use the repository example'}
+          </Button>
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
             Cancel
           </Button>

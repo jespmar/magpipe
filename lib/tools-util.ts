@@ -24,6 +24,27 @@ export function grantAllows(grant: Pick<ToolGrant, 'scopes'>, name: string): boo
  * finds them, each such grant gets every tool found, as granting a server with known tools does.
  * Returns the agent's new grants, or null when it had nothing waiting for this tool.
  */
+/**
+ * A server that answers with fewer tools than before has dropped some (a repository whose
+ * scripts were cleared loses `run`). Grants stop naming them, so the editor can save the agent
+ * again. Returns the agent's new grants, or null when nothing named a dropped tool.
+ */
+export function pruneGrant(
+  grants: readonly ToolGrant[],
+  toolId: string,
+  offered: readonly string[],
+): ToolGrant[] | null {
+  let changed = false;
+  const next = grants.map((g) => {
+    if (g.toolId !== toolId) return g;
+    const kept = g.scopes.filter((s) => offered.includes(s));
+    if (kept.length === g.scopes.length) return g;
+    changed = true;
+    return { ...g, scopes: kept };
+  });
+  return changed ? next : null;
+}
+
 export function fillPendingGrant(
   grants: readonly ToolGrant[],
   toolId: string,
@@ -54,9 +75,24 @@ export function glyphOf(name: string): string {
 }
 
 /** "MCP · ERP" / "Built-in · Files". */
+const KIND_LABEL: Record<Tool['kind'], string> = {
+  mcp: 'MCP',
+  builtin: 'Built-in',
+  repository: 'Repository',
+};
+
 export function kindLabel(tool: Pick<Tool, 'kind' | 'category'>): string {
-  return `${tool.kind === 'mcp' ? 'MCP' : 'Built-in'} · ${tool.category}`;
+  return `${KIND_LABEL[tool.kind]} · ${tool.category}`;
 }
+
+/** The Connect panel's repository example (D27): a folder, the scripts agents may run. */
+export const REPOSITORY_EXAMPLE = `{
+  "name": "app",
+  "transport": "repository",
+  "path": "/Users/you/code/app",
+  "scripts": ["typecheck", "lint", "test"],
+  "grant": []
+}`;
 
 export const TOOL_STATUS: Record<
   ToolStatus,

@@ -1,4 +1,8 @@
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
 import http from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
 import { expect, test } from '@playwright/test';
 
 // The Tools screen (spec §3.5, PR 3): connect a real local MCP server, see it tested and listed,
@@ -46,7 +50,7 @@ test('connect a local MCP server, test it, grant it, remove it', async ({ page }
 
   // The panel opens from the primary action, validates as you type, and refuses bad JSON.
   await page.getByRole('button', { name: 'Connect tool' }).click();
-  const panel = page.getByRole('region', { name: 'Connect an MCP server' });
+  const panel = page.getByRole('region', { name: 'Connect a tool' });
   await expect(panel).toBeVisible();
   const editor = panel.getByLabel('Connection JSON');
   await editor.fill('{"name": "x", "transport": "http"}');
@@ -117,7 +121,7 @@ test('connect a local MCP server, test it, grant it, remove it', async ({ page }
 test('a server that cannot be reached is saved with an honest error', async ({ page }) => {
   const name = `Ghost ${Date.now().toString(36)}`;
   await page.goto('/tools?connect=1');
-  const panel = page.getByRole('region', { name: 'Connect an MCP server' });
+  const panel = page.getByRole('region', { name: 'Connect a tool' });
   await expect(panel).toBeVisible();
   await panel
     .getByLabel('Connection JSON')
@@ -137,4 +141,53 @@ test('a server that cannot be reached is saved with an honest error', async ({ p
   await card.getByRole('button', { name: 'Remove', exact: true }).click();
   await card.getByRole('button', { name: 'Remove', exact: true }).last().click();
   await expect(card).toHaveCount(0);
+});
+
+test('a repository is bound from its own example, with the scripts agents may run (D27)', async ({
+  page,
+}) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'magpipe-e2e-repo-'));
+  fs.writeFileSync(
+    path.join(dir, 'package.json'),
+    JSON.stringify({ scripts: { test: 'node -e "0"', lint: 'node -e "0"' } }),
+  );
+  execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
+  const name = `App ${Date.now().toString(36)}`;
+
+  await page.goto('/tools?connect=1');
+  const panel = page.getByRole('region', { name: 'Connect a tool' });
+  await panel.getByRole('button', { name: 'Use the repository example' }).click();
+  const editor = panel.getByLabel('Connection JSON');
+  await expect(editor).toHaveValue(/"transport": "repository"/);
+  await expect(panel.getByText(/an absolute folder inside a git repository/)).toBeVisible();
+
+  await editor.fill(
+    JSON.stringify({ name, transport: 'repository', path: dir, scripts: ['test', 'lint'] }),
+  );
+  await panel.getByRole('button', { name: 'Connect and test' }).click();
+  await expect(
+    page.getByRole('status').filter({ hasText: `${name} connected · 9 tools found.` }),
+  ).toBeVisible({ timeout: 15_000 });
+
+  const card = page.getByRole('article', { name });
+  await expect(card.getByText('Repository · npm')).toBeVisible();
+  await expect(card.getByText(`Folder ${dir}`)).toBeVisible();
+  await expect(card.getByText('scripts: test, lint · stops a run after 600 s')).toBeVisible();
+  await expect(card.getByRole('list', { name: 'Tool names' }).getByRole('listitem')).toHaveText([
+    'read',
+    'search',
+    'write',
+    'run',
+    'git_status',
+    'git_diff',
+    'git_log',
+    'git_branch',
+    'git_commit',
+  ]);
+
+  await card.getByRole('button', { name: 'Manage' }).click();
+  await card.getByRole('button', { name: 'Remove', exact: true }).click();
+  await card.getByRole('button', { name: 'Remove', exact: true }).last().click();
+  await expect(card).toHaveCount(0, { timeout: 15_000 });
+  fs.rmSync(dir, { recursive: true, force: true });
 });

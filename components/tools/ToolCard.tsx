@@ -79,7 +79,14 @@ export function ToolCard({
         <StatusPill variant={status.variant} label={status.label} />
       </div>
 
-      <p className="text-body-sm text-body">{tool.description}</p>
+      <p className="text-body-sm [overflow-wrap:anywhere] text-body">{tool.description}</p>
+      {tool.repository ? (
+        <p className="font-mono text-caption text-mute">
+          {tool.repository.scripts.length > 0
+            ? `scripts: ${tool.repository.scripts.join(', ')} · stops a run after ${tool.repository.timeoutSec} s`
+            : 'scripts: none allowed'}
+        </p>
+      ) : null}
       {tool.status !== 'connected' && tool.stats.lastError ? (
         <p className={clsx('text-caption', tool.status === 'error' ? 'text-danger' : 'text-warn')}>
           {tool.stats.lastError}

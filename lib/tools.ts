@@ -5,9 +5,10 @@ import * as t from './db/schema';
 import { slugify } from './agents-util';
 import { newId } from './ids';
 import { probeMcp, type McpProbe, type McpTarget } from './mcp';
-import type { Tool, ToolAuthInput, ToolConnectInput, ToolPatch } from './schemas';
+import { inspectRepository, repoToolNames } from './repo';
+import type { RepositoryConfig, Tool, ToolAuthInput, ToolConnectInput, ToolPatch } from './schemas';
 import { deleteSecret, readSecret, storeSecret } from './secrets';
-import { fillPendingGrant, glyphOf } from './tools-util';
+import { fillPendingGrant, glyphOf, pruneGrant } from './tools-util';
 
 /** A request that is well-formed but refers to things that do not exist or are not allowed. */
 export class ToolValidationError extends Error {
@@ -60,8 +61,45 @@ function targetFor(
   return null;
 }
 
+/** How long one script run may take when the operator does not say (D27). */
+export const DEFAULT_RUN_TIMEOUT_SEC = 600;
+
+/** The repository part of a connect body, with defaults filled in. */
+function repositoryFrom(
+  input: Pick<ToolConnectInput, 'path' | 'scripts' | 'timeoutSec'>,
+): RepositoryConfig {
+  return {
+    path: input.path ?? '',
+    scripts: Array.from(new Set(input.scripts ?? [])),
+    timeoutSec: input.timeoutSec ?? DEFAULT_RUN_TIMEOUT_SEC,
+  };
+}
+
+/**
+ * A repository answers a probe when its folder can be bound and every allowed script exists in
+ * its package.json. Its "tools" are the operations it offers, with the branch as the version.
+ */
+async function probeRepository(config: RepositoryConfig): Promise<McpProbe> {
+  const found = await inspectRepository(config.path);
+  if (!found.ok) return { ok: false, status: 'error', error: found.error };
+  const missing = config.scripts.filter((s) => !found.scripts.includes(s));
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      status: 'error',
+      error: `package.json has no script named ${missing.join(', ')}. It has ${found.scripts.join(', ') || 'none'}.`,
+    };
+  }
+  return {
+    ok: true,
+    server: { name: found.packageManager, version: found.branch ?? 'detached' },
+    tools: repoToolNames(config).map((name) => ({ name })),
+  };
+}
+
 /** Tests a connection described by the Connect panel's JSON, without saving anything. */
 export async function testConnection(input: ToolConnectInput): Promise<McpProbe> {
+  if (input.transport === 'repository') return probeRepository(repositoryFrom(input));
   const target = targetFor(
     {
       transport: input.transport,
@@ -76,6 +114,10 @@ export async function testConnection(input: ToolConnectInput): Promise<McpProbe>
 }
 
 async function probeStored(db: Db, tool: Tool): Promise<McpProbe> {
+  if (tool.transport === 'repository') {
+    if (!tool.repository) return { ok: false, status: 'error', error: 'No folder is set' };
+    return probeRepository(tool.repository);
+  }
   if (tool.transport === 'builtin')
     return { ok: true, server: null, tools: tool.scopes.map((name) => ({ name })) };
   const token = tool.auth.secretRef ? await readSecret(db, tool.auth.secretRef) : null;
@@ -113,18 +155,23 @@ async function agentIdsForSlugs(db: Db, slugs: string[]): Promise<string[]> {
 }
 
 /**
- * The first probe that finds a server's tools fills the grants made while they were unknown
- * (D25). Grants made after that already name their tools and are left as they are.
+ * Keeps grants in step with what a probe found. The first probe that finds a server's tools
+ * fills the grants made while they were unknown (D25); a later one that finds fewer drops the
+ * names that are gone (D27). Grants are otherwise left as the operator set them.
  */
 async function fillPendingGrants(
   db: Db,
   before: Pick<Tool, 'scopes'>,
-  tool: Pick<Tool, 'id' | 'scopes'>,
+  tool: Pick<Tool, 'id' | 'scopes' | 'status'>,
 ): Promise<void> {
-  if (before.scopes.length > 0 || tool.scopes.length === 0) return;
+  const first = before.scopes.length === 0 && tool.scopes.length > 0;
+  const fewer = tool.status === 'connected' && before.scopes.some((s) => !tool.scopes.includes(s));
+  if (!first && !fewer) return;
   const agents = await db.select({ id: t.agents.id, tools: t.agents.tools }).from(t.agents);
   for (const agent of agents) {
-    const next = fillPendingGrant(agent.tools, tool.id, tool.scopes);
+    const next = first
+      ? fillPendingGrant(agent.tools, tool.id, tool.scopes)
+      : pruneGrant(agent.tools, tool.id, tool.scopes);
     if (!next) continue;
     await db
       .update(t.agents)
@@ -187,22 +234,29 @@ export async function connectTool(
   input: ToolConnectInput,
 ): Promise<{ tool: Tool; probe: McpProbe }> {
   const agentIds = await agentIdsForSlugs(db, input.grant);
-  const auth = await authFromInput(db, input.auth);
+  const repo = input.transport === 'repository';
+  const auth = repo ? { type: 'none' as const } : await authFromInput(db, input.auth);
   const now = new Date();
   const host = input.url ? new URL(input.url).host : null;
+  const repository = repo ? repositoryFrom(input) : null;
   const base: Tool = {
     id: newId('tool'),
     slug: await uniqueSlug(db, slugify(input.name)),
     name: input.name,
     glyph: (input.glyph ?? glyphOf(input.name)).toUpperCase(),
-    kind: 'mcp',
-    category: input.category ?? 'Server',
+    kind: repo ? 'repository' : 'mcp',
+    category: input.category ?? (repo ? 'Folder' : 'Server'),
     description:
       input.description ??
-      (input.transport === 'http' ? `MCP server at ${host}` : `Local MCP server: ${input.command}`),
+      (repo
+        ? `Folder ${repository!.path}`
+        : input.transport === 'http'
+          ? `MCP server at ${host}`
+          : `Local MCP server: ${input.command}`),
     transport: input.transport,
-    url: input.url ?? null,
-    command: input.command ?? null,
+    url: repo ? null : (input.url ?? null),
+    command: repo ? null : (input.command ?? null),
+    repository,
     auth,
     status: 'error',
     scopes: [],
@@ -243,13 +297,36 @@ export async function updateTool(
   if (current.kind === 'builtin' && (patch.url || patch.command || patch.auth || patch.transport)) {
     throw new ToolValidationError('Built-in tools have no connection to edit');
   }
+  const repo = current.kind === 'repository';
+  if (
+    repo &&
+    (patch.url ||
+      patch.command ||
+      patch.auth ||
+      (patch.transport && patch.transport !== 'repository'))
+  ) {
+    throw new ToolValidationError('A repository is changed through its path, scripts and timeout');
+  }
+  if (!repo && (patch.path || patch.scripts || patch.timeoutSec)) {
+    throw new ToolValidationError('Only a repository has a path, scripts and a timeout');
+  }
   const agentIds = patch.grant ? await agentIdsForSlugs(db, patch.grant) : current.grantedAgents;
   const auth = patch.auth ? await authFromInput(db, patch.auth, current.auth) : current.auth;
+  const repository =
+    repo && current.repository
+      ? {
+          path: patch.path ?? current.repository.path,
+          scripts: patch.scripts ? Array.from(new Set(patch.scripts)) : current.repository.scripts,
+          timeoutSec: patch.timeoutSec ?? current.repository.timeoutSec,
+        }
+      : current.repository;
   const reconnect =
     patch.auth !== undefined ||
     patch.url !== undefined ||
     patch.command !== undefined ||
-    patch.transport !== undefined;
+    patch.transport !== undefined ||
+    patch.path !== undefined ||
+    patch.scripts !== undefined;
 
   let tool: Tool = {
     ...current,
@@ -264,6 +341,7 @@ export async function updateTool(
     transport: patch.transport ?? current.transport,
     url: patch.url !== undefined ? patch.url : current.url,
     command: patch.command !== undefined ? patch.command : current.command,
+    repository,
     auth,
     grantedAgents: agentIds,
     updatedAt: new Date(),
