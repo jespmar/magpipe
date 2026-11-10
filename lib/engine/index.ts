@@ -41,15 +41,15 @@ export type EngineOptions = {
 };
 
 /**
- * Which backend a production run uses (D22): the scripted stub in development and tests, Claude
- * Code when `magpipe.env` says so, the Messages API otherwise.
+ * Which backend a production run uses (D22): the scripted stub in development and tests, the
+ * Messages API when `magpipe.env` asks for it, the Claude Code on this machine otherwise.
  */
 function selectBackend(): RunBackend {
   if (env.MAGPIPE_MODEL_STUB === 'scripted' && process.env.NODE_ENV !== 'production') {
     return apiBackend(scriptedModelClient());
   }
-  if (env.MAGPIPE_MODEL_BACKEND === 'claude-code') return claudeCodeBackend();
-  return apiBackend(anthropicModelClient());
+  if (env.MAGPIPE_MODEL_BACKEND === 'api') return apiBackend(anthropicModelClient());
+  return claudeCodeBackend();
 }
 
 export class Engine {

@@ -31,7 +31,7 @@ export type ClaudeCli = {
 export const CLI_MIN_VERSION = '2.1.0';
 
 export const CLI_MISSING_MESSAGE =
-  'Claude Code was not found on this machine. Install it, or set MAGPIPE_CLAUDE_PATH in magpipe.env (File → Open Config File) to the claude command, then restart Magpipe.';
+  'Claude Code was not found on this machine. Install it, or set MAGPIPE_CLAUDE_PATH in magpipe.env (File → Open Config File) to the claude command; to use the API instead, set MAGPIPE_MODEL_BACKEND=api and ANTHROPIC_API_KEY. Then restart Magpipe.';
 export const CLI_LOGIN_MESSAGE =
   'Claude Code is not signed in. Run `claude` once in Terminal, sign in, then try again.';
 
@@ -145,9 +145,9 @@ export type BackendInfo = {
   problem?: string;
 };
 
-/** The facts the Settings screen shows about how runs reach Claude. */
+/** The facts the Settings screen shows about how runs reach Claude. Claude Code is the default. */
 export async function describeModelBackend(): Promise<BackendInfo> {
-  if (env.MAGPIPE_MODEL_BACKEND !== 'claude-code') return { backend: 'api', cli: null };
+  if (env.MAGPIPE_MODEL_BACKEND === 'api') return { backend: 'api', cli: null };
   const cli = await findClaudeCli();
   if (!cli) return { backend: 'claude-code', cli, problem: CLI_MISSING_MESSAGE };
   if (cli.version && olderThan(cli.version, CLI_MIN_VERSION)) {
