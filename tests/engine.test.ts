@@ -511,6 +511,140 @@ describe('run engine with a granted MCP server', () => {
   }, 20_000);
 });
 
+describe('run engine with one writer per work tree', () => {
+  let db: Db;
+  let close: () => Promise<void>;
+  let dir: string;
+  beforeAll(async () => {
+    ({ db, close } = await openDb('memory://'));
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const { execFileSync } = await import('node:child_process');
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'magpipe-engine-writers-'));
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
+    await db.insert(t.tools).values({
+      id: 'tool_writers_repo',
+      slug: 'app',
+      name: 'App',
+      glyph: 'AP',
+      kind: 'repository',
+      category: 'npm',
+      description: `Folder ${dir}`,
+      transport: 'repository',
+      url: null,
+      command: null,
+      repository: { path: dir, scripts: [], timeoutSec: 60 },
+      auth: { type: 'none' },
+      status: 'connected',
+      scopes: ['read', 'write'],
+      grantedAgents: ['agt_coder', 'agt_researcher'],
+      stats: { calls24h: 0, lastCallAt: null },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await db
+      .update(t.agents)
+      .set({ tools: [{ toolId: 'tool_writers_repo', scopes: ['read', 'write'] }] })
+      .where(eq(t.agents.slug, 'coder'));
+    await db
+      .update(t.agents)
+      .set({ tools: [{ toolId: 'tool_writers_repo', scopes: ['read'] }] })
+      .where(eq(t.agents.slug, 'researcher'));
+  }, 30_000);
+  afterAll(async () => {
+    await close();
+    (await import('node:fs')).rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** A model that holds every step for a moment and records how many were in flight. */
+  function tracking(steps: (agent: string, i: number) => { id: string; agent: string }[]) {
+    const now = { coder: 0, researcher: 0, all: 0 };
+    const most = { coder: 0, researcher: 0, all: 0, side: 0 };
+    const client = scripted(async (p) => {
+      if (isPlan(p)) {
+        return plan(
+          steps('', 0).map((st) => ({
+            ...st,
+            title: `Step ${st.id}`,
+            instructions: '',
+            dependsOn: [],
+            optional: false,
+          })),
+        );
+      }
+      if (isMerge(p)) return text('merged');
+      const who = String(p.system).includes('You are Coder') ? 'coder' : 'researcher';
+      now[who] += 1;
+      now.all += 1;
+      most[who] = Math.max(most[who], now[who]);
+      most.all = Math.max(most.all, now.all);
+      if (now.coder > 0 && now.researcher > 0) most.side += 1;
+      await new Promise((r) => setTimeout(r, 150));
+      now[who] -= 1;
+      now.all -= 1;
+      return text('done');
+    });
+    return { client, most };
+  }
+
+  it('never runs two writers at once, while a reader works beside one (D28)', async () => {
+    const { client, most } = tracking(() => [
+      { id: 'c1', agent: 'coder' },
+      { id: 'c2', agent: 'coder' },
+      { id: 'r1', agent: 'researcher' },
+    ]);
+    const engine = new Engine({ client, getDb: async () => db });
+    const run = await createRun(db, { text: 'two changes and a question', attachments: [] });
+    engine.enqueue(run.id);
+    await engine.whenIdle();
+    const after = (await getRun(db, run.id))!;
+    expect(after.status).toBe('done');
+    expect(after.plan.filter((st) => st.id !== 'merge').map((st) => st.status)).toEqual([
+      'done',
+      'done',
+      'done',
+    ]);
+    expect(most.coder).toBe(1);
+    expect(most.side).toBeGreaterThan(0); // the reader ran beside a writer
+  }, 20_000);
+
+  it('runs at most three steps of a run at once', async () => {
+    const { client, most } = tracking(() =>
+      ['a', 'b', 'c', 'd', 'e'].map((id) => ({ id, agent: 'researcher' })),
+    );
+    const engine = new Engine({ client, getDb: async () => db });
+    const run = await createRun(db, { text: 'five questions', attachments: [] });
+    engine.enqueue(run.id);
+    await engine.whenIdle();
+    expect((await getRun(db, run.id))!.status).toBe('done');
+    expect(most.all).toBe(3);
+  }, 20_000);
+
+  it('makes a second run wait while the first changes the same work tree, and says so', async () => {
+    const { client, most } = tracking(() => [{ id: 'c1', agent: 'coder' }]);
+    const engine = new Engine({ client, getDb: async () => db });
+    const first = await createRun(db, { text: 'first change', attachments: [] });
+    const second = await createRun(db, { text: 'second change', attachments: [] });
+    engine.enqueue(first.id);
+    engine.enqueue(second.id);
+    await engine.whenIdle();
+    expect((await getRun(db, first.id))!.status).toBe('done');
+    expect((await getRun(db, second.id))!.status).toBe('done');
+    expect(most.coder).toBe(1);
+    const waits = [
+      ...(await listEvents(db, first.id)),
+      ...(await listEvents(db, second.id)),
+    ].filter((e) => e.text.startsWith('Waiting to change App:'));
+    expect(waits).toHaveLength(1);
+    expect(waits[0]!.text).toMatch(
+      /^Waiting to change App: run flight_[0-9a-z]+ is changing it\.$/,
+    );
+    const [coder] = await db.select().from(t.agents).where(eq(t.agents.slug, 'coder'));
+    expect(coder!.status).toBe('idle');
+  }, 20_000);
+});
+
 describe('run engine with a bound repository', () => {
   let db: Db;
   let close: () => Promise<void>;

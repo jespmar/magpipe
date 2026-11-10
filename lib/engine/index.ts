@@ -18,6 +18,7 @@ import type { Agent, MemoryEntry, Run, Step } from '../schemas';
 import { apiBackend, type RunBackend } from './backend';
 import { claudeCodeBackend } from './claude-code';
 import { emitEvent } from './events';
+import { acquireWriteLocks, writeTargets, type WriteTarget } from './locks';
 import { mergeRun } from './merge';
 import {
   abortError,
@@ -31,6 +32,12 @@ import { MERGE_STEP_ID, planRun } from './plan';
 import { ensureSandbox, wipeSandbox } from './sandbox';
 import { runStep, setAgentStatus } from './step';
 import { scriptedModelClient } from './stub-model';
+
+/**
+ * At most this many steps of one run work at once (D28), as the Claude Code backend's scope
+ * planned: each step is a CLI process, and a wide fan-out costs more than it saves.
+ */
+export const MAX_PARALLEL_STEPS = 3;
 
 export type EngineOptions = {
   /** A scripted Messages API client (tests); wrapped in the API backend. */
@@ -170,8 +177,20 @@ export class Engine {
 
     const agents = await db.select().from(t.agents);
     const tools = await db
-      .select({ id: t.tools.id, name: t.tools.name, status: t.tools.status })
+      .select({
+        id: t.tools.id,
+        name: t.tools.name,
+        status: t.tools.status,
+        repository: t.tools.repository,
+      })
       .from(t.tools);
+    // Which work trees each agent's steps would change, worked out once per run (D28).
+    const workTrees = new Map<string, string | null>();
+    const targetsOf = new Map<string, Promise<WriteTarget[]>>();
+    const writeTargetsFor = (agent: (typeof agents)[number]) => {
+      if (!targetsOf.has(agent.id)) targetsOf.set(agent.id, writeTargets(agent, tools, workTrees));
+      return targetsOf.get(agent.id)!;
+    };
     const names = new Map(agents.map((a) => [a.id, a.name]));
     const [settings] = await db.select().from(t.settings);
     const orchestratorModel = settings?.models.orchestrator ?? 'claude-opus-5-5';
@@ -214,7 +233,7 @@ export class Engine {
       // 2. the DAG: everything whose dependencies are done runs together
       for (;;) {
         signal.throwIfAborted();
-        const plan = run.plan;
+        const plan: Step[] = run.plan;
         const byId = new Map(plan.map((s) => [s.id, s]));
         const ready = plan.filter(
           (s) =>
@@ -237,12 +256,21 @@ export class Engine {
         }
         if (ready.length === 0) break;
 
-        const startedAt = new Date().toISOString();
-        await save({
-          plan: plan.map((s) => (ready.includes(s) ? { ...s, status: 'live', startedAt } : s)),
-        });
+        // A wave is at most MAX_PARALLEL_STEPS steps, and never two that change the same work
+        // tree; the rest wait for the next wave (D28). The first ready step always goes.
+        const wave: Step[] = [];
+        const claimed = new Set<string>();
+        for (const step of ready) {
+          if (wave.length >= MAX_PARALLEL_STEPS) break;
+          const agent = agents.find((a) => a.id === step.agentId);
+          const keys = agent ? (await writeTargetsFor(agent)).map((w) => w.key) : [];
+          if (keys.some((k) => claimed.has(k))) continue;
+          for (const k of keys) claimed.add(k);
+          wave.push(step);
+        }
+
         await Promise.all(
-          ready.map(async (step) => {
+          wave.map(async (step) => {
             const agent = agents.find((a) => a.id === step.agentId);
             if (!agent) {
               await this.finishStep(save, () => run!, step.id, {
@@ -252,6 +280,29 @@ export class Engine {
               return;
             }
             touched.add(agent.id);
+            // Another run may be changing the same work tree: wait for it, then go live.
+            const targets = await writeTargetsFor(agent);
+            const release = await acquireWriteLocks(
+              targets.map((w) => w.key),
+              `run ${run!.displayId}`,
+              signal,
+              async (key, holder) => {
+                const name = targets.find((w) => w.key === key)?.name ?? 'the repository';
+                await setAgentStatus(db, agent.id, 'waiting');
+                await emit(
+                  'message',
+                  `Waiting to change ${name}: ${holder} is changing it.`,
+                  { waitingFor: holder },
+                  step.id,
+                );
+              },
+            );
+            const startedAt = new Date().toISOString();
+            await save({
+              plan: run!.plan.map((s) =>
+                s.id === step.id ? { ...s, status: 'live', startedAt } : s,
+              ),
+            });
             await setAgentStatus(db, agent.id, 'running');
             try {
               const outcome = await runStep({
@@ -292,6 +343,7 @@ export class Engine {
                 payload: { code: f.code },
               });
             } finally {
+              release();
               await setAgentStatus(db, agent.id, 'idle');
             }
           }),
