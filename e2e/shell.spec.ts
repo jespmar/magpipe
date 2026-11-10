@@ -39,7 +39,10 @@ test('fresh workspace: nav reaches every screen, marks the active link, offers t
   // Client-side navigation to the anchor scrolls the section in and focuses its heading.
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('link', { name: 'Load demo data' }).click();
-  await expect(page.getByRole('heading', { level: 2, name: 'Demo data' })).toBeFocused();
+  // First visit of Settings in this file: a cold compile on the dev server.
+  await expect(page.getByRole('heading', { level: 2, name: 'Demo data' })).toBeFocused({
+    timeout: 15_000,
+  });
   await expect(page.getByRole('heading', { level: 2, name: 'Demo data' })).toBeInViewport();
 });
 

@@ -12,8 +12,20 @@ export type LatestFlight = {
   events: FlightEvent[];
 };
 
+/** One of the most recent flights, for Home's small cards. */
+export type RecentRun = {
+  id: string;
+  displayId: string;
+  title: string;
+  status: RunStatus;
+  startedAt: Date | null;
+  createdAt: Date;
+};
+
 export type HomeData = {
   agents: AgentCardData[];
+  /** The newest flights first, a handful. */
+  recent: RecentRun[];
   stats: HomeStats;
   /** The run in progress, or the most recent one; null before the first run. */
   latest: LatestFlight | null;
@@ -37,6 +49,14 @@ export async function getHomeData(db: Db): Promise<HomeData> {
   const events = latestRun ? await listEvents(db, latestRun.id, { limit: 60 }) : [];
   return {
     agents: agents.map((a) => agentCard(a, runs)),
+    recent: runs.slice(0, 6).map((r) => ({
+      id: r.id,
+      displayId: r.displayId,
+      title: r.input.text,
+      status: r.status,
+      startedAt: r.startedAt,
+      createdAt: r.createdAt,
+    })),
     stats,
     latest: latestRun
       ? {

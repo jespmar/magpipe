@@ -53,7 +53,9 @@ export default async function SettingsPage() {
               : 'not found',
           ],
         ]
-      : [['Backend', 'Claude API, with ANTHROPIC_API_KEY from magpipe.env']];
+      : backend.backend === 'api'
+        ? [['Backend', 'Claude API, with ANTHROPIC_API_KEY from magpipe.env']]
+        : [['Backend', 'Scripted model (development only)']];
   const mode = accessMode();
   const dash = '—';
   const seed = buildSeed();
