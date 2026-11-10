@@ -12,6 +12,8 @@ const STATUS_COLOR: Record<RunStatus, string> = {
   done: 'text-emerald',
   failed: 'text-danger',
   queued: 'text-mute',
+  // Waiting for the operator: amber means "needs you" (D30).
+  waiting: 'text-warn',
   cancelled: 'text-mute',
 };
 
@@ -59,7 +61,8 @@ export function RunMiniCards({
         <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-1 wide:grid-cols-2">
           {runs.map((r) => {
             const selected = r.id === selectedId;
-            const closable = !LIVE_RUN_STATUSES.has(r.status);
+            // A run that is going, or waiting for you, stays on Home until it lands.
+            const closable = !LIVE_RUN_STATUSES.has(r.status) && r.status !== 'waiting';
             return (
               <li key={r.id} className="relative flex min-w-0">
                 <button

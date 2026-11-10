@@ -63,6 +63,10 @@ export function scriptedModelClient(): ModelClient {
       const user = lastUserText(params);
       if (params.output_config?.format) {
         const slug = pickRegistrySlug(user) ?? pickRegistrySlug(system) ?? 'researcher';
+        const entry = system
+          .split(/^(?=- [a-z0-9-]+ \()/m)
+          .find((e) => e.startsWith(`- ${slug} (`));
+        const waits = entry ? /^ {2}waits for approval:/m.test(entry) : false;
         return message(
           JSON.stringify({
             steps: [
@@ -74,6 +78,19 @@ export function scriptedModelClient(): ModelClient {
                 dependsOn: [],
                 optional: false,
               },
+              // After an agent that waits for approval, a step that builds on its result (D30).
+              ...(waits
+                ? [
+                    {
+                      id: 's2',
+                      agent: slug,
+                      title: 'Carry on after approval',
+                      instructions: 'Build on the approved answer in one line.',
+                      dependsOn: ['s1'],
+                      optional: false,
+                    },
+                  ]
+                : []),
             ],
           }),
         );

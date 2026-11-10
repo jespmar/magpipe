@@ -71,6 +71,10 @@ export const agent = z.object({
   builtins: z.array(z.enum(builtinTools)),
   memoryScope,
   limits: agentLimits,
+  /** After a step by this agent, the steps that depend on it wait for the operator (D30). */
+  pauseAfter: z.boolean(),
+  /** How many times this agent's steps may send the work they review back (D31); 0 = never. */
+  sendBackRounds: z.number().int().min(0).max(5),
   status: agentStatus,
   createdAt: z.date(),
   updatedAt: z.date(),
@@ -117,12 +121,26 @@ export const step = z.object({
   finishedAt: isoDate.optional(),
   usage: usage.optional(),
   result: z.object({ summary: z.string().max(1000) }).optional(),
-  /** Set when the step changed or ran something in a bound repository, done or failed. */
+  /**
+   * Set when the step changed or ran something in a bound repository, done or failed. Saved as
+   * each item is recorded, so a restart keeps what the step had done (D33).
+   */
   work: stepWork.optional(),
+  /** When the operator let the steps after this one go on (D30), and what they added. */
+  approvedAt: isoDate.optional(),
+  approvalNote: z.string().max(2000).optional(),
+  /** Which attempt this is: 2 and up after a reviewing step sent the work back (D31). */
+  round: z.number().int().min(1).optional(),
+  /** Findings this step sent back to the steps it depends on (D31). */
+  sentBack: z.string().max(4000).optional(),
+  /** What the step must address on this round: the findings that sent it back (D31). */
+  feedback: z.string().max(6000).optional(),
+  /** How many times a restart interrupted this step while it was live (D33). */
+  restarts: z.number().int().positive().optional(),
   error: z.object({ code: z.string(), message: z.string() }).optional(),
 });
 
-export const runStatuses = ['queued', 'running', 'done', 'failed', 'cancelled'] as const;
+export const runStatuses = ['queued', 'running', 'waiting', 'done', 'failed', 'cancelled'] as const;
 export const runStatus = z.enum(runStatuses);
 
 export const attachment = z.object({
@@ -311,10 +329,26 @@ export const settings = z.object({
   id: z.literal('settings'),
   workspaceName: z.string().min(1),
   region: z.string().min(1),
+  /** Dollars a day across all runs; 0 means no cap (D32). */
   spendCapUsd: z.number().nonnegative(),
   models: modelDefaults,
   updatedAt: z.date(),
 });
+
+/** The highest daily spend cap the Settings screen accepts, in dollars (D32). */
+export const SPEND_CAP_MAX_USD = 10_000;
+
+/** A daily spend cap as the operator types it: dollars, rounded to the cent; 0 means no cap. */
+export const spendCapInput = z
+  .number({ error: 'Enter the cap in dollars, for example 50' })
+  .nonnegative('The cap can’t be negative. Use 0 for no cap')
+  .max(SPEND_CAP_MAX_USD, `The cap can be at most $${SPEND_CAP_MAX_USD.toLocaleString('en-US')}`)
+  .transform((usd) => Math.round(usd * 100) / 100);
+
+/** PATCH /api/settings: the settings the operator may change. Only the spend cap so far (D32). */
+export const settingsPatch = z.object({ spendCapUsd: spendCapInput });
+
+export type SettingsPatch = z.infer<typeof settingsPatch>;
 
 // ─── API bodies ────────────────────────────────────────────────────────────
 
@@ -408,6 +442,14 @@ export const namespaceInput = z.object({
   label: z.string().trim().min(1, 'Name the namespace').max(40),
 });
 
+/** Settings → Load the development flock (D35): the repository folder and its allowed scripts. */
+export const flockLoadInput = z.object({
+  path: z.string().trim().min(1, 'Give the repository folder as an absolute path.').max(4096),
+  /** Script names separated by commas or spaces; lib/flock.ts checks each one. */
+  scripts: z.string().max(2000),
+});
+
+export type FlockLoadInput = z.infer<typeof flockLoadInput>;
 export type MemoryInput = z.infer<typeof memoryInput>;
 export type MemoryPatch = z.infer<typeof memoryPatch>;
 export type NamespaceInput = z.infer<typeof namespaceInput>;
@@ -422,6 +464,9 @@ export const runCreateInput = z.object({
   /** Continue the conversation of this run: its task and answer become context. */
   parentRunId: runId.optional(),
 });
+
+/** POST /api/runs/[id]/approve: let a waiting run go on, with a note for the next steps. */
+export const runApproveInput = z.object({ note: z.string().trim().max(2000).optional() });
 
 /** PATCH /api/runs/[id]: close or reopen its card on Home. */
 export const runPatchInput = z.object({ dismissed: z.boolean() });
@@ -459,6 +504,8 @@ const agentFields = z.object({
   builtins: z.array(z.enum(builtinTools)),
   memoryScope,
   limits: agentLimits,
+  pauseAfter: z.boolean(),
+  sendBackRounds: z.number().int().min(0, 'At least 0').max(5, 'At most 5 rounds'),
 });
 
 /** POST /api/agents. Slug and (unless given) initials are derived from the name. */
@@ -470,6 +517,8 @@ export const agentInput = agentFields.extend({
   builtins: agentFields.shape.builtins.default([]),
   memoryScope: memoryScope.default({ read: [], write: [] }),
   limits: agentLimits.default({ maxTokens: 100_000, maxSteps: 30, timeoutSec: 600 }),
+  pauseAfter: agentFields.shape.pauseAfter.default(false),
+  sendBackRounds: agentFields.shape.sendBackRounds.default(0),
 });
 
 /** PATCH /api/agents/[id]: any subset of the fields, plus pause/resume. */

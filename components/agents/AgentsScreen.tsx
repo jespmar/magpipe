@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useMemo, useOptimistic, useRef, useState, useTransition } from 'react';
 import { PageHead } from '@/components/ui/PageHead';
@@ -220,11 +221,22 @@ export function AgentsScreen({
           selectedId={selectedVisible?.id ?? null}
           onSelect={setSelectedId}
           emptyMessage={
-            agents.length === 0
-              ? 'No birds in the flock yet. Add one to get started.'
-              : query
-                ? `No agents match “${query}”.`
-                : 'No agents with this status.'
+            agents.length === 0 ? (
+              <>
+                No birds in the flock yet. Add one, or{' '}
+                <Link
+                  href="/settings#flock"
+                  className="text-ink underline underline-offset-4 hover:text-ink-strong"
+                >
+                  load the development flock
+                </Link>{' '}
+                from Settings.
+              </>
+            ) : query ? (
+              `No agents match “${query}”.`
+            ) : (
+              'No agents with this status.'
+            )
           }
         />
         {selectedVisible ? (

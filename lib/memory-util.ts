@@ -122,3 +122,28 @@ export function summarizeHealth(
 export function updatedLabel(entry: Pick<MemoryEntry, 'updatedAt'>, now = new Date()): string {
   return shortWhen(entry.updatedAt, now);
 }
+
+/** The namespace whose entries steer every plan: the operator's standing instructions (D34). */
+export const STANDING_NS = 'decisions';
+
+/**
+ * How many memories reach a plan: every `decisions` entry first, most recently updated first,
+ * then what the task matches, up to this many in all (`relevantMemory` in lib/engine/index.ts;
+ * tests/conventions.test.ts pins the two together).
+ */
+export const PLAN_MEMORY_CAP = 30;
+
+/** Where standing instructions go, said on Settings and above the namespace on Memory (D34). */
+export function standingReach(count: number): string {
+  if (count <= PLAN_MEMORY_CAP)
+    return 'Every entry here reaches every plan the orchestrator makes.';
+  return `The ${PLAN_MEMORY_CAP} most recently updated entries here reach every plan the orchestrator makes; the other ${count - PLAN_MEMORY_CAP} are left out until they are edited.`;
+}
+
+/** A long value cut for a list, at a word where one is near; the full value stays in Memory. */
+export function clipValue(value: string, max = 180): string {
+  const flat = value.replace(/\s+/g, ' ').trim();
+  if (flat.length <= max) return flat;
+  const space = flat.lastIndexOf(' ', max - 1);
+  return `${flat.slice(0, space > max * 0.6 ? space : max - 1).trimEnd()}…`;
+}

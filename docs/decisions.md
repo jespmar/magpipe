@@ -271,7 +271,8 @@ once per server start.
 - **Housekeeping.** The nightly job marks facts stale at start-up and every 24 h; expired facts
   are kept and labelled (D14).
 - **Not yet:** streaming tokens into the log (events are per message and tool call), spend caps
-  (`settings.spendCapUsd` is recorded, not enforced), and artifacts produced by runs.
+  (`settings.spendCapUsd` is recorded, not enforced; enforced since D32), and artifacts produced
+  by runs.
 
 ## D16 · Home as built (PR 6)
 
@@ -630,3 +631,200 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
 - **Not covered:** what an agent decides rather than does (a Reviewer's verdict and tiered
   findings) is still prose plus the `reviews` memory entry; and work done through MCP servers
   is not recorded, only through bound repositories.
+
+## D34 · A repository's conventions reach the step; the orchestrator's rules are on Settings
+
+- **Why.** Steps run Claude Code with `--setting-sources ''` (D22) and the API path has no
+  settings at all, so no step loads a `CLAUDE.md`. A repository's conventions (its check
+  commands, its layout, its rules) reached an agent only if its prompt said to read them and it
+  spent a turn doing so: the flock's Planner and Coder prompts did, the Reviewer and Verifier did
+  not. And the two things that steer every plan, the orchestrator's fixed rules and the
+  `decisions` entries, could not be seen together anywhere in the product. It was the ninth gap
+  in `docs/flock.md`.
+- **Shape.** `setupTools` reads the conventions of each bound repository the step gets at least
+  one operation from (`readConventions` in `lib/repo.ts`) and returns them beside the tools
+  (`ToolRuntime.conventions`). `runStep` appends them to the system prompt after the agent's
+  memory, one heading per file, for example "Conventions of App and App plans (their
+  CLAUDE.md):" (`conventionsText` in `lib/engine/step.ts`). Both backends send that same system
+  prompt, so the API and Claude Code paths get the same text. The plan and the merge get none:
+  they route and summarise, they do not touch code.
+- **Which file.** `CLAUDE.md` in the bound folder, then at the git work tree's root, then
+  `AGENTS.md` the same way; the first with text in it wins. Two bindings of one work tree (the
+  app and its plans folder) find the same file, which appears once under both names.
+- **Guards.** Reaching a repository means being offered one of its operations: an empty grant
+  (D25), or `run` on a binding without scripts, gives the step nothing and so no conventions.
+  The read follows `read`'s path rules, so a `CLAUDE.md` symlinked out of the folder is skipped,
+  and takes at most 32 KB. Each file is cut at 8,000 characters, at a line end where one is near,
+  and the prompt says where it was cut. A missing, empty, binary or unreadable file is skipped
+  without a word, as a step goes on without a repository whose folder is gone.
+- **The orchestrator on Settings.** A read-only section shows `ORCHESTRATOR_SYSTEM` (in the
+  `TextBlock` the agent detail uses for a system prompt, which wraps and copies) beside the
+  standing instructions: every `decisions` entry with its key and value, long values cut, each
+  key opening the entry in Memory, the line "Every entry here reaches every plan the
+  orchestrator makes." and "Edit in Memory" (`/memory?ns=decisions`). With none it says so and
+  offers "Add a decision". Memory says the same line above the Decisions namespace, with a link
+  back. `relevantMemory` hands a plan at most 30 memories, decisions first and newest first, so
+  past 30 both screens say that only the 30 most recently updated reach it (`PLAN_MEMORY_CAP` in
+  `lib/memory-util.ts`; a test pins it to the engine). When the database cannot be opened the
+  rules still show and the list says it cannot be read, as the other Settings sections degrade.
+- **Not covered:** the rules stay read-only, because `decisions` already carries the operator's
+  rules and an editable prompt would change every plan with no record of why. `@` imports in a
+  `CLAUDE.md` are not followed (a file that only says `@AGENTS.md` hands on that line), and
+  `CLAUDE.md` files in folders below the binding are not read. An agent with `write` on a
+  repository can change the file that later steps read; the change is recorded (D29) and shows
+  in the diff, but nothing prevents it. The number of repositories whose files join one prompt
+  has no cap beyond the 8,000 characters each.
+
+## D30 · A run can wait for the operator
+
+- **Why.** The orchestrator planned once and could not pause, so the gate every method keeps,
+  a person reading the plan before code is written, fell between two runs: a scouting run, then
+  a building run as a follow-up. It was the fifth gap in `docs/flock.md`.
+- **The setting is the agent's.** `agents.pause_after` ("Wait for approval after its steps" in
+  the editor's Approval section, migration 0004). After a step by such an agent finishes, the
+  steps that depend on it are held until the operator approves; the planner's registry says so
+  ("waits for approval: the run pauses after its steps") and its rules ask it to plan the work
+  that builds on the result in the same plan. A step that only the merge depends on never
+  holds the run: approving a summary would be ceremony.
+- **The run waits, the engine does not.** When nothing else can start and a step is holding
+  dependants, the run's status becomes `waiting` (a new run status, amber because it needs you)
+  and the engine lets it go: no process, lock or memory is held. The trail says
+  `Waiting for you: approve “Write the plan” to go on.`
+- **Approve or cancel.** `POST /api/runs/[id]/approve { note? }` marks the held steps approved
+  (`approvedAt`, `approvalNote` on the step), puts the run back in the queue and logs
+  `Approved by the operator: …`; the steps that start next read "The operator approved this
+  with a note: …" under that step's result. Cancel now reaches a waiting run too, and skips
+  what was held. The run page and Home's panel show the same box: what it waits on, a note
+  field, "Approve and go on" (the run page's primary action; secondary on Home, where Run is)
+  and "Cancel run". A waiting run's card cannot be closed.
+- **Not covered:** the sandbox folder is wiped when the run pauses, as at any run end (the
+  repository is the durable workspace); time spent waiting counts in the run's duration; and an
+  approval cannot edit the plan's later steps, only add a note to them.
+
+## D31 · A reviewer may send the work back
+
+- **Why.** A review with blocking findings ended the run, and fixing them took a follow-up run
+  started by hand, even for a finding the Coder could address in a minute. The evidence favours
+  the evaluator-optimizer loop when it is bounded and tied to evidence, and the human cycle as
+  the default. It was the sixth gap in `docs/flock.md`.
+- **The setting is the agent's, and off by default.** `agents.send_back_rounds` ("Times it may
+  send work back" in the editor's Approval and review section, 0 to 5, migration 0005). The
+  planner's registry says "may send work back: up to N times, to the steps it depends on", and
+  its rules ask it to make such an agent depend directly on the steps whose work it judges.
+- **A tool, not a parsed verdict.** While rounds remain, the agent's steps get `send_back
+{ findings }`. Calling it records the findings on the step (`sentBack`); the step then finishes
+  as usual with its verdict as the summary.
+- **What reopens.** After the wave, a done step with findings reopens the steps it depends on,
+  every step on a path from them to it (the Verifier between the Coder and the Reviewer), and
+  itself (`sendBackSet` in `lib/runs-util.ts`). Earlier work, such as the Planner's and its
+  approval, keeps its result, and the merge never reopens. Reopened steps go back to `todo`
+  with `round` + 1 and a `feedback` line in their prompt: the findings for the reviewed steps,
+  "your findings last round" for the reviewer. Their usage so far is added to the run's before
+  it is cleared, and their work record carries over (the step's collector starts from its saved
+  record, D33), so tokens, cost, commits and
+  files across rounds all stay counted. The trail says
+  `Round 2: Reviewer sent the work back to “Make the change”.`, and the flight path shows the
+  round.
+- **Bounded.** A step on round N may send back while N is at most the agent's setting; after
+  that the tool is not offered and the verdict stands for the operator, as before.
+- **Not covered:** a send-back cannot change the plan (no new steps), and reopening the Planner
+  needs a reviewer that depends on it directly.
+
+## D32 · A daily spend cap, enforced
+
+- **Why.** `settings.spendCapUsd` (50 on a fresh install, shown on Settings as "Spend cap per
+  day") was recorded and never enforced (D15), and nothing could change it, so an unattended run
+  had no budget beyond each agent's per-step limits. It was the seventh gap in `docs/flock.md`.
+- **What counts.** Today's spend is the cost of every run asked for today in the server's local
+  day, the same day Home and the Runs screen count: a finished run's `usage`, and for a run still
+  going, its plan's cost plus its steps' usage so far (a run's `usage` takes in its steps only
+  when it ends). One aggregate query over the indexed `created_at` range reads the spend and the
+  cap together (`spendToday` in `lib/spend.ts`), so a cap changed mid-run counts at the next
+  check. Under Claude Code the dollars are what the API would have charged (D22), not a bill, and
+  Settings says so in one line.
+- **Where it stops.** Before planning, before each step goes live (after any wait for a work
+  tree, D28) and before the merge. Once the spend has reached the cap no new step starts, steps
+  already working finish, and the run fails with code `spend_cap`: "Today's spend ($50.12)
+  reached the $50.00 cap, so the run stopped before “Draft the change”. Raise the cap in Settings
+  to go on." Steps that never started are skipped; the work recorded so far stays on the run
+  (D29).
+- **0 means no cap.** A cap of 0 turns the check off rather than stopping every run, which a
+  zero budget would otherwise mean; Settings shows it as "no cap".
+- **The first editable setting.** Settings gains a Spend cap section: today's spend, the cap, one
+  field and a Save button, saved through `PATCH /api/settings` (`GET` beside it, spec §8) with
+  `requireUser`, `parseBody` and `apiError`. `settingsPatch` takes a non-negative number of
+  dollars up to $10,000, rounded to the cent; the form checks the same schema before it sends,
+  the error stays beside the field, and the button confirms in place. The page re-reads its data
+  with `router.refresh()`; nothing revalidates the layout.
+- **Not covered:** the cap is checked between steps, not inside one, so steps already working
+  can go past it by their own limits (at most three at once, D28). A run stopped at the cap does
+  not resume when the cap is raised; run it again. A run that crosses midnight counts towards the
+  day it was asked for. There is no per-run or per-agent budget and no warning before the cap.
+
+## D33 · A step resumes from where it was
+
+- **Why.** After a restart, `resumeInterrupted` sent `live` steps back to `todo` and they ran
+  again from their brief alone, and a step's work record (D29) reached the plan only when the
+  step ended, so a crash lost it. A Coder halfway through a change started over and could repeat
+  its commits; only its prompt said to continue from what was committed. It was the eighth gap in
+  `docs/flock.md`.
+- **The record is saved as it grows.** Each item a repository tool records is folded and saved
+  onto the step in `runs.plan` at once (`ToolSetup.onWork`): one save per recorded item, none for
+  other tool calls. A restart finds the branch, files, commits and checks the step had made.
+- **A resumed step is told.** `resumeInterrupted` counts the restart on the step
+  (`step.restarts`, optional in the step schema; `runs.plan` is jsonb typed from zod, so no
+  migration) and keeps its record. The step's user message gains, after its instructions: "This
+  step was interrupted by a restart after it had started. Before that, Magpipe recorded:", the
+  `workFacts` lines, and "Continue from there: check git_status and the branch, and do not redo
+  work that is already committed." With nothing recorded it says so and asks the agent to check
+  what is in place (`resumeNote` in `lib/work.ts`).
+- **One record across attempts.** The resumed attempt's collector starts from the recorded work
+  (`workItems`, the inverse of `foldWork`), so the final record, the facts later steps get and
+  the run's artefacts cover both attempts. A step put back to `todo` with its `work` kept always
+  collects on top of it.
+- **Not covered:** the step's conversation is not replayed; it starts again from its brief plus
+  the note. What it did outside bound repositories (MCP servers, memory writes) is not on the
+  record, nor is an operation the restart cut off before it reported. The run page does not show
+  the restart count yet. A live merge simply runs again.
+
+## D35 · Load the development flock
+
+- **Why.** A fresh install has the four starter agents, and the flock in `docs/flock.md` took
+  five manual steps across three screens: two repository bindings, two namespaces, six
+  `decisions` entries, five agents with their prompts, scopes and limits, and a grant per agent
+  and repository. It was the tenth gap in `docs/flock.md`.
+- **Shape.** `lib/flock.ts` holds the flock as data (`FLOCK_AGENTS`, `FLOCK_DECISIONS`,
+  `FLOCK_NAMESPACES`) and `loadFlock(db, { path, scripts })`. Settings gains a "Development
+  flock" section beside the demo data: the repository folder, the scripts agents may run
+  (typecheck, lint and test by default), a confirm step that says what will change, and the
+  result as plain lines (`summarizeFlock`). The server action (`loadFlockAction`) never throws;
+  a folder or script the flock cannot use comes back on its field. The Agents screen's empty
+  roster links to the section.
+- **What a load does.** Creates `docs/plans` in the folder if it is missing; binds the folder
+  twice through `connectTool` (`<folder>` with the scripts, `<folder> plans` at `docs/plans`
+  with none), or reuses tools already bound to those paths, a reused folder taking the scripts
+  asked for; creates every namespace the agents name that is missing (`plans` and `reviews` on a
+  fresh install); writes the six entries with confidence 1 and source "operator"; upserts the
+  five agents by slug (Researcher, Coder and Reviewer keep their ids, Planner and Verifier are
+  created); sets each agent's grants on the two repositories to the operations in flock.md's
+  table; and pauses Operator rather than deleting it.
+- **Guards.** Everything that can be refused is checked before anything is written: an absolute
+  folder inside a git work tree (`inspectRepository`), at least one script (the Verifier runs
+  the checks), each a script name its package.json has, and no file where `docs/plans` should
+  be. Grants name their operations; an agent with none on a repository gets no grant to it, never
+  an empty one (D25). Grants to other tools are kept, so a GitHub server the operator already
+  granted survives a load. Loading again changes only what differs: an edited entry becomes a
+  new, verified version (no conflict flag), an agent is updated only when a field differs, and no
+  folder is bound twice.
+- **Drift.** `tests/flock.test.ts` parses `docs/flock.md` and fails when a prompt, role,
+  description, model, built-in list, memory scope, limit, grant or standing instruction in
+  `lib/flock.ts` differs from it. Change both together.
+- **Not covered:** GitHub (read) and Library docs need a token or npx, so the result says to
+  connect them from Tools and tick their tools. `docs/plans` is created empty, without the README
+  flock.md suggests, so git shows nothing until the first plan file. There is no general agent
+  import or export. A load is not one transaction: a failure part way keeps what was written, and
+  loading again finishes it.
+- **With the run gates.** Merged after D30 and D31, the loader also sets the Planner to wait for
+  approval and lets the Reviewer send work back once, so a loaded flock runs a whole change in
+  one run. `lib/flock.ts` takes its prompts and entries from `docs/flock.md` as they stand after
+  D30, D31 and D34, and the drift tests hold the two together.

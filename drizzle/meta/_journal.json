@@ -29,6 +29,20 @@
       "when": 1794333561894,
       "tag": "0003_shallow_menace",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794337389339,
+      "tag": "0004_mute_gideon",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794338727716,
+      "tag": "0005_needy_fat_cobra",
+      "breakpoints": true
     }
   ]
 }

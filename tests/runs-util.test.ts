@@ -5,6 +5,8 @@ import {
   formatUsd,
   headTitle,
   lastErrorText,
+  awaitingApproval,
+  sendBackSet,
   matchesRunQuery,
   resultPlaceholder,
   runAgentIds,
@@ -210,5 +212,44 @@ describe('conversation threads', () => {
     const loopA = turn('a', 'a', 'b');
     const loopB = turn('b', 'b', 'a');
     expect(threadFor([loopA, loopB], loopA).map((r) => r.id)).toEqual(['b', 'a']);
+  });
+});
+
+describe('awaitingApproval', () => {
+  it('names finished steps whose dependants have not started, never for the merge', () => {
+    const step = (id: string, status: Step['status'], dependsOn: string[] = []) =>
+      ({ id, status, dependsOn }) as Pick<Step, 'id' | 'status' | 'dependsOn'>;
+    const plan = [
+      step('s1', 'done'),
+      step('s2', 'todo', ['s1']),
+      step('s3', 'done'),
+      step('merge', 'todo', ['s2', 's3']),
+    ];
+    expect(awaitingApproval(plan).map((s) => s.id)).toEqual(['s1']);
+    expect(awaitingApproval([step('s1', 'done'), step('merge', 'todo', ['s1'])])).toEqual([]);
+  });
+});
+
+describe('sendBackSet', () => {
+  const step = (id: string, dependsOn: string[] = []) => ({ id, dependsOn });
+  const plan = [
+    step('research'),
+    step('plan', ['research']),
+    step('code', ['plan']),
+    step('verify', ['code']),
+    step('review', ['code', 'verify']),
+    step('docs', ['plan']),
+    step('merge', ['review', 'docs']),
+  ];
+
+  it('reopens what the reviewer judges and what lies between, never earlier work or the merge', () => {
+    expect([...sendBackSet(plan, 'review')].sort()).toEqual(['code', 'review', 'verify']);
+  });
+
+  it('follows the reviewer’s direct dependencies only', () => {
+    // A reviewer of the plan alone reopens the plan, not the code built on it.
+    const planReview = [...plan, step('plan-review', ['plan'])];
+    expect([...sendBackSet(planReview, 'plan-review')].sort()).toEqual(['plan', 'plan-review']);
+    expect(sendBackSet(plan, 'missing').size).toBe(0);
   });
 });

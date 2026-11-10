@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useOptimistic, useRef, useState, useTransition } from 'react';
 import { PageHead } from '@/components/ui/PageHead';
-import { Button } from '@/components/ui/Button';
+import { Button, ButtonLink } from '@/components/ui/Button';
 import { DemoLink } from '@/components/ui/DemoLink';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { SearchInput } from '@/components/ui/SearchInput';
@@ -17,6 +17,8 @@ import type { NamespaceCount } from '@/lib/memory';
 import {
   matchesMemoryQuery,
   reviveEntry,
+  STANDING_NS,
+  standingReach,
   summarizeHealth,
   type AuthorChip,
   type MemoryEntryJson,
@@ -256,6 +258,17 @@ export function MemoryScreen({
             />
           ) : (
             <>
+              {ns === STANDING_NS ? (
+                // Decisions are the operator's standing instructions: say where they go (D34).
+                <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 wide:basis-full">
+                  <p className="text-body-sm text-body">
+                    {standingReach(namespaces.find((n) => n.id === STANDING_NS)?.count ?? 0)}
+                  </p>
+                  <ButtonLink href="/settings#orchestrator" variant="ghost" size="sm">
+                    See the orchestrator’s rules
+                  </ButtonLink>
+                </div>
+              ) : null}
               <div className="min-w-0 wide:flex-[2_1_600px]">
                 <MemoryTable
                   entries={visible}

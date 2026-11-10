@@ -1,9 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { openDb, type Db } from '@/lib/db';
+import * as t from '@/lib/db/schema';
 import { Engine } from '@/lib/engine';
 import { listEvents } from '@/lib/engine/events';
 import { pickRegistrySlug, scriptedModelClient } from '@/lib/engine/stub-model';
-import { createRun, getRun } from '@/lib/runs';
+import { approveRun, createRun, getRun } from '@/lib/runs';
 
 describe('the scripted model', () => {
   let db: Db;
@@ -45,5 +46,25 @@ describe('the scripted model', () => {
     const kinds = (await listEvents(db, run.id)).map((e) => e.kind);
     expect(kinds).toContain('plan');
     expect(kinds[kinds.length - 1]).toBe('done');
+  }, 20_000);
+
+  it('plans a second step after an agent that waits for approval, and lands once approved', async () => {
+    await db.update(t.agents).set({ pauseAfter: true });
+    const engine = new Engine({ client: scriptedModelClient(), getDb: async () => db });
+    const run = await createRun(db, { text: 'Plan a change', attachments: [] });
+    engine.enqueue(run.id);
+    await engine.whenIdle();
+    const waiting = (await getRun(db, run.id))!;
+    expect(waiting.status).toBe('waiting');
+    expect(waiting.plan.map((s) => s.title)).toEqual([
+      'Answer the task',
+      'Carry on after approval',
+      'Merge results',
+    ]);
+    await approveRun(db, run.id);
+    engine.enqueue(run.id);
+    await engine.whenIdle();
+    expect((await getRun(db, run.id))!.status).toBe('done');
+    await db.update(t.agents).set({ pauseAfter: false });
   }, 20_000);
 });

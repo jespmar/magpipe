@@ -19,7 +19,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
     const db = await getDb();
     const run = await getRun(db, id);
     if (!run) return apiError('not_found', 'No such run', 404);
-    if (body.data.dismissed && (run.status === 'queued' || run.status === 'running')) {
+    if (body.data.dismissed && ['queued', 'running', 'waiting'].includes(run.status)) {
       return apiError('conflict', 'A flight can be closed once it has landed', 409);
     }
     const updated = await setRunDismissed(db, run.id, body.data.dismissed);

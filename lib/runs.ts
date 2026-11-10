@@ -33,6 +33,34 @@ export async function createRun(
   return run;
 }
 
+/**
+ * Lets a waiting run go on (D30): every finished step by an agent that waits for approval is
+ * marked approved, with the operator's note if there is one, and the run is queued again. The
+ * caller hands it to the engine. Returns undefined when the run is not waiting.
+ */
+export async function approveRun(db: Db, id: string, note?: string): Promise<Run | undefined> {
+  const [current] = await db.select().from(t.runs).where(eq(t.runs.id, id));
+  if (!current || current.status !== 'waiting') return undefined;
+  const pausing = new Set(
+    (await db.select({ id: t.agents.id, pauseAfter: t.agents.pauseAfter }).from(t.agents))
+      .filter((a) => a.pauseAfter)
+      .map((a) => a.id),
+  );
+  const approvedAt = new Date().toISOString();
+  const text = note?.trim();
+  const plan = current.plan.map((s) =>
+    s.status === 'done' && s.agentId !== null && pausing.has(s.agentId) && !s.approvedAt
+      ? { ...s, approvedAt, ...(text ? { approvalNote: text } : {}) }
+      : s,
+  );
+  const [row] = await db
+    .update(t.runs)
+    .set({ plan, status: 'queued' })
+    .where(and(eq(t.runs.id, id), eq(t.runs.status, 'waiting')))
+    .returning();
+  return row;
+}
+
 /** Closes (or reopens) a run's card on Home. The Runs screen keeps listing it. */
 export async function setRunDismissed(
   db: Db,

@@ -76,6 +76,10 @@ engine and no sign-in on desktop.
 - **Runs are durable by their plan.** Write `runs.plan` before and after each step, append to
   `run_events` through `emitEvent`, and never hold run state only in memory: a restart resumes
   from the plan (`resumeInterrupted`).
+- **Model work starts under the spend cap.** Anything that starts model work outside the step
+  wave (a new step kind, a retry) checks the daily cap first (`spendCapStop`, D32). A run's
+  `usage` takes in its steps only when the run ends, and `spendToday` relies on that. A step put
+  back to `todo` keeps its `work`, so its next attempt collects on top of it (D33).
 - New public routes must be added to the matcher in `middleware.ts`; everything else is behind
   the desktop token (desktop) or a session (hosted).
 - **Repositories stay typed.** Agents reach a bound repository only through the named operations
@@ -92,6 +96,10 @@ engine and no sign-in on desktop.
   sheet and Settings read the same list); single keys must stay out of text fields and open
   dialogs (`[role="dialog"]`, Arc's `Dialog`). Search fields are `<input type="search">` so `/`
   can find them.
+- **`lib/flock.ts` mirrors `docs/flock.md`.** The development flock's prompts, roles, models,
+  scopes, limits, grants and standing instructions live in both; `tests/flock.test.ts` parses the
+  document, so change them together. A new agent setting the flock should carry goes into
+  `FlockAgent` and the fields `upsertAgents` sets, in the same change.
 - **Tests never need model credentials.** Unit tests script `ModelClient`; the Playwright
   server runs with `MAGPIPE_MODEL_STUB=scripted` (`lib/engine/stub-model.ts`), which the engine
   ignores in production builds.

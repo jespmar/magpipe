@@ -12,14 +12,15 @@ import * as t from '../db/schema';
 import { env } from '../env';
 import { listMemory } from '../memory';
 import { loadThread } from '../runs';
-import { threadText } from '../runs-util';
 import { addUsage, ZERO_USAGE } from '../pricing';
 import type { Agent, MemoryEntry, Run, Step } from '../schemas';
 import { apiBackend, type RunBackend } from './backend';
 import { claudeCodeBackend } from './claude-code';
 import { emitEvent } from './events';
 import { acquireWriteLocks, writeTargets, type WriteTarget } from './locks';
-import { foldWork, runArtifacts, type WorkItem } from '../work';
+import { capReached, spendCapMessage, spendToday } from '../spend';
+import { foldWork, runArtifacts, workItems, type WorkItem } from '../work';
+import { sendBackSet, threadText } from '../runs-util';
 import { mergeRun } from './merge';
 import {
   abortError,
@@ -106,10 +107,33 @@ export class Engine {
       await emitEvent(db, { runId, kind: 'error', text: 'Run cancelled before it started.' });
       return true;
     }
+    // A run waiting for approval is in no queue: cancel it in the database (D30).
+    const db = await this.db();
+    const [row] = await db.select().from(t.runs).where(eq(t.runs.id, runId));
+    if (row?.status === 'waiting') {
+      const finishedAt = new Date();
+      await db
+        .update(t.runs)
+        .set({
+          status: 'cancelled',
+          finishedAt,
+          durationMs: finishedAt.getTime() - (row.startedAt ?? row.createdAt).getTime(),
+          plan: row.plan.map((s) =>
+            s.status === 'todo' ? { ...s, status: 'skipped' as const } : s,
+          ),
+        })
+        .where(eq(t.runs.id, runId));
+      await emitEvent(db, { runId, kind: 'error', text: 'Run cancelled by the operator.' });
+      return true;
+    }
     return false;
   }
 
-  /** Runs left `running` by a previous process go back to work; queued ones are picked up (D5). */
+  /**
+   * Runs left `running` by a previous process go back to work; queued ones are picked up (D5).
+   * A step that was live starts again, counting the restart and keeping the work it had recorded,
+   * so its next attempt continues from there (D33).
+   */
   async resumeInterrupted(db: Db): Promise<number> {
     const rows = await db
       .select({ id: t.runs.id, status: t.runs.status, plan: t.runs.plan })
@@ -118,7 +142,9 @@ export class Engine {
     for (const row of rows) {
       if (row.status === 'running') {
         const plan = row.plan.map((s) =>
-          s.status === 'live' ? { ...s, status: 'todo' as const } : s,
+          s.status === 'live'
+            ? { ...s, status: 'todo' as const, restarts: (s.restarts ?? 0) + 1 }
+            : s,
         );
         await db.update(t.runs).set({ plan }).where(eq(t.runs.id, row.id));
         await emitEvent(db, {
@@ -177,6 +203,10 @@ export class Engine {
     ) => emitEvent(db, { runId, stepId: stepId ?? null, agentId: null, kind, text, payload });
 
     const agents = await db.select().from(t.agents);
+    // A finished step by an agent that pauses for approval holds back what depends on it (D30).
+    const pausing = new Set(agents.filter((a) => a.pauseAfter).map((a) => a.id));
+    const held = (s: Step) =>
+      s.status === 'done' && s.agentId !== null && pausing.has(s.agentId) && !s.approvedAt;
     const tools = await db
       .select({
         id: t.tools.id,
@@ -204,8 +234,10 @@ export class Engine {
       // A follow-up carries the conversation it continues into every prompt.
       const conversation = threadText(await loadThread(db, run)) || undefined;
 
-      // 1. plan (skipped on resume when a plan exists)
+      // 1. plan (skipped on resume when a plan exists), unless today's spend is at the cap
       if (run.plan.length === 0) {
+        const stop = await this.spendCapStop(db, 'planning');
+        if (stop) throw stop;
         const planned = await withRetries(
           () =>
             planRun({
@@ -231,7 +263,9 @@ export class Engine {
         });
       }
 
-      // 2. the DAG: everything whose dependencies are done runs together
+      // 2. the DAG: everything whose dependencies are done runs together. Once today's spend
+      // reaches the cap no step goes live; steps already working finish, then the run stops (D32).
+      let capStop: EngineError | null = null;
       for (;;) {
         signal.throwIfAborted();
         const plan: Step[] = run.plan;
@@ -240,7 +274,10 @@ export class Engine {
           (s) =>
             s.status === 'todo' &&
             s.id !== MERGE_STEP_ID &&
-            s.dependsOn.every((d) => byId.get(d)?.status === 'done'),
+            s.dependsOn.every((d) => {
+              const dep = byId.get(d);
+              return dep?.status === 'done' && !held(dep);
+            }),
         );
         // steps whose dependencies failed or were skipped cannot run
         const blocked = plan.filter(
@@ -298,6 +335,14 @@ export class Engine {
                 );
               },
             );
+            // Checked as late as possible: after any wait, just before the step goes live.
+            const stop = capStop ?? (await this.spendCapStop(db, `“${step.title}”`));
+            if (stop) {
+              capStop ??= stop;
+              release();
+              await setAgentStatus(db, agent.id, 'idle');
+              return;
+            }
             const startedAt = new Date().toISOString();
             await save({
               plan: run!.plan.map((s) =>
@@ -305,8 +350,18 @@ export class Engine {
               ),
             });
             await setAgentStatus(db, agent.id, 'running');
-            // What the step's repository tools do, kept whether the step finishes or fails.
-            const work: WorkItem[] = [];
+            // What the step's repository tools do, kept whether the step finishes or fails, and
+            // saved onto the step as it grows. A step resumed after a restart starts from what it
+            // had recorded, so its record covers both attempts (D33).
+            const work: WorkItem[] = workItems(step.work);
+            const saveWork = () =>
+              save({
+                plan: run!.plan.map((s) => (s.id === step.id ? { ...s, work: foldWork(work) } : s)),
+              });
+            // A reviewing agent may send the work back while rounds remain (D31).
+            const remaining = agent.sendBackRounds - ((step.round ?? 1) - 1);
+            const sendBack: { remaining: number; findings?: string } | undefined =
+              remaining > 0 ? { remaining } : undefined;
             try {
               const outcome = await runStep({
                 db,
@@ -320,6 +375,8 @@ export class Engine {
                 sandboxDir,
                 conversation,
                 work,
+                sendBack,
+                onWork: saveWork,
                 signal,
               });
               await this.finishStep(save, () => run!, step.id, {
@@ -327,6 +384,7 @@ export class Engine {
                 result: { summary: outcome.summary },
                 usage: outcome.usage,
                 work: foldWork(work),
+                ...(sendBack?.findings ? { sentBack: sendBack.findings } : {}),
               });
               await emit('message', `${agent.name} finished: ${step.title}`, null, step.id);
             } catch (err) {
@@ -354,6 +412,53 @@ export class Engine {
             }
           }),
         );
+        if (capStop) throw capStop;
+
+        // A reviewing step that sent the work back reopens it: the steps it reviews run again
+        // with its findings, then it reviews once more (D31). Usage so far stays counted.
+        for (const step of wave) {
+          const current = run.plan.find((s) => s.id === step.id);
+          const agent = agents.find((a) => a.id === current?.agentId);
+          if (!current || !agent || current.status !== 'done' || !current.sentBack) continue;
+          const round = current.round ?? 1;
+          if (round > agent.sendBackRounds) continue;
+          const reopen = sendBackSet(run.plan, current.id);
+          const spent = run.plan
+            .filter((s) => reopen.has(s.id) && s.usage)
+            .reduce((acc, s) => addUsage(acc, s.usage!), ZERO_USAGE);
+          const findings = current.sentBack;
+          await save({
+            usage: addUsage(run.usage, spent),
+            plan: run.plan.map((s) =>
+              reopen.has(s.id)
+                ? {
+                    ...s,
+                    status: 'todo' as const,
+                    round: (s.round ?? 1) + 1,
+                    feedback:
+                      s.id === current.id
+                        ? `Your findings last round sent the work back: ${findings} Check whether they were addressed.`
+                        : `${agent.name} sent the work back after round ${round}: ${findings}`,
+                    result: undefined,
+                    usage: undefined,
+                    error: undefined,
+                    startedAt: undefined,
+                    finishedAt: undefined,
+                    sentBack: undefined,
+                    approvedAt: undefined,
+                    approvalNote: undefined,
+                  }
+                : s,
+            ),
+          });
+          const others = run.plan.filter((s) => reopen.has(s.id) && s.id !== current.id);
+          await emit(
+            'message',
+            `Round ${round + 1}: ${agent.name} sent the work back to ${others.map((s) => `“${s.title}”`).join(' and ')}.`,
+            { round: round + 1, findings },
+            current.id,
+          );
+        }
       }
 
       // 3. merge, unless a required step failed
@@ -366,6 +471,29 @@ export class Engine {
           `${names.get(hardFailure.agentId ?? '') ?? 'A step'} failed: ${hardFailure.error?.message ?? hardFailure.title}`,
         );
       }
+
+      // 2b. a step that waits for approval holds its dependants: the run waits for the operator
+      // and gives the engine back. Approving puts it in the queue again (D30).
+      const holding = run.plan.filter(
+        (s) =>
+          held(s) &&
+          run!.plan.some(
+            (d) => d.id !== MERGE_STEP_ID && d.status === 'todo' && d.dependsOn.includes(s.id),
+          ),
+      );
+      if (holding.length > 0) {
+        await save({ status: 'waiting' });
+        await emit(
+          'message',
+          `Waiting for you: approve ${holding.map((s) => `“${s.title}”`).join(' and ')} to go on.`,
+          { waitingFor: holding.map((s) => s.id) },
+        );
+        return;
+      }
+
+      const mergeStep = run.plan.find((s) => s.id === MERGE_STEP_ID);
+      const mergeStop = await this.spendCapStop(db, `“${mergeStep?.title ?? 'Merge results'}”`);
+      if (mergeStop) throw mergeStop;
       const mergeStartedAt = new Date().toISOString();
       await save({
         plan: run.plan.map((s) =>
@@ -444,6 +572,15 @@ export class Engine {
       for (const id of touched) await setAgentStatus(db, id, 'idle').catch(() => {});
       await wipeSandbox(runId).catch(() => {});
     }
+  }
+
+  /**
+   * The daily spend cap (D32): null while today's spend is under the cap or there is none, else
+   * the error the run stops with. Read fresh each time, so a cap raised mid-run counts at once.
+   */
+  private async spendCapStop(db: Db, before: string): Promise<EngineError | null> {
+    const spend = await spendToday(db);
+    return capReached(spend) ? new EngineError('spend_cap', spendCapMessage(spend, before)) : null;
   }
 
   private async finishStep(

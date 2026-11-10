@@ -1,0 +1,1 @@
+ALTER TABLE "agents" ADD COLUMN "send_back_rounds" integer DEFAULT 0 NOT NULL;
