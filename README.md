@@ -7,6 +7,7 @@ account. The database is Postgres running inside the app (PGlite).
 
 - Product spec: [`docs/spec.md`](docs/spec.md) · design canvas linked at its top
 - Decisions (database, access, run engine, packaging): [`docs/decisions.md`](docs/decisions.md)
+- The development flock (agents for software work): [`docs/flock.md`](docs/flock.md)
 
 > **Status: PR 1 — scaffold.** Shell, design tokens, routes, embedded database with
 > migrations, first-launch setup, demo data and the desktop wrapper are in place. Screens whose

@@ -477,3 +477,24 @@ once per server start.
 - **Closing is a timestamp.** `runs.dismissed_at` hides the card on Home; the Runs screen, the
   run's page and the counters are unchanged. Only a landed flight can be closed (409 while it is
   live), and `PATCH /api/runs/[id] { dismissed: false }` reopens it.
+
+## D24 · The development flock
+
+- **Why.** The starter agents were written for the spec's integration world (Vercel deploys,
+  Inngest, tenant billing), and nothing said how Magpipe should staff software work. Research in
+  November 2026 (production coding agents, controlled multi-agent studies, Anthropic's own
+  guidance and the community methods) points the same way: reads fan out, one agent writes, a
+  person approves a written plan and the merge, a fresh reviewer checks the diff against the plan
+  and skips style, and only something that runs counts as evidence.
+- **Shape.** `docs/flock.md` is the proposal: five agents (Researcher, Planner, Coder, Reviewer,
+  Verifier; Operator retired), each defined by the artefact it may write, with prompts, models,
+  grants, memory scopes and limits; two new namespaces (`plans`, `reviews`); six `decisions`
+  entries as standing rules, since every `decisions` entry reaches every plan; and three run
+  shapes with the operator between the plan and the build and again before anything is pushed.
+- **Release 1 needs no code.** Repositories are reached through stdio MCP servers (Filesystem,
+  Git) plus GitHub over http and library docs, granted per agent with explicit scopes. The
+  Verifier waits for a bound repository with a typed script runner.
+- **Not yet.** The starter seed is unchanged. The engine gaps are ordered in `docs/flock.md`:
+  tool names and scopes in the planner's registry (and an empty grant meaning none), a bound
+  repository with `repo:read|write|run`, a single-writer rule in plan validation, then step data
+  and artefacts, a waiting plan gate and a bounded fix-up loop.
