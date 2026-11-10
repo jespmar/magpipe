@@ -415,3 +415,21 @@ once per server start.
 - **Density.** Cards are 16 px inside with 36 px avatars and body-size names; the stat strip,
   detail panels and Settings sections follow. The prompt is one field with its toolbar beneath,
   not a card around a box.
+
+## D22 · Claude Code as a second model backend (scoped, not built)
+
+- **Why.** The engine talks to the Messages API with an API key. Running a flight through the
+  Claude Code installed on the operator's machine would let the login it already has power
+  Magpipe without a key in `magpipe.env`. A subscription is not an API credential, so this is a
+  second backend, not a configuration switch.
+- **Shape.** A `RunBackend` seam above the model client (`plan`, `step`, `merge`); the API path
+  wraps today's functions unchanged, the new path spawns `claude -p` per step in the sandbox
+  folder with `--bare`, a restricted tool list by grant, `dontAsk` permissions and a Magpipe MCP
+  server (`/api/mcp`, per-step token) that carries the memory tools and the agent's MCP grants.
+  Plan and merge are single print-mode calls, the plan with `--json-schema`. Usage and cost come
+  from the CLI's result. `MAGPIPE_MODEL_BACKEND=api|claude-code` selects it; the API backend
+  stays the default. The full scope, the risks and the build order are in
+  `docs/claude-code-backend.md`.
+- **Gate.** Build only after confirming that a Claude subscription may power Claude Code's print
+  mode from another app on the operator's machine, and after an afternoon with the pinned CLI
+  confirms the three print-mode details the scope names.
