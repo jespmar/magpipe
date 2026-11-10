@@ -4,7 +4,7 @@
  * step's tools, writing every message, tool call, tool result and memory write to the run's
  * trail, under the agent's limits.
  */
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { Db } from '../db';
 import * as t from '../db/schema';
 import type { Agent, Attachment, MemoryEntry, Run, Step, Usage } from '../schemas';
@@ -110,15 +110,23 @@ export async function runStep(opts: {
 }
 
 /** Marks an agent running or idle for the Home and Agents screens; paused agents keep their status. */
+/**
+ * Moves an agent between idle, waiting (for a repository another step is changing, D28) and
+ * running. A paused agent is never touched, and waiting never hides a step that is running.
+ */
+const STATUS_FROM: Record<'running' | 'waiting' | 'idle', Agent['status'][]> = {
+  running: ['idle', 'waiting'],
+  waiting: ['idle'],
+  idle: ['running', 'waiting'],
+};
+
 export async function setAgentStatus(
   db: Db,
   agentId: string,
-  status: 'running' | 'idle',
+  status: 'running' | 'waiting' | 'idle',
 ): Promise<void> {
   await db
     .update(t.agents)
     .set({ status })
-    .where(
-      and(eq(t.agents.id, agentId), eq(t.agents.status, status === 'running' ? 'idle' : 'running')),
-    );
+    .where(and(eq(t.agents.id, agentId), inArray(t.agents.status, STATUS_FROM[status])));
 }

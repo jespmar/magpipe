@@ -82,7 +82,8 @@ engine and no sign-in on desktop.
   in `lib/repo.ts` (D27): paths stay inside the folder, `.git` and env files are refused, `run`
   takes a script the operator allowed, commits name their files and never land on the default
   branch, and nothing pushes. A new capability is a new named operation with its guard and a
-  test, never a shell or a free-form command.
+  test, never a shell or a free-form command. A mutating operation joins `MUTATING_OPS` in
+  `lib/engine/locks.ts`, so one step at a time changes a work tree (D28).
 - **Home stays on Home.** The prompt never navigates: a run started there is selected in place
   (`HomeScreen`), the panel shows it and the next message follows it up (`parentRunId`;
   `loadThread` puts the thread into every prompt). Closing a card sets `dismissedAt`; the Runs

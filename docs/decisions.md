@@ -568,7 +568,35 @@ once per server start.
   from grants, so an agent whose repository lost `run` can still be saved in the editor. The
   Claude Code step sets `MCP_TOOL_TIMEOUT` to the agent's own time limit, so a long test run is
   not cut off by the CLI before the step's clock.
-- **Not yet.** Nothing stops two runs, or two steps, writing to the same repository at once
-  (gap 3). Agents work in the operator's checkout, not a worktree, which is why branch switches
-  stop at uncommitted changes. Only package scripts run; a repository without a `package.json`
+- **Not yet.** Agents work in the operator's checkout, not a worktree, which is why branch
+  switches stop at uncommitted changes and why only one step at a time may change it (D28). Only package scripts run; a repository without a `package.json`
   offers every operation except `run`.
+
+## D28 · One writer per work tree
+
+- **Why.** The engine started every ready step of a run at once, without a cap, and two runs
+  could run side by side, so two agents could edit, switch branches and commit in the same
+  checkout at the same moment. With one working copy that is never safe, even on different
+  branches: a branch switch moves the files under the other writer. `dev.single-writer` was only
+  a prompt. It was the third gap in `docs/flock.md`.
+- **Who is a writer** is worked out from grants, not declared: a step whose agent holds `write`,
+  `git_branch`, `git_commit`, or `run` on a repository that allows a script (`MUTATING_OPS` and
+  `writeTargets` in `lib/engine/locks.ts`). Scripts count because builds, formatters and
+  snapshots write files. Reading, searching, diffs and logs never lock. Two repository tools on
+  the same git work tree (the app and its plans folder) share one lock, keyed by the work tree's
+  real path.
+- **How.** A writer step takes its work trees' locks before it goes live and holds them until it
+  ends, whatever happens; every run in the engine shares them. Locks are queued first come first
+  served, several are taken in sorted order so two steps cannot deadlock, and a cancelled run
+  stops waiting and gives back what it took. While it waits, the step stays `todo`, its agent
+  shows as `waiting` (the status existed but was never set), and the trail says
+  `Waiting to change App: run flight_… is changing it.` The wait does not count against the
+  step's time limit.
+- **Within a run** a wave never holds two steps that change the same work tree; the second waits
+  for the next wave instead of waiting live. A wave is at most three steps
+  (`MAX_PARALLEL_STEPS`), as the Claude Code backend's scope planned.
+- **In memory, on purpose.** Only one process opens the data folder (D1), so the engine is the
+  only writer and a restart drops every lock with the steps that held them; resumed steps take
+  them again. The map lives on `globalThis`, like the engine, so a dev reload keeps it.
+- **Not covered:** writes an MCP server makes on its own (a Filesystem server pointed at the same
+  folder) are invisible to the engine; bind the folder as a repository instead.
