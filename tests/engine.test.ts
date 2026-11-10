@@ -621,6 +621,113 @@ describe('run engine with an approval gate', () => {
   }, 20_000);
 });
 
+describe('run engine with a reviewer that may send work back', () => {
+  let db: Db;
+  let close: () => Promise<void>;
+  beforeAll(async () => {
+    ({ db, close } = await openDb('memory://'));
+  }, 30_000);
+  afterAll(() => close());
+
+  const plannedPair = () =>
+    plan([
+      {
+        id: 's1',
+        agent: 'coder',
+        title: 'Make the change',
+        instructions: '',
+        dependsOn: [],
+        optional: false,
+      },
+      {
+        id: 's2',
+        agent: 'reviewer',
+        title: 'Review the change',
+        instructions: '',
+        dependsOn: ['s1'],
+        optional: false,
+      },
+    ]);
+  const names = (p: ModelParams) => (p.tools ?? []).map((tool) => (tool as { name: string }).name);
+  const userOf = (p: ModelParams) => JSON.stringify(p.messages[0]!.content);
+  const sawResult = (p: ModelParams) =>
+    p.messages.some(
+      (m) =>
+        Array.isArray(m.content) &&
+        m.content.some((b) => (b as { type: string }).type === 'tool_result'),
+    );
+
+  it('reruns the reviewed step with the findings, then reviews once more (D31)', async () => {
+    await db.update(t.agents).set({ sendBackRounds: 1 }).where(eq(t.agents.slug, 'reviewer'));
+    const coderUsers: string[] = [];
+    const reviewerTools: string[][] = [];
+    let reviewerRound2 = '';
+    let planSystem = '';
+    const client = scripted((p) => {
+      if (isPlan(p)) {
+        planSystem = String(p.system);
+        return plannedPair();
+      }
+      if (isMerge(p)) return text('merged');
+      if (String(p.system).includes('You are Coder')) {
+        coderUsers.push(userOf(p));
+        return text(coderUsers.length === 1 ? 'Made it.' : 'Fixed the tenant check.');
+      }
+      reviewerTools.push(names(p));
+      const user = userOf(p);
+      if (user.includes('Your findings last round sent the work back')) {
+        reviewerRound2 = user;
+        return text('Approve.');
+      }
+      if (sawResult(p)) return text('Changes requested.');
+      return toolUse('send_back', { findings: 'The tenant check is missing in src/a.ts:12.' });
+    });
+    const engine = new Engine({ client, getDb: async () => db });
+    const run = await createRun(db, { text: 'change with a review', attachments: [] });
+    engine.enqueue(run.id);
+    await engine.whenIdle();
+    const after = (await getRun(db, run.id))!;
+    expect(after.status).toBe('done');
+    expect(planSystem).toContain('  may send work back: up to 1 time, to the steps it depends on');
+
+    // The Coder ran twice, the second time with the findings; the Reviewer reviewed again.
+    expect(coderUsers).toHaveLength(2);
+    expect(coderUsers[0]).not.toContain('sent the work back');
+    expect(coderUsers[1]).toContain(
+      'Round 2. Reviewer sent the work back after round 1: The tenant check is missing in src/a.ts:12.',
+    );
+    expect(reviewerRound2).toContain('The tenant check is missing');
+    expect(reviewerTools[0]).toContain('send_back');
+    expect(reviewerTools.at(-1)).not.toContain('send_back'); // no rounds left
+    const [s1, s2] = after.plan;
+    expect([s1!.round, s2!.round]).toEqual([2, 2]);
+    expect(s2!.sentBack).toBeUndefined();
+    const events = await listEvents(db, run.id);
+    expect(events.map((e) => e.text)).toContain(
+      'Round 2: Reviewer sent the work back to “Make the change”.',
+    );
+    // Every model call is still counted after the steps were reopened.
+    expect(after.usage.inputTokens).toBe(100 * client.calls.length);
+  }, 20_000);
+
+  it('never offers send_back to an agent with no rounds', async () => {
+    await db.update(t.agents).set({ sendBackRounds: 0 }).where(eq(t.agents.slug, 'reviewer'));
+    const seen: string[][] = [];
+    const client = scripted((p) => {
+      if (isPlan(p)) return plannedPair();
+      if (isMerge(p)) return text('merged');
+      if (!String(p.system).includes('You are Coder')) seen.push(names(p));
+      return text('ok');
+    });
+    const engine = new Engine({ client, getDb: async () => db });
+    const run = await createRun(db, { text: 'change without a loop', attachments: [] });
+    engine.enqueue(run.id);
+    await engine.whenIdle();
+    expect((await getRun(db, run.id))!.status).toBe('done');
+    expect(seen.flat()).not.toContain('send_back');
+  }, 20_000);
+});
+
 describe('run engine recording what steps did in a repository', () => {
   let db: Db;
   let close: () => Promise<void>;

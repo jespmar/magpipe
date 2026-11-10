@@ -43,69 +43,71 @@ const ALL_NS = NAMESPACES.map((n) => n.key);
 
 // ─── agents ────────────────────────────────────────────────────────────────
 
-const AGENTS: Omit<Agent, 'id' | 'tools' | 'pauseAfter' | 'status' | 'createdAt' | 'updatedAt'>[] =
-  [
-    {
-      slug: 'researcher',
-      name: 'Researcher',
-      role: 'Gathers context & sources',
-      initials: 'RS',
-      model: 'claude-sonnet-5-5',
-      description:
-        'Reads API docs, changelogs and tickets, then writes what matters into the nest so the other birds never re-read the same page.',
-      systemPrompt:
-        'You are Researcher, a bird in the Magpipe flock.\nGather only what the current task needs. Prefer primary sources. Write durable facts to memory with a confidence score. Never write code.',
-      builtins: ['web.search', 'web.fetch', 'files.read'],
-      // Artboard: "Read + write · facts, rate-limits" — plus tenants, which it writes on the Memory artboard.
-      memoryScope: {
-        read: ['facts', 'rate-limits', 'tenants'],
-        write: ['facts', 'rate-limits', 'tenants'],
-      },
-      limits: { maxTokens: 100_000, maxSteps: 30, timeoutSec: 600 },
+const AGENTS: Omit<
+  Agent,
+  'id' | 'tools' | 'pauseAfter' | 'sendBackRounds' | 'status' | 'createdAt' | 'updatedAt'
+>[] = [
+  {
+    slug: 'researcher',
+    name: 'Researcher',
+    role: 'Gathers context & sources',
+    initials: 'RS',
+    model: 'claude-sonnet-5-5',
+    description:
+      'Reads API docs, changelogs and tickets, then writes what matters into the nest so the other birds never re-read the same page.',
+    systemPrompt:
+      'You are Researcher, a bird in the Magpipe flock.\nGather only what the current task needs. Prefer primary sources. Write durable facts to memory with a confidence score. Never write code.',
+    builtins: ['web.search', 'web.fetch', 'files.read'],
+    // Artboard: "Read + write · facts, rate-limits" — plus tenants, which it writes on the Memory artboard.
+    memoryScope: {
+      read: ['facts', 'rate-limits', 'tenants'],
+      write: ['facts', 'rate-limits', 'tenants'],
     },
-    {
-      slug: 'coder',
-      name: 'Coder',
-      role: 'Writes & edits code',
-      initials: 'CD',
-      model: 'claude-opus-5-5',
-      description:
-        'Implements changes in the integration repos, runs the test suite and opens a PR for Reviewer. Reads shared memory before every task.',
-      systemPrompt:
-        'You are Coder, a bird in the Magpipe flock.\nRead memory before you start. Work in small commits. Run the test suite before opening a PR. Hand off to Reviewer; never merge yourself.',
-      builtins: ['files.read'],
-      memoryScope: { read: [...ALL_NS], write: [] },
-      limits: { maxTokens: 400_000, maxSteps: 80, timeoutSec: 1800 },
-    },
-    {
-      slug: 'reviewer',
-      name: 'Reviewer',
-      role: 'Checks diffs & tests',
-      initials: 'RV',
-      model: 'claude-sonnet-5-5',
-      description:
-        'Reviews every PR for correctness, security and tenant isolation. Blocks merges that touch billing paths without a test.',
-      systemPrompt:
-        'You are Reviewer, a bird in the Magpipe flock.\nReview for correctness, security and multi-tenant isolation. Request changes with a concrete fix. Approve only with green tests.',
-      builtins: [],
-      memoryScope: { read: ['decisions'], write: [] },
-      limits: { maxTokens: 100_000, maxSteps: 30, timeoutSec: 600 },
-    },
-    {
-      slug: 'operator',
-      name: 'Operator',
-      role: 'Deploys & monitors',
-      initials: 'OP',
-      model: 'claude-haiku-5-5',
-      description:
-        'Promotes approved builds to Vercel, watches Inngest for failed runs and raises a flag in the flight log when something drifts.',
-      systemPrompt:
-        'You are Operator, a bird in the Magpipe flock.\nDeploy only approved builds. Watch function runs for 15 minutes after each deploy. Report anomalies; never fix them yourself.',
-      builtins: [],
-      memoryScope: { read: ['incidents'], write: ['incidents'] },
-      limits: { maxTokens: 50_000, maxSteps: 20, timeoutSec: 900 },
-    },
-  ];
+    limits: { maxTokens: 100_000, maxSteps: 30, timeoutSec: 600 },
+  },
+  {
+    slug: 'coder',
+    name: 'Coder',
+    role: 'Writes & edits code',
+    initials: 'CD',
+    model: 'claude-opus-5-5',
+    description:
+      'Implements changes in the integration repos, runs the test suite and opens a PR for Reviewer. Reads shared memory before every task.',
+    systemPrompt:
+      'You are Coder, a bird in the Magpipe flock.\nRead memory before you start. Work in small commits. Run the test suite before opening a PR. Hand off to Reviewer; never merge yourself.',
+    builtins: ['files.read'],
+    memoryScope: { read: [...ALL_NS], write: [] },
+    limits: { maxTokens: 400_000, maxSteps: 80, timeoutSec: 1800 },
+  },
+  {
+    slug: 'reviewer',
+    name: 'Reviewer',
+    role: 'Checks diffs & tests',
+    initials: 'RV',
+    model: 'claude-sonnet-5-5',
+    description:
+      'Reviews every PR for correctness, security and tenant isolation. Blocks merges that touch billing paths without a test.',
+    systemPrompt:
+      'You are Reviewer, a bird in the Magpipe flock.\nReview for correctness, security and multi-tenant isolation. Request changes with a concrete fix. Approve only with green tests.',
+    builtins: [],
+    memoryScope: { read: ['decisions'], write: [] },
+    limits: { maxTokens: 100_000, maxSteps: 30, timeoutSec: 600 },
+  },
+  {
+    slug: 'operator',
+    name: 'Operator',
+    role: 'Deploys & monitors',
+    initials: 'OP',
+    model: 'claude-haiku-5-5',
+    description:
+      'Promotes approved builds to Vercel, watches Inngest for failed runs and raises a flag in the flight log when something drifts.',
+    systemPrompt:
+      'You are Operator, a bird in the Magpipe flock.\nDeploy only approved builds. Watch function runs for 15 minutes after each deploy. Report anomalies; never fix them yourself.',
+    builtins: [],
+    memoryScope: { read: ['incidents'], write: ['incidents'] },
+    limits: { maxTokens: 50_000, maxSteps: 20, timeoutSec: 900 },
+  },
+];
 
 // ─── tools ─────────────────────────────────────────────────────────────────
 
@@ -573,6 +575,7 @@ export function buildSeed(now = new Date()): SeedData {
       return scopes ? [{ toolId: toolIdOf(tool.slug), scopes }] : [];
     }),
     pauseAfter: false,
+    sendBackRounds: 0,
     status: 'idle',
     createdAt: at(30 * DAY),
     updatedAt: at(30 * DAY),

@@ -243,7 +243,8 @@ You review one change you did not write. You read; you never edit.
 4. Report only what affects correctness, security, data loss or the plan's definition of done. Skip style, naming and anything a linter or formatter would catch.
 5. Give each finding a tier (blocking, should fix, note), a path:line and a concrete fix.
 6. Give a verdict: approve, or changes requested. Any blocking finding means changes requested. Write the verdict and findings to memory as reviews/<branch>; if an entry already exists, say which of its findings were addressed.
-7. Finish your step even when the verdict is changes requested. The verdict is your result, not a failure.
+7. If the send_back tool is offered and there are blocking findings, call it with them: the steps you review run again with your findings and you review once more.
+8. Finish your step even when the verdict is changes requested. The verdict is your result, not a failure.
 
 Finish with: Verdict, Blocking, Should fix, Notes, Plan items not covered.
 ```
@@ -308,9 +309,11 @@ approves it, so one run carries a whole change.
    the next steps should know something; the Coder then reads the edited plan. Cancel ends the
    run there. The merge reports the branch, the commits, the check results, the verdict and
    what was not done; the operator pushes, opens the pull request and merges.
-2. **Fix-up run**: if the verdict was changes requested, a follow-up ("address the review on
-   magpipe/<slug>") runs Coder, Verifier and Reviewer again, and the Reviewer reads its own
-   earlier entry.
+2. **Fix-up round**: with "Times it may send work back" above 0 on the Reviewer (D31), a review
+   with blocking findings sends them back inside the same run: the Coder and the Verifier run
+   again with the findings, then the Reviewer reviews once more, at most that many times. When
+   the rounds are spent, or the setting is 0, a follow-up ("address the review on
+   magpipe/<slug>") does the same as a new run, and the Reviewer reads its own earlier entry.
 3. **Short hop**, for a change the operator calls small or one file with a named test: Coder,
    Verifier and Reviewer in one run, no plan file.
 4. **A question about the code** routes to the Researcher alone.
@@ -422,8 +425,9 @@ Release 1 and the runner need no code.
 4. **Add the namespaces** `plans` and `reviews` from the Memory screen.
 5. **Write the six `decisions` entries** above.
 6. **Edit Researcher, Coder and Reviewer, and add Planner and Verifier**, with the roles,
-   descriptions, prompts, models, memory scopes, limits and grants above, and tick "Wait for
-   approval after its steps" on the Planner. Pause or delete Operator.
+   descriptions, prompts, models, memory scopes, limits and grants above, tick "Wait for
+   approval after its steps" on the Planner, and set "Times it may send work back" to 1 on the
+   Reviewer. Pause or delete Operator.
 7. **Tick the tools each agent needs.** A grant names the tools it allows, and a grant with
    nothing ticked allows none (D25). Granting a repository ticks all nine operations; untick what
    the role should not have.
@@ -441,7 +445,7 @@ three are small.
 | 3     | Done (D28). One step at a time changes a work tree, across runs; readers run beside it; at most three steps of a run work at once.                                                          |                                                               |                                                                                                                 |
 | 4     | Done (D29). Each step records what its repository tools did; later steps and the merge get it as facts; the run page lists the branches and files a run changed.                            |                                                               |                                                                                                                 |
 | 5     | Done (D30). An agent can wait for approval after its steps; the run waits, and the operator approves with a note or cancels, from the run page or Home.                                     |                                                               |                                                                                                                 |
-| 6     | No bounded loop or re-plan                                                                                                                                                                  | A review-and-fix cycle inside one run                         | Retry a dependant with the Reviewer's findings at most N times, off by default                                  |
+| 6     | Done (D31). A reviewing agent may send the work it judges back with its findings, a set number of times; the reviewed steps run again and it reviews once more. Off by default.             |                                                               |                                                                                                                 |
 | 7     | The spend cap is recorded, not enforced (D15)                                                                                                                                               | Unattended runs                                               | Enforce from the run's usage totals                                                                             |
 | 8     | Resume re-runs a live step from scratch                                                                                                                                                     | A half-committed Coder step repeats (the prompt mitigates it) | Resume write steps with "continue from the branch"                                                              |
 | 9     | Steps load no `CLAUDE.md` by design; the orchestrator prompt has no editor                                                                                                                  | Repository conventions reach the Coder only if it reads them  | With a bound repository, append its `CLAUDE.md` to the step prompt; a standing-instructions view of `decisions` |

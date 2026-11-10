@@ -42,6 +42,7 @@ function draftFrom(agent: Agent | null, defaultModel: string): Draft {
       memoryScope: { read: [], write: [] },
       limits: { maxTokens: 100_000, maxSteps: 30, timeoutSec: 600 },
       pauseAfter: false,
+      sendBackRounds: 0,
     };
   }
   const {
@@ -56,6 +57,7 @@ function draftFrom(agent: Agent | null, defaultModel: string): Draft {
     memoryScope,
     limits,
     pauseAfter,
+    sendBackRounds,
   } = agent;
   return {
     name,
@@ -69,6 +71,7 @@ function draftFrom(agent: Agent | null, defaultModel: string): Draft {
     memoryScope,
     limits,
     pauseAfter,
+    sendBackRounds,
   };
 }
 
@@ -356,13 +359,29 @@ export function AgentEditor({
             </div>
           </Fieldset>
 
-          <Fieldset legend="Approval" hint="Where you step in before the work goes on.">
+          <Fieldset
+            legend="Approval and review"
+            hint="Where you step in before the work goes on, and how often this bird may send work back."
+          >
             <Checkbox
               label="Wait for approval after its steps"
               description="Steps that build on this bird's work start once you approve it, with an optional note. Use it for a planner."
               checked={draft.pauseAfter}
               onCheckedChange={(on) => set('pauseAfter', on === true)}
             />
+            <div className="max-w-[31rem]">
+              <Input
+                id={`${ids}-sendBackRounds`}
+                label="Times it may send work back"
+                description="Above 0, its steps may return their findings to the steps they review, which run again before it reviews once more. 0 leaves the next round to you. Use it for a reviewer."
+                type="number"
+                min={0}
+                max={5}
+                style={MONO}
+                value={draft.sendBackRounds}
+                onChange={(e) => set('sendBackRounds', Number(e.target.value))}
+              />
+            </div>
           </Fieldset>
 
           {/* The commit row stays in view however long the form is; errors sit beside it. */}

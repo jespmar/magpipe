@@ -6,6 +6,7 @@ import {
   headTitle,
   lastErrorText,
   awaitingApproval,
+  sendBackSet,
   matchesRunQuery,
   resultPlaceholder,
   runAgentIds,
@@ -226,5 +227,29 @@ describe('awaitingApproval', () => {
     ];
     expect(awaitingApproval(plan).map((s) => s.id)).toEqual(['s1']);
     expect(awaitingApproval([step('s1', 'done'), step('merge', 'todo', ['s1'])])).toEqual([]);
+  });
+});
+
+describe('sendBackSet', () => {
+  const step = (id: string, dependsOn: string[] = []) => ({ id, dependsOn });
+  const plan = [
+    step('research'),
+    step('plan', ['research']),
+    step('code', ['plan']),
+    step('verify', ['code']),
+    step('review', ['code', 'verify']),
+    step('docs', ['plan']),
+    step('merge', ['review', 'docs']),
+  ];
+
+  it('reopens what the reviewer judges and what lies between, never earlier work or the merge', () => {
+    expect([...sendBackSet(plan, 'review')].sort()).toEqual(['code', 'review', 'verify']);
+  });
+
+  it('follows the reviewer’s direct dependencies only', () => {
+    // A reviewer of the plan alone reopens the plan, not the code built on it.
+    const planReview = [...plan, step('plan-review', ['plan'])];
+    expect([...sendBackSet(planReview, 'plan-review')].sort()).toEqual(['plan', 'plan-review']);
+    expect(sendBackSet(plan, 'missing').size).toBe(0);
   });
 });

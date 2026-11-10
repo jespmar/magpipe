@@ -656,3 +656,31 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
 - **Not covered:** the sandbox folder is wiped when the run pauses, as at any run end (the
   repository is the durable workspace); time spent waiting counts in the run's duration; and an
   approval cannot edit the plan's later steps, only add a note to them.
+
+## D31 · A reviewer may send the work back
+
+- **Why.** A review with blocking findings ended the run, and fixing them took a follow-up run
+  started by hand, even for a finding the Coder could address in a minute. The evidence favours
+  the evaluator-optimizer loop when it is bounded and tied to evidence, and the human cycle as
+  the default. It was the sixth gap in `docs/flock.md`.
+- **The setting is the agent's, and off by default.** `agents.send_back_rounds` ("Times it may
+  send work back" in the editor's Approval and review section, 0 to 5, migration 0005). The
+  planner's registry says "may send work back: up to N times, to the steps it depends on", and
+  its rules ask it to make such an agent depend directly on the steps whose work it judges.
+- **A tool, not a parsed verdict.** While rounds remain, the agent's steps get `send_back
+{ findings }`. Calling it records the findings on the step (`sentBack`); the step then finishes
+  as usual with its verdict as the summary.
+- **What reopens.** After the wave, a done step with findings reopens the steps it depends on,
+  every step on a path from them to it (the Verifier between the Coder and the Reviewer), and
+  itself (`sendBackSet` in `lib/runs-util.ts`). Earlier work, such as the Planner's and its
+  approval, keeps its result, and the merge never reopens. Reopened steps go back to `todo`
+  with `round` + 1 and a `feedback` line in their prompt: the findings for the reviewed steps,
+  "your findings last round" for the reviewer. Their usage so far is added to the run's before
+  it is cleared, and their work record carries over (`mergeWork`), so tokens, cost, commits and
+  files across rounds all stay counted. The trail says
+  `Round 2: Reviewer sent the work back to “Make the change”.`, and the flight path shows the
+  round.
+- **Bounded.** A step on round N may send back while N is at most the agent's setting; after
+  that the tool is not offered and the verdict stands for the operator, as before.
+- **Not covered:** a send-back cannot change the plan (no new steps), and reopening the Planner
+  needs a reviewer that depends on it directly.

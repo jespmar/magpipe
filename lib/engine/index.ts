@@ -12,14 +12,14 @@ import * as t from '../db/schema';
 import { env } from '../env';
 import { listMemory } from '../memory';
 import { loadThread } from '../runs';
-import { threadText } from '../runs-util';
 import { addUsage, ZERO_USAGE } from '../pricing';
 import type { Agent, MemoryEntry, Run, Step } from '../schemas';
 import { apiBackend, type RunBackend } from './backend';
 import { claudeCodeBackend } from './claude-code';
 import { emitEvent } from './events';
 import { acquireWriteLocks, writeTargets, type WriteTarget } from './locks';
-import { foldWork, runArtifacts, type WorkItem } from '../work';
+import { foldWork, mergeWork, runArtifacts, type WorkItem } from '../work';
+import { sendBackSet, threadText } from '../runs-util';
 import { mergeRun } from './merge';
 import {
   abortError,
@@ -333,6 +333,10 @@ export class Engine {
             await setAgentStatus(db, agent.id, 'running');
             // What the step's repository tools do, kept whether the step finishes or fails.
             const work: WorkItem[] = [];
+            // A reviewing agent may send the work back while rounds remain (D31).
+            const remaining = agent.sendBackRounds - ((step.round ?? 1) - 1);
+            const sendBack: { remaining: number; findings?: string } | undefined =
+              remaining > 0 ? { remaining } : undefined;
             try {
               const outcome = await runStep({
                 db,
@@ -346,13 +350,16 @@ export class Engine {
                 sandboxDir,
                 conversation,
                 work,
+                sendBack,
                 signal,
               });
               await this.finishStep(save, () => run!, step.id, {
                 status: 'done',
                 result: { summary: outcome.summary },
                 usage: outcome.usage,
-                work: foldWork(work),
+                // A step that ran again keeps what it did before it was sent back.
+                work: mergeWork(step.work, foldWork(work)),
+                ...(sendBack?.findings ? { sentBack: sendBack.findings } : {}),
               });
               await emit('message', `${agent.name} finished: ${step.title}`, null, step.id);
             } catch (err) {
@@ -364,7 +371,7 @@ export class Engine {
               await this.finishStep(save, () => run!, step.id, {
                 status: 'failed',
                 error: { code: f.code, message: f.message },
-                work: foldWork(work),
+                work: mergeWork(step.work, foldWork(work)),
               });
               await emitEvent(db, {
                 runId,
@@ -380,6 +387,52 @@ export class Engine {
             }
           }),
         );
+
+        // A reviewing step that sent the work back reopens it: the steps it reviews run again
+        // with its findings, then it reviews once more (D31). Usage so far stays counted.
+        for (const step of wave) {
+          const current = run.plan.find((s) => s.id === step.id);
+          const agent = agents.find((a) => a.id === current?.agentId);
+          if (!current || !agent || current.status !== 'done' || !current.sentBack) continue;
+          const round = current.round ?? 1;
+          if (round > agent.sendBackRounds) continue;
+          const reopen = sendBackSet(run.plan, current.id);
+          const spent = run.plan
+            .filter((s) => reopen.has(s.id) && s.usage)
+            .reduce((acc, s) => addUsage(acc, s.usage!), ZERO_USAGE);
+          const findings = current.sentBack;
+          await save({
+            usage: addUsage(run.usage, spent),
+            plan: run.plan.map((s) =>
+              reopen.has(s.id)
+                ? {
+                    ...s,
+                    status: 'todo' as const,
+                    round: (s.round ?? 1) + 1,
+                    feedback:
+                      s.id === current.id
+                        ? `Your findings last round sent the work back: ${findings} Check whether they were addressed.`
+                        : `${agent.name} sent the work back after round ${round}: ${findings}`,
+                    result: undefined,
+                    usage: undefined,
+                    error: undefined,
+                    startedAt: undefined,
+                    finishedAt: undefined,
+                    sentBack: undefined,
+                    approvedAt: undefined,
+                    approvalNote: undefined,
+                  }
+                : s,
+            ),
+          });
+          const others = run.plan.filter((s) => reopen.has(s.id) && s.id !== current.id);
+          await emit(
+            'message',
+            `Round ${round + 1}: ${agent.name} sent the work back to ${others.map((s) => `“${s.title}”`).join(' and ')}.`,
+            { round: round + 1, findings },
+            current.id,
+          );
+        }
       }
 
       // 3. merge, unless a required step failed

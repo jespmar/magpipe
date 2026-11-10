@@ -48,7 +48,9 @@ export function RunFlightPath({ plan, agents, now, emptyMessage }: Props) {
     const meta = s.status === 'skipped' ? 'skipped' : stepMeta(s, now);
     // What the step did in a repository, as the tools recorded it (D29).
     const work = workLine(s.work);
-    const detail = [who, meta, work].filter(Boolean).join(' · ');
+    // A step that was sent back says which attempt this is (D31).
+    const round = s.round && s.round > 1 ? `round ${s.round}` : null;
+    const detail = [who, round, meta, work].filter(Boolean).join(' · ');
     return {
       id: s.id,
       label: s.title,

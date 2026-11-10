@@ -61,6 +61,7 @@ export const agents = pgTable(
     memoryScope: jsonb().$type<Agent['memoryScope']>().notNull(),
     limits: jsonb().$type<Agent['limits']>().notNull(),
     pauseAfter: boolean().notNull().default(false),
+    sendBackRounds: integer().notNull().default(0),
     status: text({ enum: agentStatuses }).notNull(),
     createdAt: timestamptz().notNull().defaultNow(),
     updatedAt: timestamptz().notNull().defaultNow(),
