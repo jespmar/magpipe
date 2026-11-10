@@ -19,6 +19,7 @@ import { apiBackend, type RunBackend } from './backend';
 import { claudeCodeBackend } from './claude-code';
 import { emitEvent } from './events';
 import { acquireWriteLocks, writeTargets, type WriteTarget } from './locks';
+import { foldWork, runArtifacts, type WorkItem } from '../work';
 import { mergeRun } from './merge';
 import {
   abortError,
@@ -304,6 +305,8 @@ export class Engine {
               ),
             });
             await setAgentStatus(db, agent.id, 'running');
+            // What the step's repository tools do, kept whether the step finishes or fails.
+            const work: WorkItem[] = [];
             try {
               const outcome = await runStep({
                 db,
@@ -316,12 +319,14 @@ export class Engine {
                 attachments: run!.input.attachments,
                 sandboxDir,
                 conversation,
+                work,
                 signal,
               });
               await this.finishStep(save, () => run!, step.id, {
                 status: 'done',
                 result: { summary: outcome.summary },
                 usage: outcome.usage,
+                work: foldWork(work),
               });
               await emit('message', `${agent.name} finished: ${step.title}`, null, step.id);
             } catch (err) {
@@ -333,6 +338,7 @@ export class Engine {
               await this.finishStep(save, () => run!, step.id, {
                 status: 'failed',
                 error: { code: f.code, message: f.message },
+                work: foldWork(work),
               });
               await emitEvent(db, {
                 runId,
@@ -397,7 +403,7 @@ export class Engine {
             : s,
         ),
         status: 'done',
-        output: { markdown: merged.markdown, artifacts: [] },
+        output: { markdown: merged.markdown, artifacts: runArtifacts(run.plan) },
         finishedAt,
         durationMs: finishedAt.getTime() - (run.startedAt ?? run.createdAt).getTime(),
         usage: addUsage(addUsage(run.usage, stepUsage), merged.usage),

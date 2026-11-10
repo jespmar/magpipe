@@ -104,8 +104,14 @@ move branches in a repository holds that work tree until it ends, across every r
 writer waits, says so in its trail and shows as waiting on the Agents screen. Readers are never
 held up, and at most three steps of a run work at once.
 
-What it still cannot do: `result.data` is never set and `output.artifacts` is always empty, there
-is no re-planning, and no run can pause for the operator (gaps 4 to 6).
+Since D29 each step keeps a record of what its repository tools did (the branch, the files, the
+commits, every script run with its exit code), taken from the tools rather than the agent's
+account. Later steps and the merge get it as "Recorded by Magpipe" facts, the flight path shows
+it per step, and the run lists the branches and files it changed, even when it failed before a
+merge.
+
+What it still cannot do: no run can pause for the operator, and nothing loops a review back to
+the Coder within a run (gaps 5 and 6).
 
 ## The roster
 
@@ -307,7 +313,8 @@ The orchestrator plans once and cannot pause, so the operator's gates fall betwe
 4. **A question about the code** routes to the Researcher alone.
 
 Handoffs carry artefacts, because a step's summary is 1,000 characters and the thread clips each
-turn at 2,000.
+turn at 2,000. The engine hands on the facts itself: a Reviewer step is told the Coder's branch,
+commits and check results as "Recorded by Magpipe", whatever the Coder's summary says.
 
 | Boundary              | Artefact                                           | Lives in                                          | Read by                                        |
 | --------------------- | -------------------------------------------------- | ------------------------------------------------- | ---------------------------------------------- |
@@ -420,18 +427,18 @@ Release 1 and the runner need no code.
 Ordered by how much of the proposal each unblocks against how much engine it touches. The first
 three are small.
 
-| Order | Gap today                                                                                                                                                                                   | What it blocks                                                               | Smallest change                                                                                                        |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| 1     | Done (D25, D26). The planner's registry names each server and the tools granted on it, marks servers that will not answer, and leaves empty grants out.                                     |                                                                              |                                                                                                                        |
-| 2     | Done (D27). A repository is a built-in tool bound to a folder in a git work tree: read, search, write, named scripts with a timeout, and git without push or commits to the default branch. |                                                                              |                                                                                                                        |
-| 3     | Done (D28). One step at a time changes a work tree, across runs; readers run beside it; at most three steps of a run work at once.                                                          |                                                                              |                                                                                                                        |
-| 4     | `result.data` is never set; `output.artifacts` is always empty                                                                                                                              | Findings and check output as data; the plan, branch and diff on the run page | Let a step return data; list the plan path and branch as artefacts                                                     |
-| 5     | No approval step; nothing sets `waiting`                                                                                                                                                    | One run per feature with a real plan gate                                    | A step kind that sets the run to waiting after the Planner and resumes on an operator action, re-reading the plan file |
-| 6     | No bounded loop or re-plan                                                                                                                                                                  | A review-and-fix cycle inside one run                                        | Retry a dependant with the Reviewer's findings at most N times, off by default                                         |
-| 7     | The spend cap is recorded, not enforced (D15)                                                                                                                                               | Unattended runs                                                              | Enforce from the run's usage totals                                                                                    |
-| 8     | Resume re-runs a live step from scratch                                                                                                                                                     | A half-committed Coder step repeats (the prompt mitigates it)                | Resume write steps with "continue from the branch"                                                                     |
-| 9     | Steps load no `CLAUDE.md` by design; the orchestrator prompt has no editor                                                                                                                  | Repository conventions reach the Coder only if it reads them                 | With a bound repository, append its `CLAUDE.md` to the step prompt; a standing-instructions view of `decisions`        |
-| 10    | No agent import or export                                                                                                                                                                   | Shipping the roster to a fresh install                                       | "Load the development flock" beside the demo data, asking for the repository's folder                                  |
+| Order | Gap today                                                                                                                                                                                   | What it blocks                                                | Smallest change                                                                                                        |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| 1     | Done (D25, D26). The planner's registry names each server and the tools granted on it, marks servers that will not answer, and leaves empty grants out.                                     |                                                               |                                                                                                                        |
+| 2     | Done (D27). A repository is a built-in tool bound to a folder in a git work tree: read, search, write, named scripts with a timeout, and git without push or commits to the default branch. |                                                               |                                                                                                                        |
+| 3     | Done (D28). One step at a time changes a work tree, across runs; readers run beside it; at most three steps of a run work at once.                                                          |                                                               |                                                                                                                        |
+| 4     | Done (D29). Each step records what its repository tools did; later steps and the merge get it as facts; the run page lists the branches and files a run changed.                            |                                                               |                                                                                                                        |
+| 5     | No approval step; nothing sets `waiting`                                                                                                                                                    | One run per feature with a real plan gate                     | A step kind that sets the run to waiting after the Planner and resumes on an operator action, re-reading the plan file |
+| 6     | No bounded loop or re-plan                                                                                                                                                                  | A review-and-fix cycle inside one run                         | Retry a dependant with the Reviewer's findings at most N times, off by default                                         |
+| 7     | The spend cap is recorded, not enforced (D15)                                                                                                                                               | Unattended runs                                               | Enforce from the run's usage totals                                                                                    |
+| 8     | Resume re-runs a live step from scratch                                                                                                                                                     | A half-committed Coder step repeats (the prompt mitigates it) | Resume write steps with "continue from the branch"                                                                     |
+| 9     | Steps load no `CLAUDE.md` by design; the orchestrator prompt has no editor                                                                                                                  | Repository conventions reach the Coder only if it reads them  | With a bound repository, append its `CLAUDE.md` to the step prompt; a standing-instructions view of `decisions`        |
+| 10    | No agent import or export                                                                                                                                                                   | Shipping the roster to a fresh install                        | "Load the development flock" beside the demo data, asking for the repository's folder                                  |
 
 ## Releases
 
@@ -440,8 +447,9 @@ three are small.
 2. **Gaps 1 to 3 (done):** the orchestrator sees what each agent can reach, Magpipe has a bound
    repository with a typed runner (the Verifier is on and the Coder moves to Sonnet), and reads
    fan out beside a single writer per work tree.
-3. **Gaps 4 to 6:** the two runs become one with a waiting plan gate and an optional bounded
-   fix-up cycle, and the run page shows the plan, the branch and the verdict as artefacts.
+3. **Gaps 4 to 6:** the run page shows the plan file, the branch and the checks as recorded work
+   (done), then the two runs become one with a waiting plan gate and an optional bounded fix-up
+   cycle.
 
 The order matters more than the list. A Verifier before the runner exists would be theatre, and
 an in-run gate before the runner would automate a workflow the operator cannot yet verify.

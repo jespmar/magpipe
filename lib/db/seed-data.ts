@@ -15,6 +15,7 @@ import type {
   NewRunEvent,
   Settings,
   Step,
+  StepWork,
   Tool,
 } from '../schemas';
 
@@ -432,6 +433,8 @@ type StepSeed = {
   sec: number;
   tokens: number;
   state: 'done' | 'failed';
+  /** What the step did in a bound repository (D29). */
+  work?: StepWork;
 };
 type RunSeed = {
   id: string;
@@ -488,6 +491,33 @@ const RUNS: RunSeed[] = [
         sec: 580,
         tokens: 180_000,
         state: 'done',
+        work: {
+          branches: [{ repo: 'integrations', name: 'magpipe/younium-webhook', created: true }],
+          files: [
+            { repo: 'integrations', path: 'src/webhooks/younium.ts', change: 'created' },
+            { repo: 'integrations', path: 'src/webhooks/younium.test.ts', change: 'created' },
+            { repo: 'integrations', path: 'src/webhooks/index.ts', change: 'updated' },
+          ],
+          commits: [
+            {
+              repo: 'integrations',
+              branch: 'magpipe/younium-webhook',
+              sha: '4e1c9a2',
+              message: 'Add the failing invoice webhook tests',
+            },
+            {
+              repo: 'integrations',
+              branch: 'magpipe/younium-webhook',
+              sha: 'b7d03f5',
+              message: 'Handle Younium invoice webhooks',
+            },
+          ],
+          checks: [
+            { repo: 'integrations', script: 'test', exit: 1, seconds: 14.2, timedOut: false },
+            { repo: 'integrations', script: 'test', exit: 0, seconds: 13.8, timedOut: false },
+            { repo: 'integrations', script: 'lint', exit: 0, seconds: 6.1, timedOut: false },
+          ],
+        },
       },
       {
         agent: 'reviewer',
@@ -624,6 +654,7 @@ export function buildSeed(now = new Date()): SeedData {
         startedAt: begin.toISOString(),
         finishedAt: end.toISOString(),
         usage: splitUsage(s.tokens),
+        ...(s.work ? { work: s.work } : {}),
         ...(s.state === 'failed'
           ? { error: { code: 'review_blocked', message: s.what } }
           : { result: { summary: s.what } }),

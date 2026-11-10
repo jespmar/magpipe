@@ -300,7 +300,17 @@ export async function resolveRepoPath(
 
 // ─── operations ────────────────────────────────────────────────────────────
 
-export type RepoOutcome = { text: string; isError?: boolean };
+/**
+ * What an operation did to the work tree, for the step's record (D29). Paths are relative to the
+ * repository folder; the engine adds the tool's name and makes them relative to the work tree.
+ */
+export type RepoWork =
+  | { kind: 'file'; path: string; change: 'created' | 'updated' }
+  | { kind: 'branch'; name: string; created: boolean }
+  | { kind: 'commit'; branch: string; sha: string; message: string }
+  | { kind: 'check'; script: string; exit: number | null; seconds: number; timedOut: boolean };
+
+export type RepoOutcome = { text: string; isError?: boolean; work?: RepoWork };
 
 /** `read`: a text file with line numbers, or a folder's entries. */
 export async function repoRead(
@@ -397,7 +407,14 @@ export async function repoWrite(
   const existed = await exists(target);
   await fs.mkdir(path.dirname(target), { recursive: true });
   await fs.writeFile(target, contents, 'utf8');
-  return { text: `${existed ? 'Updated' : 'Created'} ${relative} (${size} bytes)` };
+  return {
+    text: `${existed ? 'Updated' : 'Created'} ${relative} (${size} bytes)`,
+    work: {
+      kind: 'file',
+      path: path.relative(base, target).split(path.sep).join('/'),
+      change: existed ? 'updated' : 'created',
+    },
+  };
 }
 
 /** `run`: one of the package scripts the operator allowed, with the folder as working directory. */
@@ -430,18 +447,28 @@ export async function repoRun(
     }
     throw err;
   }
-  const seconds = ((Date.now() - started) / 1000).toFixed(1);
+  const elapsed = (Date.now() - started) / 1000;
+  const seconds = elapsed.toFixed(1);
   const head = `$ ${pm} run ${script}`;
   const body = `${res.truncated ? '… (earlier output cut)\n' : ''}${res.output.trimEnd()}`;
+  const work: RepoWork = {
+    kind: 'check',
+    script,
+    exit: res.timedOut ? null : res.code,
+    seconds: Math.round(elapsed * 10) / 10,
+    timedOut: res.timedOut,
+  };
   if (res.timedOut) {
     return {
       text: `${head}\n${body}\nStopped after ${Math.round(timeoutMs / 1000)} s without finishing.`,
       isError: true,
+      work,
     };
   }
   return {
     text: `${head}\n${body}\nexit ${res.code ?? '?'} · ${seconds} s`,
     isError: res.code !== 0,
+    work,
   };
 }
 
@@ -530,7 +557,10 @@ export async function gitBranch(
   }
   const res = await git(base, create ? ['switch', '-c', name] : ['switch', name], { signal });
   if (res.code !== 0) return { text: gitText(res) || 'git switch failed', isError: true };
-  return { text: create ? `Created and switched to ${name}` : `Switched to ${name}` };
+  return {
+    text: create ? `Created and switched to ${name}` : `Switched to ${name}`,
+    work: { kind: 'branch', name, created: create },
+  };
 }
 
 /**
@@ -573,7 +603,11 @@ export async function gitCommit(
     timeoutMs: COMMIT_TIMEOUT_MS,
   });
   if (res.code !== 0) return { text: gitText(res) || 'git commit failed', isError: true };
+  const [sha = '', subject = ''] = (
+    await gitOrThrow(base, ['log', '-1', '--format=%h%x09%s', '--no-decorate'], signal)
+  ).split('\t');
   return {
-    text: `Committed on ${branch}: ${await gitOrThrow(base, ['log', '-1', '--oneline', '--no-decorate'], signal)}`,
+    text: `Committed on ${branch}: ${sha} ${subject}`,
+    work: { kind: 'commit', branch, sha, message: subject },
   };
 }

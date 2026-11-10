@@ -600,3 +600,33 @@ once per server start.
   them again. The map lives on `globalThis`, like the engine, so a dev reload keeps it.
 - **Not covered:** writes an MCP server makes on its own (a Filesystem server pointed at the same
   folder) are invisible to the engine; bind the folder as a repository instead.
+
+## D29 · Steps record what they did
+
+- **Why.** A step returned a summary of at most 1,000 characters and nothing else: `result.data`
+  was never set and a run's `output.artifacts` was always empty. A Reviewer learned the Coder's
+  branch only if the Coder's prose named it, a run that failed at review lost track of the branch
+  it left behind, and the run page could not show what changed. It was the fourth gap in
+  `docs/flock.md`.
+- **Recorded from the tools, not the model.** Each repository operation reports what it did
+  alongside its text (`RepoWork` in `lib/repo.ts`): `write` the file and whether it was created,
+  `git_branch` the branch, `git_commit` its short hash and subject, `run` the script, exit code,
+  seconds and whether it timed out. The engine collects these per step (`ToolSetup.work`), with
+  file paths made relative to the git work tree, so a plans folder bound on its own still says
+  `docs/plans/…`.
+- **Stored on the step, done or failed.** `step.work` (`stepWork` in `lib/schemas`) holds the
+  files (each once, "created" if any write created it), branches, commits and checks, capped so
+  a runaway step cannot grow the plan. The engine keeps the collector outside the step, so a step
+  that fails partway still records the commits it made. `result.data`, never set, is gone.
+- **Handed on as facts.** A step's user message and the merge list each earlier result followed
+  by "Recorded by Magpipe:" lines (`workFacts` in `lib/work.ts`): the branch, the files, each
+  commit and the latest run of each script. The merge's final answer can rely on those.
+- **Shown.** The flight path adds one line per step, for example `3 files · 2 commits on
+magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` beside the old
+  `blobUrl`: each branch committed to, with its commit count and last commit, then each file.
+  The run page and Home's panel build the list from the steps (`shownArtifacts`), so it updates
+  while the run goes and survives a run that failed before its merge; the merge also stores it
+  in `output.artifacts`. The demo's failed webhook run carries a record.
+- **Not covered:** what an agent decides rather than does (a Reviewer's verdict and tiered
+  findings) is still prose plus the `reviews` memory entry; and work done through MCP servers
+  is not recorded, only through bound repositories.

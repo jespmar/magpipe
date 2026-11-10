@@ -98,7 +98,8 @@ test('connect a local MCP server, test it, grant it, remove it', async ({ page }
     edit.getByText('Nothing ticked, so this agent gets no tools from this server.'),
   ).toBeVisible();
   await edit.getByRole('button', { name: 'Save changes' }).click();
-  await expect(edit).toBeHidden();
+  // The first save on a cold dev server can take longer than the default wait.
+  await expect(edit).toBeHidden({ timeout: 15_000 });
   await expect(detail.getByText(slug)).toContainText('no tools');
 
   // Manage: test again, then remove after a confirm step.

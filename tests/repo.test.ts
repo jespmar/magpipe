@@ -131,6 +131,7 @@ describe('scripts', () => {
       expect(ok.text).toMatch(/^\$ npm run test\n/);
       expect(ok.text).toContain('tests ok clean');
       expect(ok.text).toMatch(/exit 0 · [\d.]+ s$/);
+      expect(ok.work).toMatchObject({ kind: 'check', script: 'test', exit: 0, timedOut: false });
 
       const failed = await repoRun(config, 'fail');
       expect(failed).toMatchObject({ isError: true });
@@ -140,6 +141,12 @@ describe('scripts', () => {
       const slow = await repoRun(config, 'slow', { timeoutMs: 1500 });
       expect(slow).toMatchObject({ isError: true });
       expect(slow.text).toContain('Stopped after 2 s without finishing.');
+      expect(slow.work).toMatchObject({
+        kind: 'check',
+        script: 'slow',
+        exit: null,
+        timedOut: true,
+      });
 
       expect(await repoRun(config, 'deploy')).toMatchObject({
         isError: true,
@@ -161,11 +168,13 @@ describe('git', () => {
     expect(await gitBranch(repo, '--force', true)).toMatchObject({ isError: true });
     expect(await gitBranch(repo, 'magpipe/feature', true)).toEqual({
       text: 'Created and switched to magpipe/feature',
+      work: { kind: 'branch', name: 'magpipe/feature', created: true },
     });
 
-    expect((await repoWrite(repo, 'src/added.ts', 'export const added = 1;\n')).text).toBe(
-      'Created src/added.ts (24 bytes)',
-    );
+    expect(await repoWrite(repo, 'src/added.ts', 'export const added = 1;\n')).toEqual({
+      text: 'Created src/added.ts (24 bytes)',
+      work: { kind: 'file', path: 'src/added.ts', change: 'created' },
+    });
     // A new file does not block a switch; an edit to a tracked file does.
     fs.appendFileSync(path.join(repo, 'src', 'hello.ts'), 'export const more = 2;\n');
     expect(await gitBranch(repo, 'main', false)).toMatchObject({
@@ -194,6 +203,12 @@ describe('git', () => {
     expect(committed.text).toMatch(
       /^Committed on magpipe\/feature: [0-9a-f]+ Add the added constant$/,
     );
+    expect(committed.work).toEqual({
+      kind: 'commit',
+      branch: 'magpipe/feature',
+      sha: sh(['rev-parse', '--short', 'HEAD']),
+      message: 'Add the added constant',
+    });
     expect(sh(['show', '--name-only', '--format=', 'HEAD']).split('\n')).toEqual([
       'src/added.ts',
       'src/hello.ts',
