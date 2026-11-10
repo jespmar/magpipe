@@ -408,6 +408,14 @@ export const namespaceInput = z.object({
   label: z.string().trim().min(1, 'Name the namespace').max(40),
 });
 
+/** Settings → Load the development flock (D35): the repository folder and its allowed scripts. */
+export const flockLoadInput = z.object({
+  path: z.string().trim().min(1, 'Give the repository folder as an absolute path.').max(4096),
+  /** Script names separated by commas or spaces; lib/flock.ts checks each one. */
+  scripts: z.string().max(2000),
+});
+
+export type FlockLoadInput = z.infer<typeof flockLoadInput>;
 export type MemoryInput = z.infer<typeof memoryInput>;
 export type MemoryPatch = z.infer<typeof memoryPatch>;
 export type NamespaceInput = z.infer<typeof namespaceInput>;

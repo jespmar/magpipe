@@ -356,6 +356,9 @@ Two things belong in the repository rather than in Magpipe: the check commands i
 
 Release 1 and the runner need no code.
 
+Settings → Development flock now does steps 2 and 4 to 7 in one action (D35), given the
+repository's folder and the scripts agents may run. The steps below stay for doing it by hand.
+
 1. **Create the plan folder** in the repository (`docs/plans/`), with a short README so git keeps
    it.
 2. **Bind the repository twice** on the Tools screen (Connect tool, then "Use the repository
@@ -438,7 +441,7 @@ three are small.
 | 7     | The spend cap is recorded, not enforced (D15)                                                                                                                                               | Unattended runs                                               | Enforce from the run's usage totals                                                                                    |
 | 8     | Resume re-runs a live step from scratch                                                                                                                                                     | A half-committed Coder step repeats (the prompt mitigates it) | Resume write steps with "continue from the branch"                                                                     |
 | 9     | Steps load no `CLAUDE.md` by design; the orchestrator prompt has no editor                                                                                                                  | Repository conventions reach the Coder only if it reads them  | With a bound repository, append its `CLAUDE.md` to the step prompt; a standing-instructions view of `decisions`        |
-| 10    | No agent import or export                                                                                                                                                                   | Shipping the roster to a fresh install                        | "Load the development flock" beside the demo data, asking for the repository's folder                                  |
+| 10    | Done (D35). Settings loads the flock onto a repository folder: both bindings, the namespaces, the six entries, the five agents with their grants, and Operator paused.                      |                                                               |                                                                                                                        |
 
 ## Releases
 

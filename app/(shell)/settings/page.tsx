@@ -5,12 +5,14 @@ import { PageHead } from '@/components/ui/PageHead';
 import { Button } from '@/components/ui/Button';
 import { Kbd } from '@/components/ui/Kbd';
 import { DemoDataForm } from '@/components/settings/DemoDataForm';
+import { FlockForm } from '@/components/settings/FlockForm';
 import { ScrollToHash } from '@/components/ui/ScrollToHash';
 import { dataDir, getDb } from '@/lib/db';
 import { describeModelBackend } from '@/lib/engine/claude-code';
 import { settings as settingsTable } from '@/lib/db/schema';
 import { buildSeed } from '@/lib/db/seed-data';
 import { env } from '@/lib/env';
+import { DEFAULT_FLOCK_SCRIPTS, FLOCK_DECISIONS } from '@/lib/flock';
 import { accessMode } from '@/lib/auth-mode';
 import { currentUser } from '@/lib/session';
 import { getShellData } from '@/lib/shell-data';
@@ -71,7 +73,7 @@ export default async function SettingsPage() {
       <ScrollToHash />
 
       <div className="grid gap-6 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] md:items-start wide:max-w-[1600px]">
-        <Section id="workspace" title="Workspace" className="md:row-span-2">
+        <Section id="workspace" title="Workspace" className="md:row-span-3">
           <p className="text-body-sm text-body">
             Read-only for now. Editing these lands with the screens that need them.
           </p>
@@ -115,6 +117,24 @@ export default async function SettingsPage() {
           </p>
           <DemoDataForm
             counts={demoCounts}
+            disabledReason={
+              shell.dbError
+                ? 'Needs the database. See the notice at the top of the page.'
+                : undefined
+            }
+          />
+        </Section>
+
+        <Section id="flock" title="Development flock">
+          <p className="text-body-sm text-body">
+            Five birds for software work on one repository: Researcher reads, Planner writes a plan
+            file, Coder commits on a branch, Verifier runs the checks and Reviewer reads the diff.
+            None of them pushes or merges; that stays with you. Loading it again puts them back as
+            written.
+          </p>
+          <FlockForm
+            defaultScripts={DEFAULT_FLOCK_SCRIPTS}
+            decisions={FLOCK_DECISIONS.length}
             disabledReason={
               shell.dbError
                 ? 'Needs the database. See the notice at the top of the page.'

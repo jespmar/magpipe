@@ -630,3 +630,41 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
 - **Not covered:** what an agent decides rather than does (a Reviewer's verdict and tiered
   findings) is still prose plus the `reviews` memory entry; and work done through MCP servers
   is not recorded, only through bound repositories.
+
+## D35 · Load the development flock
+
+- **Why.** A fresh install has the four starter agents, and the flock in `docs/flock.md` took
+  five manual steps across three screens: two repository bindings, two namespaces, six
+  `decisions` entries, five agents with their prompts, scopes and limits, and a grant per agent
+  and repository. It was the tenth gap in `docs/flock.md`.
+- **Shape.** `lib/flock.ts` holds the flock as data (`FLOCK_AGENTS`, `FLOCK_DECISIONS`,
+  `FLOCK_NAMESPACES`) and `loadFlock(db, { path, scripts })`. Settings gains a "Development
+  flock" section beside the demo data: the repository folder, the scripts agents may run
+  (typecheck, lint and test by default), a confirm step that says what will change, and the
+  result as plain lines (`summarizeFlock`). The server action (`loadFlockAction`) never throws;
+  a folder or script the flock cannot use comes back on its field. The Agents screen's empty
+  roster links to the section.
+- **What a load does.** Creates `docs/plans` in the folder if it is missing; binds the folder
+  twice through `connectTool` (`<folder>` with the scripts, `<folder> plans` at `docs/plans`
+  with none), or reuses tools already bound to those paths, a reused folder taking the scripts
+  asked for; creates every namespace the agents name that is missing (`plans` and `reviews` on a
+  fresh install); writes the six entries with confidence 1 and source "operator"; upserts the
+  five agents by slug (Researcher, Coder and Reviewer keep their ids, Planner and Verifier are
+  created); sets each agent's grants on the two repositories to the operations in flock.md's
+  table; and pauses Operator rather than deleting it.
+- **Guards.** Everything that can be refused is checked before anything is written: an absolute
+  folder inside a git work tree (`inspectRepository`), at least one script (the Verifier runs
+  the checks), each a script name its package.json has, and no file where `docs/plans` should
+  be. Grants name their operations; an agent with none on a repository gets no grant to it, never
+  an empty one (D25). Grants to other tools are kept, so a GitHub server the operator already
+  granted survives a load. Loading again changes only what differs: an edited entry becomes a
+  new, verified version (no conflict flag), an agent is updated only when a field differs, and no
+  folder is bound twice.
+- **Drift.** `tests/flock.test.ts` parses `docs/flock.md` and fails when a prompt, role,
+  description, model, built-in list, memory scope, limit, grant or standing instruction in
+  `lib/flock.ts` differs from it. Change both together.
+- **Not covered:** GitHub (read) and Library docs need a token or npx, so the result says to
+  connect them from Tools and tick their tools. `docs/plans` is created empty, without the README
+  flock.md suggests, so git shows nothing until the first plan file. There is no general agent
+  import or export. A load is not one transaction: a failure part way keeps what was written, and
+  loading again finishes it.
