@@ -896,6 +896,60 @@ describe('run engine recording what steps did in a repository', () => {
     ]);
   }, 30_000);
 
+  it("keeps a step's work across a send-back round, each file once (D31, D33)", async () => {
+    await db.update(t.agents).set({ sendBackRounds: 1 }).where(eq(t.agents.slug, 'reviewer'));
+    let writes = 0;
+    const client = scripted((p) => {
+      if (isPlan(p)) {
+        return plan([
+          {
+            id: 's1',
+            agent: 'operator',
+            title: 'Write it',
+            instructions: '',
+            dependsOn: [],
+            optional: false,
+          },
+          {
+            id: 's2',
+            agent: 'reviewer',
+            title: 'Check it',
+            instructions: '',
+            dependsOn: ['s1'],
+            optional: false,
+          },
+        ]);
+      }
+      if (isMerge(p)) return text('merged');
+      const user = JSON.stringify(p.messages[0]!.content);
+      if (String(p.system).includes('You are Reviewer')) {
+        if (user.includes('Your findings last round')) return text('Approve.');
+        return resultsIn(p) === 0
+          ? toolUse('send_back', { findings: 'Add r2.ts as well.' })
+          : text('Changes requested.');
+      }
+      if (resultsIn(p) > 0) return text('Written.');
+      writes += 1;
+      const name = user.includes('Add r2.ts as well') ? 'r2' : 'r1';
+      return toolUse('app__write', {
+        path: `src/${name}.ts`,
+        contents: `export const ${name} = 1;\n`,
+      });
+    });
+    const engine = new Engine({ client, getDb: async () => db });
+    const run = await createRun(db, { text: 'write it twice', attachments: [] });
+    engine.enqueue(run.id);
+    await engine.whenIdle();
+    const after = (await getRun(db, run.id))!;
+    expect(after.status).toBe('done');
+    expect(writes).toBe(2);
+    expect(after.plan.find((st) => st.id === 's1')!.work?.files).toEqual([
+      { repo: 'App', path: 'src/r1.ts', change: 'created' },
+      { repo: 'App', path: 'src/r2.ts', change: 'created' },
+    ]);
+    await db.update(t.agents).set({ sendBackRounds: 0 }).where(eq(t.agents.slug, 'reviewer'));
+  }, 30_000);
+
   it('keeps the work of a step that fails partway', async () => {
     let calls = 0;
     const client = scripted((p) => {
