@@ -38,13 +38,7 @@ export function AgentCard({ card, now }: { card: AgentCardData; now: Date }) {
           'Ready for a first task.'
         )}
       </p>
-      {card.progress !== null ? (
-        <Progress
-          value={pct}
-          label={`Current run, ${pct}% of steps settled`}
-          className="[&>div:first-child]:sr-only"
-        />
-      ) : null}
+      {card.progress !== null ? <Progress value={pct} label="Current run" showValue /> : null}
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-hairline-soft pt-3">
         <span className="rounded-sm bg-canvas-soft px-2 py-0.5 font-mono text-code text-ink">
           {card.model}

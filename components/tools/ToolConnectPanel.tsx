@@ -61,14 +61,9 @@ export function ToolConnectPanel({ onClose, onConnected, secretsReady }: Props) 
         <h2 id={`${ids}-title`} className="text-display-sm text-ink-strong">
           Connect an MCP server
         </h2>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close"
-          className="inline-flex size-8 items-center justify-center rounded-pill border border-hairline text-mute hover:text-ink-strong"
-        >
-          <X size={14} strokeWidth={1.75} aria-hidden />
-        </button>
+        <Button variant="ghost" onClick={onClose} aria-label="Close the connect panel">
+          <X size={16} strokeWidth={1.75} aria-hidden />
+        </Button>
       </div>
       <form onSubmit={submit} className="flex flex-col gap-4">
         <Textarea
@@ -81,8 +76,10 @@ export function ToolConnectPanel({ onClose, onConnected, secretsReady }: Props) 
           aria-invalid={!parsed.ok}
           aria-describedby={`${ids}-hint`}
         />
+        {/* One line that is either the format hint or the parse error, announced when it changes. */}
         <p
           id={`${ids}-hint`}
+          aria-live="polite"
           className={clsx('-mt-2 text-caption', parsed.ok ? 'text-mute' : 'text-danger')}
         >
           {parsed.ok ? hint : parsed.error}
@@ -103,7 +100,7 @@ export function ToolConnectPanel({ onClose, onConnected, secretsReady }: Props) 
             disabled={!parsed.ok || (wantsToken && !secretsReady)}
             loading={busy}
           >
-            Connect & test
+            Connect and test
           </Button>
         </div>
       </form>

@@ -183,6 +183,7 @@ export function AgentEditor({
       <DialogContent
         title={title}
         style={{ width: 'min(calc(100vw - 2rem), 760px)' }}
+        aria-describedby={undefined}
         onOpenAutoFocus={(e) => {
           e.preventDefault();
           nameRef.current?.focus();
@@ -259,7 +260,7 @@ export function AgentEditor({
                 No connected tools yet. Connect some on the Tools screen.
               </p>
             ) : (
-              <ul className="flex flex-col divide-y divide-hairline-soft rounded-(--radius-panel) border border-hairline">
+              <ul className="flex flex-col divide-y divide-hairline-soft rounded-[max(6px,calc(var(--radius-surface)-24px))] border border-hairline">
                 {tools.map((tool) => {
                   const grant = draft.tools.find((g) => g.toolId === tool.id);
                   return (
@@ -309,7 +310,7 @@ export function AgentEditor({
                   <tr key={ns.id} className="border-t border-hairline-soft">
                     <td className="py-1 text-ink">{ns.label}</td>
                     {(['read', 'write'] as const).map((kind) => (
-                      <td key={kind} className="py-1 text-center [&>div]:justify-center">
+                      <td key={kind} className="py-1 text-center">
                         <Checkbox
                           aria-label={`${kind === 'read' ? 'Read' : 'Write'} ${ns.label}`}
                           checked={draft.memoryScope[kind].includes(ns.id)}
@@ -352,7 +353,7 @@ export function AgentEditor({
           </Fieldset>
 
           {/* The commit row stays in view however long the form is; errors sit beside it. */}
-          <div className="sticky -bottom-6 -mx-6 -mb-6 flex flex-col gap-3 border-t border-hairline bg-canvas-soft px-6 py-4">
+          <div className="sticky bottom-0 -mx-6 -mb-6 flex flex-col gap-3 border-t border-hairline bg-canvas-soft px-6 py-4">
             {error ? (
               <p role="alert" className="text-body-sm text-danger">
                 {error}

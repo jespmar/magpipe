@@ -251,7 +251,7 @@ export function MemoryScreen({
           {empty ? (
             <EmptyState
               title="The nest is empty"
-              description={`Every durable fact a bird learns is kept here with its confidence, its source and when it expires, so no bird reads the same page twice. Add a decision of your own with “Add fact”${fresh ? ', or load the demo data to fill the nest with a dozen examples' : ''}.`}
+              description="Every durable fact a bird learns is kept here with its confidence, source and expiry. Add a decision of your own with “Add fact”."
               actions={fresh ? <DemoLink /> : undefined}
             />
           ) : (

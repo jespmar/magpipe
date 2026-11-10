@@ -22,7 +22,7 @@ export function OrchestratorCore({ stats, hasRuns, fresh, className }: Props) {
         className,
       )}
     >
-      <OrchestratorOrb />
+      <OrchestratorOrb live={n > 0} />
       <div className="flex flex-col items-center gap-2">
         <h2 id="nest-title" className="text-display-md text-ink-strong">
           {n > 0 ? `Magpipe is flying ${plural(n, 'agent')}` : 'No agents flying right now'}
@@ -52,7 +52,7 @@ function Counter({ value, label }: { value: string; label: string }) {
   return (
     <div className="flex flex-col-reverse items-center gap-0.5">
       <dt className="text-caption text-mute">{label}</dt>
-      <dd className="m-0 font-mono text-display-sm font-medium text-ink-strong tabular-nums wide:text-[22px] wide:leading-7">
+      <dd className="m-0 font-mono text-display-sm font-medium text-ink-strong tabular-nums wide:text-display-md">
         {value}
       </dd>
     </div>

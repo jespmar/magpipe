@@ -208,7 +208,7 @@ export function PromptComposer() {
                   type="button"
                   aria-label={`Remove ${c.name}`}
                   onClick={() => remove(c.key)}
-                  className="inline-flex size-6 shrink-0 items-center justify-center rounded-pill text-mute hover:text-ink-strong"
+                  className="-m-2.5 [box-sizing:content-box] inline-flex size-6 shrink-0 items-center justify-center rounded-pill p-2.5 text-mute hover:text-ink-strong"
                 >
                   <X size={12} strokeWidth={1.75} aria-hidden />
                 </button>
