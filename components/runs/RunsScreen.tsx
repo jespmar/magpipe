@@ -5,7 +5,7 @@ import { clsx } from 'clsx';
 import { ButtonLink } from '@/components/ui/Button';
 import { DemoLink } from '@/components/ui/DemoLink';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { FilterPills } from '@/components/ui/FilterPills';
+import { FilterControl } from '@/components/ui/FilterControl';
 import { PageHead } from '@/components/ui/PageHead';
 import { SearchInput } from '@/components/ui/SearchInput';
 import { RunActions } from './RunActions';
@@ -36,7 +36,7 @@ type Props = {
 };
 
 const DESCRIPTION =
-  'Every task Magpipe has sent the flock out on — who flew, how long it took, what it cost.';
+  'Every task Magpipe has sent the flock out on: who flew, how long it took, what it cost.';
 
 /** The Runs screen (spec §3.4): head, stats strip, filter pills, the ledger and the selected flight. */
 export function RunsScreen({ runs, counts, agents, stats, fresh, initialId, now }: Props) {
@@ -85,7 +85,6 @@ export function RunsScreen({ runs, counts, agents, stats, fresh, initialId, now 
 
   const head = (
     <PageHead
-      eyebrow="Flights"
       title="Runs"
       description={DESCRIPTION}
       actions={
@@ -108,13 +107,11 @@ export function RunsScreen({ runs, counts, agents, stats, fresh, initialId, now 
     return (
       <>
         {head}
-        <EmptyState title="No flights yet" actions={fresh ? <DemoLink /> : undefined}>
-          <p>
-            A flight is one task handed to Magpipe, from plan to merged result. Start one from the
-            prompt on the home screen
-            {fresh ? ', or load the demo data to look at a few finished ones' : ''}.
-          </p>
-        </EmptyState>
+        <EmptyState
+          title="No flights yet"
+          description={`A flight is one task handed to Magpipe, from plan to merged result. Start one from the prompt on the home screen${fresh ? ', or load the demo data to look at a few finished ones' : ''}.`}
+          actions={fresh ? <DemoLink /> : undefined}
+        />
       </>
     );
   }
@@ -123,7 +120,7 @@ export function RunsScreen({ runs, counts, agents, stats, fresh, initialId, now 
     <>
       {head}
       <StatStrip stats={stats} />
-      <FilterPills
+      <FilterControl
         label="Filter runs"
         options={RUN_FILTERS.map((f) => ({
           key: f.key,

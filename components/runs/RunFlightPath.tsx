@@ -1,4 +1,7 @@
-import { clsx } from 'clsx';
+'use client';
+
+import { useSyncExternalStore } from 'react';
+import { Stepper, type StepperStep } from '@/components/arc/stepper/stepper';
 import { stepMeta, type AgentChip } from '@/lib/runs-util';
 import type { Step } from '@/lib/schemas';
 
@@ -10,91 +13,52 @@ type Props = {
   emptyMessage?: string;
 };
 
-const STEP_STYLE: Record<Step['status'], { card: string; dot: string; label: string }> = {
-  done: { card: 'border-hairline bg-canvas', dot: 'bg-emerald', label: 'text-mute' },
-  live: {
-    card: 'border-cyan/60 bg-[rgba(34,193,220,0.08)]',
-    dot: 'bg-cyan motion-safe:animate-blink',
-    label: 'text-cyan',
-  },
-  failed: { card: 'border-danger/50 bg-canvas', dot: 'bg-danger', label: 'text-danger' },
-  todo: { card: 'border-hairline-soft bg-canvas', dot: 'bg-mute opacity-60', label: 'text-mute' },
-  skipped: {
-    card: 'border-dashed border-hairline-soft bg-canvas',
-    dot: 'bg-mute opacity-60',
-    label: 'text-mute',
-  },
-};
+const WIDE = '(min-width: 100rem)';
+
+function subscribe(onChange: () => void) {
+  const query = window.matchMedia(WIDE);
+  query.addEventListener('change', onChange);
+  return () => query.removeEventListener('change', onChange);
+}
+
+/** Vertical from 1600 px, where the path stands beside the log; a horizontal chain below that. */
+function useWide() {
+  return useSyncExternalStore(
+    subscribe,
+    () => window.matchMedia(WIDE).matches,
+    () => false,
+  );
+}
 
 /**
- * The plan as a chain of step cards, `AGENT · what · meta` (spec §3.4): a horizontal chain with
- * arrows below 1600 px, a vertical timeline from there. Done is an emerald dot, the live step a
- * cyan edge and fill, failed red, waiting grey.
+ * The plan as Arc's stepper (spec §3.4): each step's title with `agent · meta` beneath it. The
+ * live step is current, a failed step carries its error, the steps after it stay upcoming.
  */
 export function RunFlightPath({ plan, agents, now, emptyMessage }: Props) {
+  const wide = useWide();
   if (plan.length === 0) {
     return <p className="text-body-sm text-body">{emptyMessage ?? 'No steps were planned.'}</p>;
   }
+  const current = plan.findIndex((s) => s.status !== 'done' && s.status !== 'skipped');
+  const steps: StepperStep[] = plan.map((s) => {
+    const who =
+      s.agentId === null ? 'Magpipe' : (agents.find((a) => a.id === s.agentId)?.name ?? 'agent');
+    const meta = s.status === 'skipped' ? 'skipped' : stepMeta(s, now);
+    const detail = `${who} · ${meta}`;
+    return {
+      id: s.id,
+      label: s.title,
+      description: detail,
+      error: s.status === 'failed' ? detail : undefined,
+    };
+  });
   return (
-    <ol
-      aria-label="Flight path"
-      className="flex items-stretch overflow-x-auto pb-1 wide:flex-col wide:overflow-visible wide:pb-0"
-    >
-      {plan.map((s, i) => {
-        const style = STEP_STYLE[s.status];
-        const label =
-          s.agentId === null
-            ? 'Magpipe'
-            : (agents.find((a) => a.id === s.agentId)?.name ?? 'agent');
-        return (
-          <li
-            key={s.id}
-            aria-current={s.status === 'live' ? 'step' : undefined}
-            className="flex shrink-0 items-center wide:flex-col wide:items-stretch"
-          >
-            <div
-              className={clsx(
-                'flex w-[196px] flex-col gap-1.5 rounded-md border px-3.5 py-3 wide:w-full',
-                style.card,
-              )}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span
-                  className={clsx(
-                    'truncate text-caption font-semibold tracking-[1.2px] uppercase',
-                    style.label,
-                  )}
-                >
-                  {label}
-                </span>
-                <span
-                  role="img"
-                  aria-label={s.status === 'live' ? 'running' : s.status}
-                  className={clsx('size-1.5 shrink-0 rounded-pill', style.dot)}
-                />
-              </div>
-              <span className="line-clamp-3 text-body-sm text-ink">{s.title}</span>
-              <span className="font-mono text-caption text-mute">{stepMeta(s, now)}</span>
-            </div>
-            {i < plan.length - 1 ? (
-              <svg
-                aria-hidden
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="mx-1 shrink-0 text-hairline wide:my-1 wide:ml-5 wide:rotate-90 wide:self-start"
-              >
-                <path d="M4 12h14M13 7l5 5-5 5" />
-              </svg>
-            ) : null}
-          </li>
-        );
-      })}
-    </ol>
+    <Stepper
+      label="Flight path"
+      steps={steps}
+      current={current === -1 ? plan.length : current}
+      orientation={wide ? 'vertical' : 'horizontal'}
+      completeLabel="Every step settled"
+    />
   );
 }

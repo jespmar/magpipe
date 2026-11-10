@@ -2,7 +2,8 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { Button } from '@/components/ui/Button';
+import { Dialog, DialogContent } from '@/components/arc/dialog/dialog';
+import { Kbd } from '@/components/ui/Kbd';
 import { GO_TO, isTypingTarget, SHORTCUTS } from '@/lib/shortcuts';
 
 /** How long after `g` the screen letter may follow. */
@@ -16,14 +17,13 @@ export function KeyboardShortcuts() {
   const router = useRouter();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const dialog = useRef<HTMLDialogElement>(null);
   const chordUntil = useRef(0);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isTypingTarget(e.target)) return;
-      if (document.querySelector('dialog[open]')) return;
+      if (document.querySelector('[role="dialog"]')) return;
 
       const chord = Date.now() < chordUntil.current;
       chordUntil.current = 0;
@@ -65,56 +65,30 @@ export function KeyboardShortcuts() {
     return () => window.removeEventListener('keydown', onKey);
   }, [router, pathname]);
 
-  useEffect(() => {
-    const d = dialog.current;
-    if (!d || !open) return;
-    if (!d.open) d.showModal();
-    d.querySelector<HTMLElement>('[data-autofocus]')?.focus();
-  }, [open]);
-
-  if (!open) return null;
   return (
-    <dialog
-      ref={dialog}
-      aria-labelledby="shortcuts-title"
-      onClose={() => setOpen(false)}
-      className="m-auto w-[min(100vw-2rem,28rem)] rounded-md border border-hairline bg-canvas p-0 text-ink backdrop:bg-[rgba(16,16,16,0.7)]"
-    >
-      <div className="flex flex-col gap-5 p-6">
-        <div className="flex items-start justify-between gap-4">
-          <h2
-            id="shortcuts-title"
-            tabIndex={-1}
-            data-autofocus
-            className="text-display-sm text-ink-strong focus:outline-none"
-          >
-            Keyboard shortcuts
-          </h2>
-          <Button variant="ghost" size="sm" onClick={() => dialog.current?.close()}>
-            Close
-          </Button>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent title="Keyboard shortcuts">
+        <div className="flex flex-col gap-5">
+          <dl className="flex flex-col gap-3">
+            {SHORTCUTS.map((s) => (
+              <div key={s.label} className="flex items-baseline justify-between gap-6">
+                <dt className="text-body-sm text-body">{s.label}</dt>
+                <dd className="flex shrink-0 items-center gap-1 font-mono text-code text-ink">
+                  {s.keys.map((k, i) => (
+                    <span key={k} className="inline-flex items-center gap-1">
+                      {i > 0 ? <span className="text-mute">{s.chord ? 'then' : '+'}</span> : null}
+                      <Kbd>{k}</Kbd>
+                    </span>
+                  ))}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          <p className="text-caption text-mute">
+            Single keys work outside text fields; dialogs keep their own Escape.
+          </p>
         </div>
-        <dl className="flex flex-col gap-2.5">
-          {SHORTCUTS.map((s) => (
-            <div key={s.label} className="flex items-baseline justify-between gap-6">
-              <dt className="text-body-sm text-body">{s.label}</dt>
-              <dd className="flex shrink-0 items-center gap-1 font-mono text-code text-ink">
-                {s.keys.map((k, i) => (
-                  <span key={k} className="inline-flex items-center gap-1">
-                    {i > 0 ? <span className="text-mute">{s.chord ? 'then' : '+'}</span> : null}
-                    <kbd className="rounded-xs border border-hairline bg-canvas-soft px-1.5 py-0.5 text-caption text-ink-strong">
-                      {k}
-                    </kbd>
-                  </span>
-                ))}
-              </dd>
-            </div>
-          ))}
-        </dl>
-        <p className="text-caption text-mute">
-          Single keys work outside text fields; dialogs keep their own Escape.
-        </p>
-      </div>
-    </dialog>
+      </DialogContent>
+    </Dialog>
   );
 }

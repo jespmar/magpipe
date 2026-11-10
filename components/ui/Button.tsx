@@ -1,26 +1,36 @@
 import Link from 'next/link';
-import type { ComponentProps } from 'react';
+import type { ComponentProps, Ref } from 'react';
 import { clsx } from 'clsx';
-import { buttonClass, type ButtonSize, type ButtonVariant } from './button-styles';
+import {
+  Button as ArcButton,
+  type ButtonProps as ArcButtonProps,
+  type ButtonSize,
+  type ButtonVariant,
+} from '@/components/arc/button/button';
+import styles from '@/components/arc/button/button.module.css';
 
-type Common = { variant?: ButtonVariant; size?: ButtonSize };
+export type { ButtonSize, ButtonVariant };
+export type ButtonProps = ArcButtonProps & { ref?: Ref<HTMLButtonElement> };
 
-export function Button({
-  variant,
-  size,
-  className,
-  type = 'button',
-  ...props
-}: Common & ComponentProps<'button'>) {
-  return <button type={type} className={clsx(buttonClass(variant, size), className)} {...props} />;
+/**
+ * Arc's button. The default here is `secondary`, not Arc's `primary`: one primary action per
+ * surface is a decision, so it is always written out. `loading` shows the spinner, keeps the
+ * label's width and swallows clicks while keeping focus.
+ */
+export function Button({ variant = 'secondary', type = 'button', ...props }: ButtonProps) {
+  return <ArcButton variant={variant} type={type} {...props} />;
 }
 
-/** A link that looks like a button — use for navigation (e.g. "+ Add a bird" → /agents?new=1). */
+type Look = { variant?: ButtonVariant; size?: ButtonSize };
+
+/** A link that looks like the button, for navigation ("New run", "Load demo data"). */
 export function ButtonLink({
-  variant,
-  size,
+  variant = 'secondary',
+  size = 'md',
   className,
   ...props
-}: Common & ComponentProps<typeof Link>) {
-  return <Link className={clsx(buttonClass(variant, size), className)} {...props} />;
+}: Look & ComponentProps<typeof Link>) {
+  return (
+    <Link className={clsx(styles.button, styles[variant], styles[size], className)} {...props} />
+  );
 }

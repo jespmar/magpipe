@@ -63,7 +63,7 @@ export function Logo({
   return (
     <span
       className={clsx(
-        'inline-flex shrink-0 items-center justify-center rounded-pill bg-accent',
+        'inline-flex shrink-0 items-center justify-center rounded-pill bg-ink-strong',
         className,
       )}
       style={{ width: d, height: d }}

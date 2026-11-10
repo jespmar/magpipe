@@ -10,22 +10,22 @@ function omitNode<T extends { node?: unknown }>(props: T): Omit<T, 'node'> {
   return rest;
 }
 
-/** The merged result in the system's own type: Inter at body sizes, mono for code, cyan links. */
+/** The merged result in the system's own type: Inter at body sizes, mono for code, accent links. */
 const components: Components = {
   // Prose keeps the reading measure (≈72 characters, CLAUDE.md); code and tables take the width.
   h1: (p) => <h3 className="max-w-[34rem] text-display-sm text-ink-strong" {...omitNode(p)} />,
   h2: (p) => <h3 className="max-w-[34rem] text-display-sm text-ink-strong" {...omitNode(p)} />,
   h3: (p) => (
-    <h4 className="max-w-[34rem] text-body-lg font-semibold text-ink-strong" {...omitNode(p)} />
+    <h4 className="max-w-[34rem] text-body-lg font-medium text-ink-strong" {...omitNode(p)} />
   ),
   h4: (p) => (
-    <h5 className="max-w-[34rem] text-body-md font-semibold text-ink-strong" {...omitNode(p)} />
+    <h5 className="max-w-[34rem] text-body-md font-medium text-ink-strong" {...omitNode(p)} />
   ),
   h5: (p) => (
-    <h6 className="max-w-[34rem] text-body-md font-semibold text-ink-strong" {...omitNode(p)} />
+    <h6 className="max-w-[34rem] text-body-md font-medium text-ink-strong" {...omitNode(p)} />
   ),
   h6: (p) => (
-    <h6 className="max-w-[34rem] text-body-sm font-semibold text-ink-strong" {...omitNode(p)} />
+    <h6 className="max-w-[34rem] text-body-sm font-medium text-ink-strong" {...omitNode(p)} />
   ),
   p: (p) => <p className="max-w-[34rem] text-body-md text-body" {...omitNode(p)} />,
   ul: (p) => (
@@ -49,16 +49,16 @@ const components: Components = {
       {...omitNode(p)}
     />
   ),
-  strong: (p) => <strong className="font-semibold text-ink-strong" {...omitNode(p)} />,
+  strong: (p) => <strong className="font-medium text-ink-strong" {...omitNode(p)} />,
   code: (p) => (
     <code
-      className="rounded-xs bg-canvas-soft px-1 py-0.5 font-mono text-[0.9em] text-code-ink [pre_&]:bg-transparent [pre_&]:p-0 [pre_&]:text-code"
+      className="rounded-xs bg-canvas-soft px-1 py-0.5 font-mono text-[0.9em] text-ink [pre_&]:bg-transparent [pre_&]:p-0 [pre_&]:text-code"
       {...omitNode(p)}
     />
   ),
   pre: (p) => (
     <pre
-      className="overflow-x-auto rounded-md border border-hairline bg-canvas p-4 font-mono text-code text-code-ink"
+      className="overflow-x-auto rounded-md border border-hairline-soft bg-canvas p-4 font-mono text-code text-ink"
       {...omitNode(p)}
     />
   ),
@@ -74,7 +74,7 @@ const components: Components = {
       <table className="w-full text-left text-body-sm text-body" {...omitNode(p)} />
     </div>
   ),
-  th: (p) => <th className="pr-4 pb-2 label-caps" {...omitNode(p)} />,
+  th: (p) => <th className="pr-4 pb-2 text-caption font-medium text-mute" {...omitNode(p)} />,
   td: (p) => <td className="border-t border-hairline-soft py-2 pr-4 align-top" {...omitNode(p)} />,
 };
 

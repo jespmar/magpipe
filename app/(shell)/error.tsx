@@ -19,11 +19,11 @@ export default function ShellError({
   }, [error]);
 
   return (
-    <section role="alert" className="flex flex-col gap-4 panel px-6 py-8 md:px-8">
+    <section role="alert" className="flex flex-col gap-4 card px-6 py-8 md:px-8">
       <h1 className="text-display-md text-ink-strong">Something went wrong</h1>
       <p className="max-w-[34rem] text-body-md text-body">
         Magpipe hit an error while drawing this page. Your data is untouched. Try again; if it keeps
-        happening, the server log (File → Show Logs in the desktop app) has the details.
+        happening, the server log (File, then Show Logs in the desktop app) has the details.
       </p>
       {error.digest ? (
         <p className="font-mono text-code text-mute">reference {error.digest}</p>
@@ -32,7 +32,7 @@ export default function ShellError({
         <Button variant="primary" onClick={() => reset()}>
           Try again
         </Button>
-        <ButtonLink href="/" variant="outline">
+        <ButtonLink href="/" variant="secondary">
           Back to Magpipe
         </ButtonLink>
       </div>

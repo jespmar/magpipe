@@ -16,8 +16,8 @@ type Props = {
 
 /**
  * Load demo data, done properly: a confirm step before anything is written, a pending state
- * while it runs, the result in a live region that is always mounted (so it is announced), and
- * focus that returns to the trigger button — a visible ring and the obvious next control.
+ * on the button while it runs, the result in a live region that is always mounted (so it is
+ * announced), and focus that returns to the trigger button.
  */
 export function DemoDataForm({ counts, disabledReason }: Props) {
   const router = useRouter();
@@ -45,7 +45,7 @@ export function DemoDataForm({ counts, disabledReason }: Props) {
     return (
       <div className="flex flex-col gap-2">
         <div>
-          <Button variant="outline" size="sm" disabled aria-describedby="demo-disabled-why">
+          <Button variant="secondary" size="sm" disabled aria-describedby="demo-disabled-why">
             Load demo data
           </Button>
         </div>
@@ -62,7 +62,7 @@ export function DemoDataForm({ counts, disabledReason }: Props) {
       <p role="status" aria-live="polite" className="text-body-sm text-ink">
         {state.status === 'done' ? (
           <>
-            <span className="font-semibold text-emerald">Done.</span> {state.message}
+            <span className="font-medium text-emerald">Done.</span> {state.message}
           </>
         ) : null}
         {state.status === 'error' ? <span className="text-danger">{state.message}</span> : null}
@@ -84,7 +84,12 @@ export function DemoDataForm({ counts, disabledReason }: Props) {
         </form>
       ) : (
         <div className="flex flex-wrap gap-2">
-          <Button ref={triggerRef} variant="outline" size="sm" onClick={() => setConfirming(true)}>
+          <Button
+            ref={triggerRef}
+            variant="secondary"
+            size="sm"
+            onClick={() => setConfirming(true)}
+          >
             {state.status === 'idle' ? 'Load demo data' : 'Load it again'}
           </Button>
           {state.status === 'done' ? (
@@ -105,12 +110,11 @@ function SubmitButton() {
       type="submit"
       variant="primary"
       size="sm"
-      disabled={pending}
-      aria-busy={pending}
+      loading={pending}
       // The button that opened this step has unmounted; land focus here, not on <body>.
       autoFocus
     >
-      {pending ? 'Loading the demo…' : 'Load it'}
+      Load it
     </Button>
   );
 }

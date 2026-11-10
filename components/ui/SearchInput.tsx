@@ -1,6 +1,12 @@
-import { useId } from 'react';
-import { clsx } from 'clsx';
+'use client';
 
+import { clsx } from 'clsx';
+import { SearchField } from '@/components/arc/search-field/search-field';
+
+/**
+ * Arc's search field with its label kept for assistive tech only: in a toolbar the magnifier
+ * and the placeholder already say what the field is.
+ */
 export function SearchInput({
   label,
   placeholder,
@@ -14,23 +20,14 @@ export function SearchInput({
   onChange: (value: string) => void;
   className?: string;
 }) {
-  const id = useId();
   return (
-    <>
-      <label htmlFor={id} className="sr-only">
-        {label}
-      </label>
-      <input
-        id={id}
-        type="search"
-        value={value}
+    <div className={clsx('w-[240px] max-w-full [&_label]:sr-only', className)}>
+      <SearchField
+        label={label}
         placeholder={placeholder ?? label}
-        onChange={(e) => onChange(e.target.value)}
-        className={clsx(
-          'w-[220px] max-w-full rounded-sm border border-hairline bg-canvas-soft px-4 py-2.5 text-body-sm text-ink focus:border-ink-strong focus:outline-none [&::-webkit-search-cancel-button]:appearance-none',
-          className,
-        )}
+        value={value}
+        onValueChange={onChange}
       />
-    </>
+    </div>
   );
 }

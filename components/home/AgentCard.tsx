@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { Progress } from '@/components/arc/progress/progress';
 import { Avatar } from '@/components/ui/Avatar';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { cardFooter, type AgentCardData } from '@/lib/home-util';
@@ -17,7 +18,7 @@ export function AgentCard({ card, now }: { card: AgentCardData; now: Date }) {
           <div className="flex min-w-0 flex-col gap-0.5">
             <Link
               href={`/agents?agent=${card.slug}`}
-              className="truncate text-display-sm text-ink-strong underline-offset-4 hover:underline"
+              className="truncate rounded-sm text-display-sm text-ink-strong underline-offset-4 hover:underline"
             >
               {card.name}
             </Link>
@@ -38,22 +39,14 @@ export function AgentCard({ card, now }: { card: AgentCardData; now: Date }) {
         )}
       </p>
       {card.progress !== null ? (
-        <div
-          role="progressbar"
-          aria-label={`Current run, ${pct}% of steps settled`}
-          aria-valuenow={pct}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          className="h-1 overflow-hidden rounded-pill bg-canvas-soft"
-        >
-          <div
-            className="h-full rounded-pill bg-(image:--g-progress) transition-[width] duration-150"
-            style={{ width: `${pct}%` }}
-          />
-        </div>
+        <Progress
+          value={pct}
+          label={`Current run, ${pct}% of steps settled`}
+          className="[&>div:first-child]:sr-only"
+        />
       ) : null}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-hairline pt-3">
-        <span className="rounded-sm bg-canvas-soft px-2 py-0.5 font-mono text-code text-code-ink">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-hairline-soft pt-3">
+        <span className="rounded-sm bg-canvas-soft px-2 py-0.5 font-mono text-code text-ink">
           {card.model}
         </span>
         <span className="font-mono text-code text-mute">{cardFooter(card, now)}</span>

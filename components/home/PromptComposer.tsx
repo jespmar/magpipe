@@ -3,7 +3,10 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useId, useRef, useState, type DragEvent } from 'react';
 import { clsx } from 'clsx';
+import { ArrowRight, FileText, Paperclip, X } from 'lucide-react';
+import { Textarea } from '@/components/arc/textarea/textarea';
 import { Button } from '@/components/ui/Button';
+import { Kbd } from '@/components/ui/Kbd';
 import { api, ApiError } from '@/lib/client-api';
 import { formatBytes } from '@/lib/home-util';
 import type { Run, Upload } from '@/lib/schemas';
@@ -139,7 +142,7 @@ export function PromptComposer() {
 
   return (
     <section
-      aria-labelledby={`${id}-label`}
+      aria-label="Ask Magpipe"
       onDragOver={(e) => {
         e.preventDefault();
         if (!dragging) setDragging(true);
@@ -149,8 +152,8 @@ export function PromptComposer() {
       }}
       onDrop={onDrop}
       className={clsx(
-        'flex flex-col gap-4 panel p-5 transition-[border-color,box-shadow] duration-150 wide:p-6',
-        dragging && 'border-cyan/60 shadow-glow-soft',
+        'flex flex-col gap-4 card p-5 transition-colors duration-150 wide:p-6',
+        dragging && 'border-cyan',
       )}
     >
       <form
@@ -161,13 +164,11 @@ export function PromptComposer() {
           void submit();
         }}
       >
-        <label id={`${id}-label`} htmlFor={`${id}-text`} className="self-start eyebrow">
-          Ask Magpipe
-        </label>
-        <textarea
+        <Textarea
           ref={textarea}
           id={`${id}-text`}
           name="text"
+          label="Ask Magpipe"
           rows={4}
           placeholder="Describe the task. Magpipe picks the birds, splits the work and reports back…"
           onKeyDown={(e) => {
@@ -177,15 +178,8 @@ export function PromptComposer() {
             }
           }}
           onInput={() => problem && setProblem(null)}
-          aria-describedby={problem ? `${id}-problem` : undefined}
-          aria-invalid={problem ? true : undefined}
-          className="w-full resize-y rounded-sm border border-hairline bg-canvas px-4 py-3 text-body-md text-ink focus:border-ink-strong focus:outline-none wide:px-[18px] wide:py-3.5 wide:text-body-lg"
+          error={problem ?? undefined}
         />
-        {problem ? (
-          <p id={`${id}-problem`} role="alert" className="-mt-1 text-body-sm text-danger">
-            {problem}
-          </p>
-        ) : null}
         {chips.length > 0 ? (
           <ul aria-label="Attachments" className="flex flex-wrap gap-2">
             {chips.map((c) => (
@@ -193,10 +187,10 @@ export function PromptComposer() {
                 key={c.key}
                 className={clsx(
                   'inline-flex max-w-full items-center gap-2 rounded-pill border bg-canvas py-1 pr-1.5 pl-3 text-body-sm text-ink',
-                  c.state === 'failed' ? 'border-danger/50' : 'border-hairline',
+                  c.state === 'failed' ? 'border-danger/60' : 'border-hairline',
                 )}
               >
-                <FileIcon />
+                <FileText size={14} strokeWidth={1.75} aria-hidden className="shrink-0 text-mute" />
                 <span className="truncate font-mono text-code">{c.name}</span>
                 <span
                   className={clsx(
@@ -216,13 +210,13 @@ export function PromptComposer() {
                   onClick={() => remove(c.key)}
                   className="inline-flex size-6 shrink-0 items-center justify-center rounded-pill text-mute hover:text-ink-strong"
                 >
-                  <CloseIcon />
+                  <X size={12} strokeWidth={1.75} aria-hidden />
                 </button>
               </li>
             ))}
           </ul>
         ) : null}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-hairline pt-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-hairline-soft pt-4">
           <div className="flex flex-wrap items-center gap-3">
             <input
               ref={picker}
@@ -235,68 +229,25 @@ export function PromptComposer() {
                 e.target.value = '';
               }}
             />
-            <Button variant="soft" onClick={() => picker.current?.click()}>
-              <ClipIcon />
+            <Button variant="secondary" size="sm" onClick={() => picker.current?.click()}>
+              <Paperclip size={16} strokeWidth={1.75} aria-hidden />
               Attach files
             </Button>
             <span className="text-caption text-mute">PDF, CSV, images, code · up to 25 MB</span>
           </div>
           <div className="flex items-center gap-3 max-md:ml-auto">
-            <kbd className="font-mono text-code text-mute">{mac ? '⌘' : 'Ctrl'} + Enter</kbd>
-            <Button type="submit" variant="run" disabled={sending} aria-busy={sending}>
-              {sending ? 'Starting…' : 'Run'}
-              {sending ? null : <ArrowIcon />}
+            <span className="hidden items-center gap-1 font-mono text-code text-mute sm:inline-flex">
+              <Kbd>{mac ? '⌘' : 'Ctrl'}</Kbd>
+              <span>+</span>
+              <Kbd>Enter</Kbd>
+            </span>
+            <Button type="submit" variant="primary" loading={sending}>
+              Run
+              <ArrowRight size={16} strokeWidth={1.75} aria-hidden />
             </Button>
           </div>
         </div>
       </form>
     </section>
-  );
-}
-
-const stroke = {
-  fill: 'none',
-  stroke: 'currentColor',
-  strokeWidth: 1.5,
-  strokeLinecap: 'round',
-  strokeLinejoin: 'round',
-} as const;
-
-function ClipIcon() {
-  return (
-    <svg aria-hidden width="16" height="16" viewBox="0 0 16 16" {...stroke}>
-      <path d="M10.5 5.5 6.2 9.8a1.3 1.3 0 0 0 1.8 1.8l4.6-4.6a2.6 2.6 0 0 0-3.7-3.7L4.3 7.9a3.9 3.9 0 0 0 5.5 5.5l3.7-3.7" />
-    </svg>
-  );
-}
-
-function ArrowIcon() {
-  return (
-    <svg aria-hidden width="16" height="16" viewBox="0 0 16 16" {...stroke}>
-      <path d="M3 8h10M9 4l4 4-4 4" />
-    </svg>
-  );
-}
-
-function FileIcon() {
-  return (
-    <svg
-      aria-hidden
-      width="14"
-      height="14"
-      viewBox="0 0 16 16"
-      {...stroke}
-      className="shrink-0 text-mute"
-    >
-      <path d="M4 1.5h5.5L13 5v9.5H4z M9.5 1.5V5H13" />
-    </svg>
-  );
-}
-
-function CloseIcon() {
-  return (
-    <svg aria-hidden width="12" height="12" viewBox="0 0 16 16" {...stroke}>
-      <path d="M4 4l8 8M12 4l-8 8" />
-    </svg>
   );
 }

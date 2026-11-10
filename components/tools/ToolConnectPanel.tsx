@@ -2,6 +2,8 @@
 
 import { useId, useMemo, useState, type FormEvent } from 'react';
 import { clsx } from 'clsx';
+import { X } from 'lucide-react';
+import { Textarea } from '@/components/arc/textarea/textarea';
 import { Button } from '@/components/ui/Button';
 import { api, ApiError } from '@/lib/client-api';
 import type { McpProbe } from '@/lib/mcp';
@@ -43,64 +45,47 @@ export function ToolConnectPanel({ onClose, onConnected, secretsReady }: Props) 
     }
   }
 
+  const hint = `name · transport (http or stdio) · url or command · auth { type, token? } · grant [agent slugs]. ${
+    wantsToken && !secretsReady
+      ? 'Tokens can’t be stored until MAGPIPE_SECRET_KEY is set.'
+      : 'A token is stored encrypted and never shown again.'
+  }`;
+
   return (
     <section
       id="connect-panel"
       aria-labelledby={`${ids}-title`}
-      className="flex flex-col gap-3 panel p-5"
+      className="flex flex-col gap-4 card p-5"
     >
       <div className="flex items-center justify-between gap-3">
-        <h2 id={`${ids}-title`} className="text-body-md font-semibold text-ink-strong">
+        <h2 id={`${ids}-title`} className="text-display-sm text-ink-strong">
           Connect an MCP server
         </h2>
         <button
           type="button"
           onClick={onClose}
           aria-label="Close"
-          className="inline-flex size-7 items-center justify-center rounded-pill border border-hairline text-mute hover:text-ink-strong"
+          className="inline-flex size-8 items-center justify-center rounded-pill border border-hairline text-mute hover:text-ink-strong"
         >
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            aria-hidden
-          >
-            <path d="M18 6 6 18M6 6l12 12" />
-          </svg>
+          <X size={14} strokeWidth={1.75} aria-hidden />
         </button>
       </div>
-      <form onSubmit={submit} className="flex flex-col gap-3">
-        <label htmlFor={`${ids}-json`} className="sr-only">
-          Connection JSON
-        </label>
-        <textarea
-          id={`${ids}-json`}
+      <form onSubmit={submit} className="flex flex-col gap-4">
+        <Textarea
+          label="Connection JSON"
           value={text}
           onChange={(e) => setText(e.target.value)}
           spellCheck={false}
           rows={8}
+          style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }}
           aria-invalid={!parsed.ok}
           aria-describedby={`${ids}-hint`}
-          className={clsx(
-            'min-h-40 w-full resize-none rounded-md border bg-canvas p-4 font-mono text-code text-code-ink focus:outline-none',
-            parsed.ok ? 'border-hairline focus:border-ink-strong' : 'border-danger/60',
-          )}
         />
         <p
           id={`${ids}-hint`}
-          className={clsx('text-caption', parsed.ok ? 'text-mute' : 'text-danger')}
+          className={clsx('-mt-2 text-caption', parsed.ok ? 'text-mute' : 'text-danger')}
         >
-          {parsed.ok
-            ? `name · transport (http or stdio) · url or command · auth { type, token? } · grant [agent slugs]. ${
-                wantsToken && !secretsReady
-                  ? 'Tokens can’t be stored until MAGPIPE_SECRET_KEY is set.'
-                  : 'A token is stored encrypted and never shown again.'
-              }`
-            : parsed.error}
+          {parsed.ok ? hint : parsed.error}
         </p>
         {error ? (
           <p role="alert" className="text-body-sm text-danger">
@@ -108,17 +93,17 @@ export function ToolConnectPanel({ onClose, onConnected, secretsReady }: Props) 
           </p>
         ) : null}
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <Button variant="outline" size="sm" onClick={onClose} disabled={busy}>
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
           <Button
             type="submit"
             variant="primary"
             size="sm"
-            disabled={busy || !parsed.ok || (wantsToken && !secretsReady)}
-            aria-busy={busy}
+            disabled={!parsed.ok || (wantsToken && !secretsReady)}
+            loading={busy}
           >
-            {busy ? 'Connecting…' : 'Connect & test'}
+            Connect & test
           </Button>
         </div>
       </form>

@@ -1,7 +1,10 @@
 'use client';
 
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
-import { clsx } from 'clsx';
+import { useRef, useState, type FormEvent } from 'react';
+import { Dialog, DialogContent } from '@/components/arc/dialog/dialog';
+import { Input } from '@/components/arc/input/input';
+import { Select } from '@/components/arc/select/select';
+import { Textarea } from '@/components/arc/textarea/textarea';
 import { Button } from '@/components/ui/Button';
 import { api, ApiError } from '@/lib/client-api';
 import type { NamespaceCount } from '@/lib/memory';
@@ -52,29 +55,23 @@ function draftFrom(
   };
 }
 
+const MONO = { fontFamily: 'var(--font-mono)' } as const;
+
 /**
- * Add or edit a fact (spec §3.6): a native dialog so focus is held while five fields are
+ * Add or edit a fact (spec §3.6) in Arc's dialog, so focus is held while five fields are
  * filled. Adding under an existing namespace/key writes a new version of that fact.
  */
 export function MemoryEditor({ entry, namespaces, defaultNs, onClose, onSaved }: Props) {
-  const ref = useRef<HTMLDialogElement>(null);
-  const ids = useId();
+  const [open, setOpen] = useState(true);
+  const keyRef = useRef<HTMLInputElement>(null);
+  const valueRef = useRef<HTMLTextAreaElement>(null);
   const [draft, setDraft] = useState<Draft>(() => draftFrom(entry, defaultNs, namespaces));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    const d = ref.current;
-    if (!d) return;
-    if (!d.open) d.showModal();
-    d.querySelector<HTMLElement>('[data-autofocus]')?.focus();
-  }, []);
-
-  /** Close through the element: the `close` event fires `onClose`, and the browser restores focus. */
   function dismiss() {
-    const d = ref.current;
-    if (d?.open) d.close();
-    else onClose();
+    setOpen(false);
+    onClose();
   }
 
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
@@ -116,14 +113,14 @@ export function MemoryEditor({ entry, namespaces, defaultNs, onClose, onSaved }:
             expiresAt: parsed.data.expiresAt,
           }),
         });
-        dismiss();
+        setOpen(false);
         onSaved(reviveEntry(saved), false);
       } else {
         const res = await api<{ entry: MemoryEntryJson; created: boolean }>('/api/memory', {
           method: 'POST',
           body: JSON.stringify(parsed.data),
         });
-        dismiss();
+        setOpen(false);
         onSaved(reviveEntry(res.entry), res.created);
       }
     } catch (err) {
@@ -132,180 +129,97 @@ export function MemoryEditor({ entry, namespaces, defaultNs, onClose, onSaved }:
     }
   }
 
-  const field =
-    'w-full rounded-sm border border-hairline bg-canvas-soft px-3 py-2 text-body-sm text-ink focus:border-ink-strong focus:outline-none disabled:opacity-60';
   const title = entry ? `Edit ${entry.key}` : 'Add a fact';
 
   return (
-    <dialog
-      ref={ref}
-      onClose={onClose}
-      aria-labelledby={`${ids}-title`}
-      className="m-auto max-h-[calc(100dvh-32px)] w-[min(640px,calc(100vw-32px))] overflow-y-auto rounded-md border border-hairline bg-(image:--g-card) p-0 text-ink accent-accent backdrop:bg-[rgba(16,16,16,0.72)] backdrop:backdrop-blur-sm"
-    >
-      <form onSubmit={submit} noValidate className="flex flex-col">
-        <div className="flex flex-col gap-5 p-6">
-          <div className="flex items-start justify-between gap-4">
-            <h2 id={`${ids}-title`} className="truncate text-display-md text-ink-strong">
-              {title}
-            </h2>
-            <button
-              type="button"
-              onClick={dismiss}
-              aria-label="Close"
-              className="inline-flex size-8 shrink-0 items-center justify-center rounded-pill border border-hairline text-mute hover:text-ink-strong"
-            >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                aria-hidden
-              >
-                <path d="M18 6 6 18M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-
+    <Dialog open={open} onOpenChange={(next) => (next ? setOpen(true) : dismiss())}>
+      <DialogContent
+        title={title}
+        style={{ width: 'min(calc(100vw - 2rem), 640px)' }}
+        onOpenAutoFocus={(e) => {
+          // A new fact starts at its key, an existing one at its value; never at the close control.
+          e.preventDefault();
+          (entry ? valueRef : keyRef).current?.focus();
+        }}
+      >
+        <form onSubmit={submit} noValidate className="flex flex-col gap-5">
           <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-            <Field id={`${ids}-ns`} label="Namespace">
-              <div className="relative">
-                <select
-                  id={`${ids}-ns`}
-                  className={clsx(field, 'appearance-none pr-9')}
-                  value={draft.ns}
-                  onChange={(e) => set('ns', e.target.value)}
-                  disabled={entry !== null}
-                >
-                  {namespaces.map((ns) => (
-                    <option key={ns.id} value={ns.id}>
-                      {ns.label}
-                    </option>
-                  ))}
-                </select>
-                <svg
-                  aria-hidden
-                  className="pointer-events-none absolute top-1/2 right-3 size-3 -translate-y-1/2 text-mute"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="m6 9 6 6 6-6" />
-                </svg>
-              </div>
-            </Field>
-            <Field
-              id={`${ids}-key`}
+            <Select
+              label="Namespace"
+              value={draft.ns}
+              onValueChange={(value) => set('ns', value)}
+              disabled={entry !== null}
+              options={namespaces.map((ns) => ({ value: ns.id, label: ns.label }))}
+            />
+            <Input
+              ref={keyRef}
               label="Key"
-              hint={
+              description={
                 entry
-                  ? 'Fixed for an existing fact — add a new fact to move it.'
+                  ? 'Fixed for an existing fact. Add a new fact to move it.'
                   : 'Dotted and stable, e.g. visma.salesorder.rpm'
               }
-            >
-              <input
-                id={`${ids}-key`}
-                className={clsx(field, 'font-mono text-code')}
-                value={draft.key}
-                onChange={(e) => set('key', e.target.value)}
-                disabled={entry !== null}
-                data-autofocus={entry === null ? '' : undefined}
-                spellCheck={false}
-              />
-            </Field>
+              style={MONO}
+              value={draft.key}
+              onChange={(e) => set('key', e.target.value)}
+              disabled={entry !== null}
+              spellCheck={false}
+            />
           </div>
 
-          <Field id={`${ids}-value`} label="Value">
-            <textarea
-              id={`${ids}-value`}
-              className={clsx(field, 'min-h-24 resize-y')}
-              value={draft.value}
-              onChange={(e) => set('value', e.target.value)}
-              data-autofocus={entry !== null ? '' : undefined}
-            />
-          </Field>
+          <Textarea
+            ref={valueRef}
+            label="Value"
+            rows={4}
+            value={draft.value}
+            onChange={(e) => set('value', e.target.value)}
+          />
 
           <div className="grid gap-4 sm:grid-cols-3">
-            <Field id={`${ids}-confidence`} label="Confidence" hint="0 to 1">
-              <input
-                id={`${ids}-confidence`}
-                type="number"
-                min={0}
-                max={1}
-                step={0.01}
-                className={clsx(
-                  field,
-                  'font-mono [-moz-appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none',
-                )}
-                value={draft.confidence}
-                onChange={(e) => set('confidence', e.target.value)}
-              />
-            </Field>
-            <Field id={`${ids}-source`} label="Source">
-              <input
-                id={`${ids}-source`}
-                className={field}
-                value={draft.source}
-                onChange={(e) => set('source', e.target.value)}
-              />
-            </Field>
-            <Field id={`${ids}-expires`} label="Expires" hint="Leave empty for never">
-              <input
-                id={`${ids}-expires`}
-                inputMode="numeric"
-                placeholder="2026-12-06"
-                className={clsx(field, 'font-mono')}
-                value={draft.expiresAt}
-                onChange={(e) => set('expiresAt', e.target.value)}
-              />
-            </Field>
+            <Input
+              label="Confidence"
+              description="0 to 1"
+              type="number"
+              min={0}
+              max={1}
+              step={0.01}
+              style={MONO}
+              value={draft.confidence}
+              onChange={(e) => set('confidence', e.target.value)}
+            />
+            <Input
+              label="Source"
+              value={draft.source}
+              onChange={(e) => set('source', e.target.value)}
+            />
+            <Input
+              label="Expires"
+              description="Leave empty for never"
+              inputMode="numeric"
+              placeholder="2026-12-06"
+              style={MONO}
+              value={draft.expiresAt}
+              onChange={(e) => set('expiresAt', e.target.value)}
+            />
           </div>
-        </div>
 
-        <div className="sticky bottom-0 flex flex-col gap-3 border-t border-hairline bg-canvas px-6 py-4">
-          {error ? (
-            <p role="alert" className="text-body-sm text-danger">
-              {error}
-            </p>
-          ) : null}
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <Button variant="ghost" onClick={dismiss} disabled={busy}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="primary" disabled={busy} aria-busy={busy}>
-              {busy ? 'Saving…' : entry ? 'Save changes' : 'Add fact'}
-            </Button>
+          <div className="sticky -bottom-6 -mx-6 -mb-6 flex flex-col gap-3 border-t border-hairline bg-canvas-soft px-6 py-4">
+            {error ? (
+              <p role="alert" className="text-body-sm text-danger">
+                {error}
+              </p>
+            ) : null}
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button variant="ghost" onClick={dismiss} disabled={busy}>
+                Cancel
+              </Button>
+              <Button type="submit" variant="primary" loading={busy}>
+                {entry ? 'Save changes' : 'Add fact'}
+              </Button>
+            </div>
           </div>
-        </div>
-      </form>
-    </dialog>
-  );
-}
-
-function Field({
-  id,
-  label,
-  hint,
-  children,
-}: {
-  id: string;
-  label: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex min-w-0 flex-col gap-1.5">
-      <label htmlFor={id} className="text-caption font-medium text-body">
-        {label}
-      </label>
-      {children}
-      {hint ? <span className="text-caption text-mute">{hint}</span> : null}
-    </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -84,12 +84,14 @@ headline.
 
 - Name: **Magpipe**, subtitle "agent orchestrator". Logo: a dark magpie with white plumage and a
   blue-green wing, `public/brand/magpipe-magpie-logo-03.svg`, shown on a white disc.
-- The design canvas is the binding visual source of truth (link at the top of `docs/spec.md`;
-  tokens in `docs/spec.md` §4 and `app/globals.css`). Dark interface only.
-- Voice, as observed in the design copy: short, plain sentences; the bird metaphor appears
-  lightly in headings, eyebrows, loading and empty states ("Birds on the wire", "Waking the
-  flock…", "This bird flew off"), never in labels that must be precise (status, model, tokens,
-  cost).
+- The visual source of truth is `DESIGN.md`: Arc components (uiarc.dev, `components/arc/`) on
+  Magpipe's palette (`app/globals.css`), with the design canvas (link at the top of
+  `docs/spec.md`) as the record of the screens' content and layout. Dark interface only; no
+  eyebrows, gradients or glows (`docs/decisions.md` D20).
+- Voice, as observed in the design copy: short, plain sentences in sentence case; the bird
+  metaphor appears lightly in headings, loading and empty states ("Birds on the wire", "Waking
+  the flock…", "This bird flew off"), never in labels that must be precise (status, model,
+  tokens, cost).
 
 ## Evidence on Hand
 
@@ -118,6 +120,7 @@ headline.
 ## Accessibility & Inclusion
 
 Spec §5 sets the floor: real `<button>` and `<a>` elements, `aria-label` on icon-only
-controls, all text at least 4.5:1 against the `#101010` canvas, a visible 2 px white focus ring,
-and animations that respect `prefers-reduced-motion`. No product-specific user need beyond
+controls, all text at least 4.5:1 against the `#101010` canvas, a visible 2 px keyboard focus
+outline (Arc's shared `:focus-visible` ring), and animations that respect
+`prefers-reduced-motion`. No product-specific user need beyond
 that has been established.

@@ -75,12 +75,12 @@ implement later.
 - **Packaging.** electron-builder's two-`package.json` layout: `dist-electron/` (compiled main
   - a dependency-free manifest) becomes `app.asar`; the standalone server ships as
     `resources/server`. Installers are built per OS by `.github/workflows/desktop.yml`.
-  The traced `node_modules` of the standalone server travel through their own
-  `extraResources` entry (`.next/standalone/node_modules` → `server/node_modules`):
-  electron-builder's copy filter always skips a source directory's top-level `node_modules`,
-  whatever the pattern says, so a single entry from `.next/standalone` ships a server that
-  cannot find `next`. `npm run dist` builds the installer for the host OS; the first Linux
-  build here ran the AppImage headless and its embedded server answered `/api/health`.
+    The traced `node_modules` of the standalone server travel through their own
+    `extraResources` entry (`.next/standalone/node_modules` → `server/node_modules`):
+    electron-builder's copy filter always skips a source directory's top-level `node_modules`,
+    whatever the pattern says, so a single entry from `.next/standalone` ships a server that
+    cannot find `next`. `npm run dist` builds the installer for the host OS; the first Linux
+    build here ran the AppImage headless and its embedded server answered `/api/health`.
 
 ## D4 · Access: per-launch token on desktop, Auth.js only for hosting
 
@@ -355,3 +355,40 @@ once per server start.
   step for the first agent in the registry, answers it and merges a short result. The
   Playwright server runs with it, so the spec's smoke flow — create run → see events → done —
   runs end to end through the real engine, events and screens without credentials.
+
+## D20 · Arc UI as the component framework; the aviary without its eyebrows (PR 9)
+
+- **Arc (uiarc.dev) replaces the hand-built primitives.** Its free, MIT components install
+  verbatim with the shadcn CLI into `components/arc/` (`components.json` registers the `@uiarc`
+  registry) and are never edited: button, badge, input, textarea, select, checkbox, search field,
+  segmented control, dialog, empty state, skeleton, code block (with copy button), alert,
+  progress and stepper, plus the motion tokens. `components/ui/` keeps the product's wrappers
+  (`Button` defaults to `secondary`; `StatusPill` maps every status to a badge tone;
+  `EmptyState` adds the facts line; `SearchInput` hides its label for assistive tech only;
+  `FilterControl` is the segmented control with counts). Arc's agent skill lives in
+  `.claude/skills/arc/` and its rules are summarised in `CLAUDE.md`.
+- **The palette stays, on Arc's tokens.** `app/globals.css` maps Magpipe's colours onto Arc's
+  semantic variables under `:root[data-theme="dark"]` (`--background` canvas, `--surface` raised,
+  `--accent` sheen cyan, `--success` emerald, `--warning` amber, `--danger` red) and the
+  Tailwind palette reads those tokens, so both Arc components and the screens' own markup draw
+  in the same colours. A new neutral, `--canvas-muted` (#222222), carries hover and disabled fills
+  that the three near-black greys could not separate.
+- **Quieter brand.** Arc's rules and the ask for a more minimal look drop the eyebrows, the sheen
+  gradient on text, the ambient page glow, the frosted nav, the gradient cards and every box
+  glow; weights are 400 and 500 only; copy is sentence case with no em dashes. The brand is now
+  the magpie on its disc, white-acts/cyan-tells, the mono fact lines and the bird words in prose.
+  `DESIGN.md` is rewritten for this world; spec §4's eyebrow and sheen are superseded. The orb
+  keeps one slow dashed orbit as Home's memorable detail.
+- **Type.** Geist (self-hosted by next/font like Inter) for the page title at display size, Inter
+  for everything else; Arc's sizes with the project's names (`text-display-md` 22/28/500,
+  `text-display-sm` 18/26/500, body 16/24).
+- **What the swap changed on screen.** Editors are Arc dialogs (Radix: focus trapped, Escape,
+  focus returned, `[role="dialog"]` is what the shortcut handler checks). The flight path is Arc's
+  stepper (horizontal below 1600 px, vertical from there) instead of the chain of step cards: the
+  live step is current, a failed step carries its error, later steps stay upcoming. Filters are a
+  segmented control. The stat strip is one bordered group. Busy buttons show Arc's spinner in
+  place instead of changing their label.
+- **Two overrides, named.** A Tailwind class cannot beat an Arc module rule on the same element
+  (Arc's CSS is unlayered, Tailwind's utilities are layered), so a dialog's width and a field's
+  mono face are inline styles, and the toolbar search's label is hidden through a parent
+  selector. Nothing else touches Arc's internals.

@@ -45,7 +45,7 @@ test('connect a local MCP server, test it, grant it, remove it', async ({ page }
   await expect(page.getByRole('heading', { level: 1, name: 'Tools' })).toBeVisible();
 
   // The panel opens from the primary action, validates as you type, and refuses bad JSON.
-  await page.getByRole('button', { name: '+ Connect tool' }).click();
+  await page.getByRole('button', { name: 'Connect tool' }).click();
   const panel = page.getByRole('region', { name: 'Connect an MCP server' });
   await expect(panel).toBeVisible();
   const editor = panel.getByLabel('Connection JSON');

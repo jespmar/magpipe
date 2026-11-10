@@ -16,11 +16,12 @@ test('add a bird, then pause, filter, edit and remove it', async ({ page }) => {
   await expect(dialog).toBeHidden();
   await expect.poll(() => new URL(page.url()).searchParams.has('new')).toBe(false);
 
-  await page.getByRole('button', { name: '+ Add a bird' }).click();
+  await page.getByRole('button', { name: 'Add a bird' }).click();
   await expect(dialog).toBeVisible();
   await dialog.getByLabel('Name').fill(name);
   await dialog.getByLabel('Role').fill('Finds things after dark');
-  await dialog.getByLabel('Model').selectOption('claude-haiku-5-5');
+  await dialog.getByLabel('Model').click();
+  await page.getByRole('option', { name: 'claude-haiku-5-5' }).click();
   await dialog.getByRole('checkbox', { name: 'web.search' }).check();
   await dialog.getByRole('button', { name: 'Add agent' }).click();
 
@@ -32,7 +33,7 @@ test('add a bird, then pause, filter, edit and remove it', async ({ page }) => {
   await expect(detail.getByText('web.search')).toBeVisible();
   await expect(detail.getByText('No memory access')).toBeVisible();
   // No runs yet: the numbers that cannot be computed say so instead of showing zero.
-  await expect(detail.getByText('runs · 7d')).toBeVisible();
+  await expect(detail.getByText('runs, 7 days')).toBeVisible();
   await expect(detail.getByText('—')).toHaveCount(2);
   await expect
     .poll(() => new URL(page.url()).searchParams.get('agent'))

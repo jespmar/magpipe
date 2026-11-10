@@ -61,7 +61,7 @@ export default async function RunDetailPage({ params }: Props) {
   if (loaded === null) {
     return (
       <>
-        <PageHead eyebrow="Flight" title={id} />
+        <PageHead title={id} />
         <UnavailableState />
       </>
     );

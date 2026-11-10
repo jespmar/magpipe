@@ -47,9 +47,8 @@ export default async function RunsPage({ searchParams }: Props) {
     return (
       <>
         <PageHead
-          eyebrow="Flights"
           title="Runs"
-          description="Every task Magpipe has sent the flock out on — who flew, how long it took, what it cost."
+          description="Every task Magpipe has sent the flock out on: who flew, how long it took, what it cost."
         />
         <UnavailableState />
       </>

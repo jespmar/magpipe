@@ -1,14 +1,17 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter } from 'next/font/google';
+import { Geist, Inter } from 'next/font/google';
 import { headers } from 'next/headers';
+import '@/components/arc/foundation.css';
 import './globals.css';
 
 // Self-hosted at build time by next/font, so the desktop app needs no network for fonts.
+// Arc reads them as --font-inter (body) and --font-geist (display sizes).
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'swap' });
+const geist = Geist({ subsets: ['latin'], variable: '--font-geist', display: 'swap' });
 
 export const metadata: Metadata = {
   title: { default: 'Magpipe', template: '%s · Magpipe' },
-  description: 'Magpipe — agent orchestrator',
+  description: 'Magpipe, an agent orchestrator',
 };
 
 export const viewport: Viewport = {
@@ -29,7 +32,12 @@ async function desktopPlatform(): Promise<string | undefined> {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={inter.variable} data-desktop={await desktopPlatform()}>
+    <html
+      lang="en"
+      data-theme="dark"
+      className={`${inter.variable} ${geist.variable}`}
+      data-desktop={await desktopPlatform()}
+    >
       <body>{children}</body>
     </html>
   );

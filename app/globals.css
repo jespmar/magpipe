@@ -1,143 +1,129 @@
 @import 'tailwindcss';
 
-/* ─── Design tokens (docs/spec.md §4). Dark only — there is no light mode. ─── */
+/*
+ * Magpipe's palette (docs/spec.md §4) on Arc's semantic tokens. `components/arc/foundation.css`
+ * is imported before this file in app/layout.tsx; the dark block below overrides its values, so
+ * every Arc component draws with the Night Aviary's colours. Dark only — there is no light mode.
+ */
 :root {
-  /* surfaces */
   --canvas: #101010;
-  --canvas-soft: #1a1a1a;
   --canvas-raised: #181818;
+  --canvas-soft: #1a1a1a;
+  --canvas-muted: #222222;
   --hairline: #3d3a39;
   --hairline-soft: #1f1f1f;
-  /* text */
   --ink: #f2f2f2;
   --ink-strong: #ffffff;
   --body: #bdbdbd;
   --mute: #8b949e;
-  --code-text: #f5f6f7;
-  /* accent: white is the solid accent; the sheen lives in gradients */
-  --accent: #ffffff;
-  --on-accent: #101010;
-  --ghost: #d1d5db;
   --sheen-cyan: #22c1dc;
-  --sheen-teal: #0e9aa8;
-  --sheen-emerald: #16a35e;
   --sheen-cyan-soft: #66d9e8;
-  --sheen-tint: #d6f5f7;
+  --sheen-emerald: #16a35e;
   --warn: #fbbf24;
-  --danger: #f87171;
-  /* gradients */
-  --g-sheen: linear-gradient(135deg, #22c1dc 0%, #0e9aa8 55%, #16a35e 100%);
-  --g-sheen-text: linear-gradient(90deg, #ffffff 0%, #66d9e8 45%, #22c1dc 100%);
-  --g-card: linear-gradient(180deg, #181818 0%, #101010 100%);
-  --g-panel: linear-gradient(180deg, #141a1a 0%, #141414 100%);
-  --g-progress: linear-gradient(90deg, #ffffff 0%, #22c1dc 100%);
-  --g-button: linear-gradient(135deg, #ffffff 0%, #d6f5f7 60%, #a8e8ee 100%);
-  /* radii */
-  --r-xs: 4px;
-  --r-sm: 6px;
-  --r-md: 8px;
-  --r-pill: 9999px;
-  /* glow */
-  --glow-cyan: 0 0 22px rgba(34, 193, 220, 0.3);
-  /* type */
+  --red: #f87171;
   --font-mono-stack: SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
-
-  color-scheme: dark;
 }
 
-/* ─── Tailwind theme: only the tokens above exist as colours. ─── */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --background: var(--canvas);
+  --surface: var(--canvas-raised);
+  --surface-raised: var(--canvas-soft);
+  --surface-muted: var(--canvas-muted);
+  --foreground: var(--ink);
+  --text-secondary: var(--body);
+  --text-muted: var(--mute);
+  --border: var(--hairline);
+  --border-subtle: var(--hairline-soft);
+  --border-strong: var(--hairline);
+  /* Cyan is the accent: the active link, the selected row, progress, the live state. */
+  --accent: var(--sheen-cyan);
+  --accent-strong: var(--sheen-cyan-soft);
+  --accent-subtle: rgba(34, 193, 220, 0.12);
+  --accent-foreground: var(--canvas);
+  --control-on: var(--sheen-cyan);
+  --control-glyph: var(--canvas);
+  --control-thumb-on: #ffffff;
+  --control-fill: var(--sheen-cyan);
+  --control-track: var(--canvas-muted);
+  --control-track-hover: #2b2b2b;
+  --success: var(--sheen-emerald);
+  --warning: var(--warn);
+  --danger: var(--red);
+  --info: var(--sheen-cyan);
+  --tone-teal: var(--sheen-cyan);
+  --tone-green: var(--sheen-emerald);
+  --tone-amber: var(--warn);
+  --tone-rose: var(--red);
+}
+
+/* ─── Tailwind theme: colours are the semantic tokens above; nothing else exists. ─── */
 @theme inline {
   --color-*: initial;
   --color-transparent: transparent;
   --color-current: currentColor;
-  --color-canvas: var(--canvas);
-  --color-canvas-soft: var(--canvas-soft);
-  --color-canvas-raised: var(--canvas-raised);
-  --color-hairline: var(--hairline);
-  --color-hairline-soft: var(--hairline-soft);
-  --color-ink: var(--ink);
+  --color-canvas: var(--background);
+  --color-canvas-raised: var(--surface);
+  --color-canvas-soft: var(--surface-raised);
+  --color-canvas-muted: var(--surface-muted);
+  --color-hairline: var(--border);
+  --color-hairline-soft: var(--border-subtle);
+  --color-ink: var(--foreground);
   --color-ink-strong: var(--ink-strong);
-  --color-body: var(--body);
-  --color-mute: var(--mute);
-  --color-code-ink: var(--code-text);
-  --color-accent: var(--accent);
-  --color-on-accent: var(--on-accent);
-  --color-ghost: var(--ghost);
-  --color-cyan: var(--sheen-cyan);
-  --color-teal: var(--sheen-teal);
-  --color-emerald: var(--sheen-emerald);
-  --color-cyan-soft: var(--sheen-cyan-soft);
-  --color-tint: var(--sheen-tint);
-  --color-warn: var(--warn);
+  --color-body: var(--text-secondary);
+  --color-mute: var(--text-muted);
+  --color-cyan: var(--accent);
+  --color-cyan-soft: var(--accent-subtle);
+  --color-emerald: var(--success);
+  --color-warn: var(--warning);
   --color-danger: var(--danger);
 
-  --font-sans: var(--font-inter), system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-sans: var(--font-body);
+  --font-heading: var(--font-display);
   --font-mono: var(--font-mono-stack);
 
-  --radius-xs: var(--r-xs);
-  --radius-sm: var(--r-sm);
-  --radius-md: var(--r-md);
-  --radius-pill: var(--r-pill);
+  --radius-*: initial;
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-pill: 9999px;
 
-  /* <768 stack · 768–1279 desktop · ≥1600 wide */
+  /* <768 stack · 768–1599 desktop · ≥1600 wide */
   --breakpoint-wide: 100rem;
 
-  /* Type scale (spec §4). `text-display-lg` etc. set size, line-height, tracking, weight. */
-  --text-display-xl: 60px;
-  --text-display-xl--line-height: 60px;
-  --text-display-xl--letter-spacing: -0.65px;
-  --text-display-xl--font-weight: 400;
+  /* Type scale: Arc's sizes, weights 400 and 500 only. Display sizes are Geist, the rest Inter. */
+  --text-*: initial;
   --text-display-lg: 36px;
   --text-display-lg--line-height: 40px;
-  --text-display-lg--letter-spacing: -0.9px;
+  --text-display-lg--letter-spacing: -0.03em;
   --text-display-lg--font-weight: 400;
-  --text-display-md: 24px;
-  --text-display-md--line-height: 32px;
-  --text-display-md--letter-spacing: -0.6px;
-  --text-display-md--font-weight: 700;
-  --text-display-sm: 20px;
-  --text-display-sm--line-height: 28px;
-  --text-display-sm--font-weight: 600;
+  --text-display-md: 22px;
+  --text-display-md--line-height: 28px;
+  --text-display-md--letter-spacing: -0.01em;
+  --text-display-md--font-weight: 500;
+  --text-display-sm: 18px;
+  --text-display-sm--line-height: 26px;
+  --text-display-sm--font-weight: 500;
   --text-body-lg: 18px;
-  --text-body-lg--line-height: 28px;
+  --text-body-lg--line-height: 26px;
   --text-body-md: 16px;
-  --text-body-md--line-height: 26px;
+  --text-body-md--line-height: 24px;
   --text-body-sm: 14px;
   --text-body-sm--line-height: 20px;
   --text-caption: 12px;
   --text-caption--line-height: 16px;
   --text-code: 13px;
   --text-code--line-height: 18px;
-  --text-button: 16px;
-  --text-button--line-height: 24px;
-  --text-button-sm: 14px;
-  --text-button-sm--line-height: 20px;
 
-  --shadow-glow: var(--glow-cyan);
-  --shadow-glow-soft: 0 0 22px rgba(34, 193, 220, 0.25);
-
+  /* The two decorative animations left: a live dot and the orb's orbit, both `motion-safe:`. */
   --animate-blink: blink 1.6s ease-in-out infinite;
-  /* The orchestrator orb (spec §5.3): a dashed orbit, a counter-rotating arc, a breathing ring. */
-  --animate-orbit: orbit 16s linear infinite;
-  --animate-orbit-reverse: orbit 26s linear infinite reverse;
-  --animate-ring-pulse: ring-pulse 2.6s ease-in-out infinite alternate;
+  --animate-orbit: orbit 24s linear infinite;
 
   @keyframes orbit {
     to {
       transform: rotate(360deg);
     }
   }
-  @keyframes ring-pulse {
-    from {
-      transform: scale(1);
-      opacity: 0.55;
-    }
-    to {
-      transform: scale(1.08);
-      opacity: 0.2;
-    }
-  }
-
   @keyframes blink {
     0%,
     100% {
@@ -149,42 +135,14 @@
   }
 }
 
-/* ─── Composite utilities used across screens ─── */
-/*
- * Eyebrow (spec §4): the brand's sheen gradient clipped to text. On a single short word the
- * white→cyan ramp lands mid-word and reads as two-tone, so `data-solid` (set by PageHead for
- * ≤8 characters) falls back to the ramp's soft-cyan end as one colour.
- */
-@utility eyebrow {
-  font-size: 14px;
-  line-height: 20px;
-  font-weight: 600;
-  letter-spacing: 2.52px;
-  text-transform: uppercase;
-  background: var(--g-sheen-text);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  &[data-solid] {
-    background: none;
-    -webkit-text-fill-color: currentColor;
-    color: var(--sheen-cyan-soft);
-  }
-}
+/* ─── Composite utilities ─── */
 
-@utility label-caps {
-  font-size: 12px;
-  line-height: 16px;
-  font-weight: 600;
-  letter-spacing: 1.2px;
-  text-transform: uppercase;
-  color: var(--mute);
-}
-
+/* The page title: Geist, 36/40, 48/52 at wide. */
 @utility page-title {
+  font-family: var(--font-display);
   font-size: 36px;
   line-height: 40px;
-  letter-spacing: -0.9px;
+  letter-spacing: -0.03em;
   font-weight: 400;
   color: var(--ink-strong);
   @media (width >= 100rem) {
@@ -193,61 +151,14 @@
   }
 }
 
-/* Hairline card; no drop shadow at rest, cyan edge + glow on hover. */
+/* A card rests on a hairline: no gradient, no shadow, no glow. Arc's surface radius. */
 @utility card {
-  background: var(--g-card);
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-md);
-  transition:
-    border-color 150ms ease,
-    box-shadow 150ms ease;
-  &:hover {
-    border-color: rgba(34, 193, 220, 0.45);
-    box-shadow: 0 0 28px rgba(34, 193, 220, 0.12);
-  }
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
 }
 
-@utility panel {
-  background: var(--g-panel);
-  border: 1px solid rgba(34, 193, 220, 0.28);
-  border-radius: var(--r-md);
-}
-
-/*
- * The nest's ground: a faint cyan grid behind the orb that fades out radially. Drawn on a
- * pseudo-element so the mask never touches the text and counters laid over it.
- */
-@utility orb-grid {
-  position: relative;
-  isolation: isolate;
-  &::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    pointer-events: none;
-    background-image:
-      linear-gradient(rgba(34, 193, 220, 0.07) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(34, 193, 220, 0.07) 1px, transparent 1px);
-    background-size: 40px 40px;
-    -webkit-mask-image: radial-gradient(ellipse 60% 60% at 50% 45%, #000 20%, transparent 100%);
-    mask-image: radial-gradient(ellipse 60% 60% at 50% 45%, #000 20%, transparent 100%);
-  }
-}
-
-/* The orb's arc: a conic sweep (cyan into white) masked down to a 2 px ring. */
-@utility orb-arc {
-  background: conic-gradient(
-    from 0deg,
-    transparent 0 62%,
-    rgba(34, 193, 220, 0.85) 76%,
-    rgba(255, 255, 255, 0.95) 88%,
-    transparent 100%
-  );
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1px));
-  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1px));
-}
-
+/* The one page container (Arc composition): 1200 px, 2300 px at wide. */
 @utility shell-container {
   width: 100%;
   max-width: 1200px;
@@ -262,44 +173,21 @@
   }
 }
 
-/* Page background: cyan glow top-centre, emerald glow bottom-right, 24px dot grid. */
-@utility ambient {
-  background:
-    radial-gradient(ellipse 55% 35% at 50% -5%, rgba(34, 193, 220, 0.14), transparent 70%),
-    radial-gradient(ellipse 35% 30% at 92% 105%, rgba(22, 163, 94, 0.1), transparent 70%),
-    radial-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px) 0 0 / 24px 24px,
-    var(--canvas);
-  background-attachment: fixed;
-}
-
-@utility glass {
-  background: rgba(16, 16, 16, 0.72);
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
-}
-
-@utility text-sheen {
-  background: var(--g-sheen-text);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
 /* ─── Base ─── */
 @layer base {
   html,
   body {
-    background: var(--canvas);
-    color: var(--ink);
+    background: var(--background);
+    color: var(--foreground);
   }
   html {
-    /* Browser-drawn surfaces carry the palette too. */
-    scrollbar-color: var(--hairline) transparent;
-    accent-color: var(--sheen-cyan);
-    caret-color: var(--sheen-cyan);
+    scrollbar-color: var(--border) transparent;
+    accent-color: var(--accent);
+    caret-color: var(--accent);
   }
   body {
-    font-family: var(--font-sans);
+    font-family: var(--font-body);
+    letter-spacing: var(--tracking-body);
     font-feature-settings: 'calt', 'rlig';
     -webkit-font-smoothing: antialiased;
   }
@@ -318,21 +206,16 @@
     cursor: not-allowed;
   }
   ::placeholder {
-    color: var(--mute);
-  }
-  :focus-visible {
-    outline: 2px solid var(--ink-strong);
-    outline-offset: 2px;
-    /* The ring must appear at once; a colour transition would fade it in. */
-    transition: none;
+    color: var(--text-muted);
   }
   ::selection {
-    background: rgba(34, 193, 220, 0.35);
+    background: color-mix(in oklab, var(--accent) 35%, transparent);
     color: var(--ink-strong);
   }
+  /* Keyboard focus is Arc's shared :focus-visible outline (foundation.css); nothing is added here. */
 }
 
-/* ─── Desktop (Electron) chrome: on macOS the frosted nav doubles as the title bar. ─── */
+/* ─── Desktop (Electron) chrome: on macOS the nav doubles as the title bar. ─── */
 html[data-desktop='darwin'] [data-titlebar] {
   -webkit-app-region: drag;
   padding-left: 88px;
@@ -344,7 +227,6 @@ html[data-desktop='darwin']
 }
 
 /*
- * Reduced motion: decorative animation (the live dot, the orb's orbits) is opted in with the
- * `motion-safe:` variant at the use site, so it simply does not run for people who asked for
- * less motion. State transitions (150 ms colour changes) stay — they are feedback, not motion.
+ * Reduced motion: the live dot and the orbit are opted in with `motion-safe:` at the use site;
+ * Arc components carry their own reduced-motion branch. State transitions stay.
  */

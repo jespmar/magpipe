@@ -1,7 +1,7 @@
-import { clsx } from 'clsx';
+import { Badge, type BadgeTone } from '@/components/arc/badge/badge';
 import type { RunStatus } from '@/lib/schemas';
 
-/** Spec §5: running (cyan), waiting (white), idle (mute), done (emerald), failed (red), needs-auth (amber). */
+/** Every status a pill can show: runs, agents, tools and memory entries. */
 export type StatusVariant =
   | 'running'
   | 'waiting'
@@ -17,20 +17,21 @@ export type StatusVariant =
   | 'queued'
   | 'cancelled';
 
-const STYLE: Record<StatusVariant, string> = {
-  running: 'border-cyan/45 text-cyan',
-  waiting: 'border-hairline text-ink',
-  idle: 'border-hairline text-mute',
-  paused: 'border-hairline text-mute',
-  done: 'border-emerald/45 text-emerald',
-  failed: 'border-danger/45 text-danger',
-  'needs-auth': 'border-warn/45 text-warn',
-  connected: 'border-cyan/45 text-cyan',
-  stale: 'border-warn/45 text-warn',
-  conflict: 'border-danger/45 text-danger',
-  expired: 'border-hairline text-mute',
-  queued: 'border-hairline text-mute',
-  cancelled: 'border-hairline text-mute',
+/** Status means status: cyan is alive, emerald done, amber needs you, red failed; the rest neutral. */
+const TONE: Record<StatusVariant, BadgeTone> = {
+  running: 'info',
+  connected: 'info',
+  waiting: 'neutral',
+  idle: 'neutral',
+  paused: 'neutral',
+  queued: 'neutral',
+  cancelled: 'neutral',
+  expired: 'neutral',
+  done: 'success',
+  failed: 'danger',
+  conflict: 'danger',
+  'needs-auth': 'warning',
+  stale: 'warning',
 };
 
 /** Status labels are precise words, never the metaphor: a run is "running", not "flying". */
@@ -44,22 +45,9 @@ export function StatusPill({
   className?: string;
 }) {
   return (
-    <span
-      className={clsx(
-        'inline-flex items-center gap-1.5 rounded-pill border px-2.5 py-0.5 font-sans text-caption font-medium whitespace-nowrap',
-        STYLE[variant],
-        className,
-      )}
-    >
-      <span
-        aria-hidden
-        className={clsx(
-          'size-1.5 rounded-pill bg-current',
-          variant === 'running' && 'motion-safe:animate-blink',
-        )}
-      />
+    <Badge tone={TONE[variant]} dot pill className={className}>
       {label}
-    </span>
+    </Badge>
   );
 }
 

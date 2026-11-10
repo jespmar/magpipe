@@ -17,7 +17,8 @@ test('add a fact, browse, edit, verify and forget it', async ({ page }) => {
   await dialog.getByRole('button', { name: 'Add fact' }).click();
   await expect(dialog.getByRole('alert')).toHaveText('Give the fact a key');
 
-  await dialog.getByLabel('Namespace').selectOption('facts');
+  await dialog.getByLabel('Namespace').click();
+  await page.getByRole('option', { name: 'Facts' }).click();
   await dialog.getByLabel('Key').fill(key);
   await dialog.getByLabel('Value').fill('Nightly SIE import runs at 02:00 UTC');
   await dialog.getByLabel('Confidence').fill('0.8');
@@ -77,9 +78,9 @@ test('a new namespace can be created from the nav and used at once', async ({ pa
   const label = `Runbooks ${Date.now().toString(36)}`;
   await page.goto('/memory');
   const nav = page.getByRole('navigation', { name: 'Namespaces' });
-  await nav.getByRole('button', { name: '+ New namespace' }).click();
+  await nav.getByRole('button', { name: 'New namespace' }).click();
   await nav.getByLabel('New namespace').fill(label);
-  await nav.getByRole('button', { name: 'Add', exact: true }).click();
+  await nav.getByRole('button', { name: 'Add namespace' }).click();
   // The dev server compiles the namespaces route on first use; production answers in a beat.
   await expect(
     page.getByRole('status').filter({ hasText: `Namespace “${label}” added.` }),
@@ -93,9 +94,9 @@ test('a new namespace can be created from the nav and used at once', async ({ pa
     page.getByText(/Nothing in this namespace yet\. Add a fact to start it\.|The nest is empty/),
   ).toBeVisible();
 
-  await page.getByRole('button', { name: '+ Add fact' }).click();
+  await page.getByRole('button', { name: 'Add fact' }).click();
   const dialog = page.getByRole('dialog', { name: 'Add a fact' });
-  await expect(dialog.getByLabel('Namespace')).toHaveValue(label.toLowerCase().replace(/ /g, '-'));
+  await expect(dialog.getByLabel('Namespace')).toContainText(label);
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
 });

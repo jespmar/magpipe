@@ -8,7 +8,7 @@ import { isActive, NAV_LINKS } from '@/lib/nav';
 
 /**
  * Logo + wordmark, linking home. Home has no entry in the nav list (per the design), so the
- * brand is the Home affordance: it carries `aria-current` and the same cyan underline as an
+ * brand is the Home affordance: it carries `aria-current` and the same accent underline as an
  * active link when you are there, and a hover underline the rest of the time.
  */
 export function BrandLink() {
@@ -17,18 +17,18 @@ export function BrandLink() {
     <Link
       href="/"
       aria-current={home ? 'page' : undefined}
-      className="group flex min-w-0 items-center gap-2.5 text-ink-strong"
+      className="group flex min-w-0 items-center gap-2.5 rounded-sm text-ink-strong"
     >
-      <Logo onDisc size={24} discSize={36} id="mp-wing-nav" label={null} />
+      <Logo onDisc size={22} discSize={32} id="mp-wing-nav" label={null} />
       <span
         className={clsx(
-          'border-b-2 pb-0.5 text-body-md font-semibold transition-colors',
+          'border-b-2 pb-0.5 text-body-md font-medium transition-colors',
           home ? 'border-cyan' : 'border-transparent group-hover:border-hairline',
         )}
       >
         Magpipe
       </span>
-      <span className="ml-1 hidden text-caption font-medium text-mute sm:inline">
+      <span className="ml-1 hidden text-caption text-mute sm:inline">
         {/* The pause keeps the accessible name from reading "Magpipeagent orchestrator". */}
         <span className="sr-only">, </span>
         agent orchestrator
@@ -50,9 +50,9 @@ export function NavLinks({ className }: { className?: string }) {
             aria-current={active ? 'page' : undefined}
             className={clsx(
               // py-1.5 lifts the hit area to ≥32 px without changing the visual rhythm much.
-              'border-b-2 py-1.5 text-body-sm transition-colors',
+              'rounded-sm border-b-2 py-1.5 text-body-sm transition-colors',
               active
-                ? 'border-cyan font-semibold text-ink-strong'
+                ? 'border-cyan font-medium text-ink-strong'
                 : 'border-transparent text-body hover:text-ink-strong',
             )}
           >

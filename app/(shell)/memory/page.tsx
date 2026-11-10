@@ -11,7 +11,7 @@ export const metadata: Metadata = { title: 'Memory' };
 type Props = { searchParams: Promise<{ ns?: string; id?: string; new?: string }> };
 
 const DESCRIPTION =
-  'The shiny bits the flock brings back — durable facts, decisions and limits every bird reads before it flies.';
+  'The shiny bits the flock brings back: durable facts, decisions and limits every bird reads before it flies.';
 
 export default async function MemoryPage({ searchParams }: Props) {
   const params = await searchParams;
@@ -38,7 +38,7 @@ export default async function MemoryPage({ searchParams }: Props) {
     console.error('[memory] unavailable:', err);
     return (
       <>
-        <PageHead eyebrow="The nest" title="Memory" description={DESCRIPTION} />
+        <PageHead title="Memory" description={DESCRIPTION} />
         <UnavailableState />
       </>
     );

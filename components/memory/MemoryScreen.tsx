@@ -203,9 +203,8 @@ export function MemoryScreen({
   return (
     <>
       <PageHead
-        eyebrow="The nest"
         title="Memory"
-        description="The shiny bits the flock brings back — durable facts, decisions and limits every bird reads before it flies."
+        description="The shiny bits the flock brings back: durable facts, decisions and limits every bird reads before it flies."
         actions={
           <>
             {/* Lives in the head so a notice never moves the columns below. */}
@@ -226,7 +225,7 @@ export function MemoryScreen({
               className="w-[260px]"
             />
             <Button variant="primary" onClick={() => setEditor({ mode: 'create' })}>
-              + Add fact
+              Add fact
             </Button>
           </>
         }
@@ -250,14 +249,11 @@ export function MemoryScreen({
           className="flex min-w-0 flex-[1_1_560px] flex-col gap-5 wide:flex-[1_1_1100px] wide:flex-row wide:flex-wrap wide:items-start wide:gap-6"
         >
           {empty ? (
-            <EmptyState title="The nest is empty" actions={fresh ? <DemoLink /> : undefined}>
-              <p>
-                Every durable fact a bird learns is kept here with its confidence, its source and
-                when it expires, so no bird reads the same page twice. Add a decision of your own
-                with “Add fact”
-                {fresh ? ', or load the demo data to fill the nest with a dozen examples' : ''}.
-              </p>
-            </EmptyState>
+            <EmptyState
+              title="The nest is empty"
+              description={`Every durable fact a bird learns is kept here with its confidence, its source and when it expires, so no bird reads the same page twice. Add a decision of your own with “Add fact”${fresh ? ', or load the demo data to fill the nest with a dozen examples' : ''}.`}
+              actions={fresh ? <DemoLink /> : undefined}
+            />
           ) : (
             <>
               <div className="min-w-0 wide:flex-[2_1_600px]">

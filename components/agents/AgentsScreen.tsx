@@ -4,7 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useMemo, useOptimistic, useRef, useState, useTransition } from 'react';
 import { PageHead } from '@/components/ui/PageHead';
 import { Button } from '@/components/ui/Button';
-import { FilterPills } from '@/components/ui/FilterPills';
+import { FilterControl } from '@/components/ui/FilterControl';
 import { SearchInput } from '@/components/ui/SearchInput';
 import { AgentDetail } from './AgentDetail';
 import { AgentEditor } from './AgentEditor';
@@ -179,9 +179,8 @@ export function AgentsScreen({
   return (
     <>
       <PageHead
-        eyebrow="The flock"
         title="Agents"
-        description="Every bird Magpipe can send out — what it does, what it may touch, and how it has been flying."
+        description="Every bird Magpipe can send out: what it does, what it may touch, and how it has been flying."
         actions={
           <>
             <SearchInput
@@ -191,14 +190,14 @@ export function AgentsScreen({
               onChange={setQuery}
             />
             <Button variant="primary" onClick={() => setEditor({ mode: 'create' })}>
-              + Add a bird
+              Add a bird
             </Button>
           </>
         }
       />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <FilterPills
+        <FilterControl
           label="Filter agents by status"
           options={AGENT_FILTERS.map((f) => ({ ...f, count: counts[f.key] }))}
           value={filter}

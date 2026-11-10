@@ -34,18 +34,18 @@ export function MemoryDetail({ entry, agents, now, onEdit, onVerify, onForget, b
   const readBy = entry.readBy.map((id) => authorLabel(id, agents));
 
   return (
-    <aside aria-labelledby="memory-detail-value" className="flex min-w-0 flex-col gap-3.5 card p-5">
+    <aside aria-labelledby="memory-detail-value" className="flex min-w-0 flex-col gap-4 card p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-0.5">
           <span className="truncate font-mono text-code text-mute">
             {entry.ns} / {entry.key}
           </span>
-          <h2 id="memory-detail-value" className="text-body-lg font-semibold text-ink-strong">
+          <h2 id="memory-detail-value" className="text-body-lg font-medium text-ink-strong">
             {entry.value}
           </h2>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={onEdit} disabled={busy}>
+          <Button variant="secondary" size="sm" onClick={onEdit} disabled={busy}>
             Edit
           </Button>
           <Button
@@ -77,12 +77,12 @@ export function MemoryDetail({ entry, agents, now, onEdit, onVerify, onForget, b
       </dl>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button variant="outline" size="sm" onClick={onVerify} disabled={busy}>
+        <Button variant="secondary" size="sm" onClick={onVerify} disabled={busy}>
           Mark verified
         </Button>
         {entry.conflict ? (
           <span className="text-caption text-mute">
-            A write moved confidence by more than 0.3 — verifying settles it.
+            A write moved confidence by more than 0.3; verifying settles it.
           </span>
         ) : stale ? (
           <span className="text-caption text-mute">Last verified more than 30 days ago.</span>
@@ -105,12 +105,7 @@ export function MemoryDetail({ entry, agents, now, onEdit, onVerify, onForget, b
         </div>
       ) : null}
 
-      <CodeBlock
-        heading={<span className="label-caps">Raw</span>}
-        code={rawJson(entry, agents)}
-        label={`Copy ${entry.key} as JSON`}
-        maxHeight={320}
-      />
+      <CodeBlock filename="Raw" language="json" code={rawJson(entry, agents)} maxLines={16} />
     </aside>
   );
 }
