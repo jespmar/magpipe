@@ -17,6 +17,8 @@ const schema = z.object({
   MAGPIPE_MODEL_STUB: z.enum(['scripted']).optional(),
   /** `scripted` swaps Linear for an in-memory tracker (D38) — development and tests only. */
   MAGPIPE_TRACKER_STUB: z.enum(['scripted']).optional(),
+  /** `scripted` swaps GitHub for an in-memory forge (D42) — development and tests only. */
+  MAGPIPE_FORGE_STUB: z.enum(['scripted']).optional(),
   /** How runs reach Claude (D22): the Claude Code on this machine (default) or the Messages API with a key. */
   MAGPIPE_MODEL_BACKEND: z.enum(['api', 'claude-code']).optional(),
   /** Where the `claude` command is, when it is not on the login shell's PATH. */

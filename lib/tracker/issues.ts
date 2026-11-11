@@ -108,6 +108,13 @@ export async function recordFiledIssue(
     goal: opts.goal ?? null,
     goalsRunId: null,
     buildRunId: null,
+    prNumber: null,
+    prUrl: null,
+    mergeRequestedAt: null,
+    mergeRequestedVia: null,
+    landRunId: null,
+    mergedAt: null,
+    operatorNote: null,
     approvedAt: null,
     approvedVia: null,
     createdAt: now,
@@ -185,6 +192,50 @@ export async function releaseBuildRun(db: Db, id: string): Promise<void> {
     .where(eq(t.trackerIssues.id, id));
 }
 
+/** Records the pull request a goal's build opened (D42). */
+export async function recordPull(db: Db, id: string, pr: { number: number; url: string }) {
+  await db
+    .update(t.trackerIssues)
+    .set({ prNumber: pr.number, prUrl: pr.url, updatedAt: new Date() })
+    .where(eq(t.trackerIssues.id, id));
+}
+
+/** Records that a goal's pull request merged (D42); the goals that wait for it may start. */
+export async function recordMerged(db: Db, id: string): Promise<void> {
+  await db
+    .update(t.trackerIssues)
+    .set({ mergedAt: new Date(), updatedAt: new Date() })
+    .where(eq(t.trackerIssues.id, id));
+}
+
+/** Marks the land run a goal started, once (D42). */
+export async function claimLandRun(db: Db, id: string, runId: string): Promise<boolean> {
+  const rows = await db
+    .update(t.trackerIssues)
+    .set({ landRunId: runId, updatedAt: new Date() })
+    .where(and(eq(t.trackerIssues.id, id), isNull(t.trackerIssues.landRunId)))
+    .returning({ id: t.trackerIssues.id });
+  return rows.length > 0;
+}
+
+/**
+ * Lets a goal start over from the operator (D42): its build and land runs and the answer to the
+ * merge question are cleared, so moving it to the approved status builds it again.
+ */
+export async function releaseGoal(db: Db, id: string, note?: string | null): Promise<void> {
+  await db
+    .update(t.trackerIssues)
+    .set({
+      buildRunId: null,
+      landRunId: null,
+      mergeRequestedAt: null,
+      mergeRequestedVia: null,
+      ...(note !== undefined ? { operatorNote: note } : {}),
+      updatedAt: new Date(),
+    })
+    .where(eq(t.trackerIssues.id, id));
+}
+
 /** Spec issues that are approved but have not started their goals run (D39). */
 export async function approvedWithoutGoals(db: Db): Promise<TrackerIssue[]> {
   return db
@@ -247,6 +298,58 @@ export async function approveIssue(db: Db, id: string): Promise<TrackerIssue | u
     `Approved ${row!.identifier} in Magpipe. Linear shows it as ${remote.state.name}.`,
   );
   return row;
+}
+
+/**
+ * The merge question answered yes from Magpipe (D42): recorded, and the factory lands the goal.
+ * Only a goal at the question with an open pull request can be answered.
+ */
+export async function requestMerge(db: Db, id: string): Promise<TrackerIssue | undefined> {
+  const issue = await getIssue(db, id);
+  if (!issue) return undefined;
+  if (issue.stage !== 'merge_question' || !issue.prNumber || issue.mergedAt) {
+    throw new GateError(
+      `${issue.identifier} is in ${issue.stateName}, not waiting for the question to merge. Refresh to see where it is.`,
+    );
+  }
+  if (issue.mergeRequestedAt) return issue;
+  const [row] = await db
+    .update(t.trackerIssues)
+    .set({ mergeRequestedAt: new Date(), mergeRequestedVia: 'magpipe', updatedAt: new Date() })
+    .where(eq(t.trackerIssues.id, id))
+    .returning();
+  await say(db, row!, `Merge requested for ${row!.identifier} in Magpipe.`);
+  return row;
+}
+
+/**
+ * The merge question answered no from Magpipe (D42): the note is posted on the issue and kept
+ * for the Code Agent, and the goal moves back to the approved status so the factory builds it
+ * again on the same branch. Linear is moved first; a failure there changes nothing here.
+ */
+export async function sendBackGoal(
+  db: Db,
+  id: string,
+  note: string,
+): Promise<TrackerIssue | undefined> {
+  const issue = await getIssue(db, id);
+  if (!issue) return undefined;
+  if (issue.stage !== 'merge_question' || issue.mergeRequestedAt || issue.mergedAt) {
+    throw new GateError(
+      `${issue.identifier} is in ${issue.stateName}, not waiting for the question to merge. Refresh to see where it is.`,
+    );
+  }
+  const settings = await getLinearSettings(db);
+  const tracker = await getTracker(db, settings);
+  await tracker.comment(
+    issue.externalId,
+    `Sent back from the merge question in Magpipe. The goal is built again with this note for the Code Agent:\n\n${note}`,
+  );
+  const remote = await tracker.setState(issue.externalId, settings.states.approved!.id);
+  const row = await recordState(db, id, settings, remote);
+  await releaseGoal(db, id, note);
+  await say(db, row, `Sent ${row.identifier} back from the merge question: ${note}`);
+  return (await getIssue(db, id)) ?? row;
 }
 
 export type CheckResult =
@@ -348,6 +451,13 @@ async function applyRemote(db: Db, settings: LinearSettings, r: RemoteIssue): Pr
       goal: null,
       goalsRunId: null,
       buildRunId: null,
+      prNumber: null,
+      prUrl: null,
+      mergeRequestedAt: null,
+      mergeRequestedVia: null,
+      landRunId: null,
+      mergedAt: null,
+      operatorNote: null,
       approvedAt: stage === 'approved' ? now : null,
       approvedVia: stage === 'approved' ? 'linear' : null,
       createdAt: now,
@@ -359,6 +469,15 @@ async function applyRemote(db: Db, settings: LinearSettings, r: RemoteIssue): Pr
     return false;
   }
   const opensGate = stage === 'approved' && !local.approvedAt;
+  // The merge question's Linear door (D42): a goal moved from the question to done is a yes,
+  // and the factory lands it. Its pull request is not merged yet, so its dependants still wait.
+  const answersMerge =
+    local.goal !== null &&
+    local.stage === 'merge_question' &&
+    stage === 'done' &&
+    local.prNumber !== null &&
+    local.mergedAt === null &&
+    local.mergeRequestedAt === null;
   const [row] = await db
     .update(t.trackerIssues)
     .set({
@@ -370,6 +489,7 @@ async function applyRemote(db: Db, settings: LinearSettings, r: RemoteIssue): Pr
       externalParentId: r.parentId,
       updatedAt: now,
       ...(opensGate ? { approvedAt: now, approvedVia: 'linear' as const } : {}),
+      ...(answersMerge ? { mergeRequestedAt: now, mergeRequestedVia: 'linear' as const } : {}),
     })
     .where(eq(t.trackerIssues.id, local.id))
     .returning();
@@ -379,7 +499,9 @@ async function applyRemote(db: Db, settings: LinearSettings, r: RemoteIssue): Pr
     row!,
     opensGate
       ? `${row!.identifier} was approved in Linear (${r.state.name}).`
-      : `${row!.identifier} moved to ${r.state.name} in Linear.`,
+      : answersMerge
+        ? `${row!.identifier} was moved to ${r.state.name} in Linear: Magpipe merges its pull request.`
+        : `${row!.identifier} moved to ${r.state.name} in Linear.`,
   );
   return true;
 }

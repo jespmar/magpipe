@@ -7,6 +7,10 @@ import { loadFlock, summarizeFlock } from '@/lib/flock';
 import { parseScripts, RosterValidationError, type RosterLine } from '@/lib/roster';
 import { plural } from '@/lib/format';
 import {
+  forgeKeyInput,
+  forgeRepoInput,
+  type ForgeKeyInput,
+  type ForgeRepoInput,
   flockLoadInput,
   linearKeyInput,
   linearMappingInput,
@@ -34,6 +38,16 @@ import {
   type TrackerState,
 } from '@/lib/tracker';
 import { checkLinear, type CheckResult } from '@/lib/tracker/issues';
+import {
+  ForgeError,
+  forgeMessage,
+  ForgeNotReadyError,
+  forgeView,
+  removeForgeKey,
+  saveForgeKey,
+  saveForgeRepo,
+  type ForgeView,
+} from '@/lib/forge';
 
 export type DemoState = { status: 'idle' | 'done' | 'error'; message?: string };
 
@@ -255,5 +269,54 @@ export async function checkLinearAction(): Promise<LinearResult<{ check: CheckRe
     return { ok: true, view: linearView(await getLinearSettings(db)), check };
   } catch (err) {
     return linearFailure(err, 'check Linear');
+  }
+}
+
+// ─── GitHub (D42) ──────────────────────────────────────────────────────────
+
+export type ForgeResult<T = object> =
+  ({ ok: true; view: ForgeView } & T) | { ok: false; message: string; field?: string };
+
+async function forgeFailure(err: unknown, what: string): Promise<{ ok: false; message: string }> {
+  if (err instanceof DbLockedError) return { ok: false, message: LOCKED };
+  if (err instanceof ForgeError || err instanceof ForgeNotReadyError) {
+    return { ok: false, message: err.message };
+  }
+  console.error(`[settings] ${what} failed:`, err);
+  return { ok: false, message: forgeMessage(err) };
+}
+
+/** Saves a pasted GitHub token once GitHub accepts it. */
+export async function saveForgeKeyAction(input: ForgeKeyInput): Promise<ForgeResult> {
+  const parsed = forgeKeyInput.safeParse(input);
+  if (!parsed.success) return { ok: false, message: parsed.error.issues[0]!.message, field: 'key' };
+  try {
+    return { ok: true, view: forgeView(await saveForgeKey(await getDb(), parsed.data.key)) };
+  } catch (err) {
+    return { ...(await forgeFailure(err, 'save the GitHub token')), field: 'key' };
+  }
+}
+
+export async function removeForgeKeyAction(): Promise<ForgeResult> {
+  try {
+    return { ok: true, view: forgeView(await removeForgeKey(await getDb())) };
+  } catch (err) {
+    return forgeFailure(err, 'remove the GitHub token');
+  }
+}
+
+/** Saves the repository and merge method once the token can reach the repository. */
+export async function saveForgeRepoAction(
+  input: ForgeRepoInput,
+): Promise<ForgeResult<{ defaultBranch: string }>> {
+  const parsed = forgeRepoInput.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]!.message, field: 'repo' };
+  }
+  try {
+    const { settings, defaultBranch } = await saveForgeRepo(await getDb(), parsed.data);
+    return { ok: true, view: forgeView(settings), defaultBranch };
+  } catch (err) {
+    return { ...(await forgeFailure(err, 'save the GitHub repository')), field: 'repo' };
   }
 }

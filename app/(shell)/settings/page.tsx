@@ -9,6 +9,7 @@ import { StandingInstructions } from '@/components/settings/StandingInstructions
 import { RunLimitForm } from '@/components/settings/RunLimitForm';
 import { SpendCapForm } from '@/components/settings/SpendCapForm';
 import { FactoryForm } from '@/components/settings/FactoryForm';
+import { GitHubForm } from '@/components/settings/GitHubForm';
 import { LinearForm } from '@/components/settings/LinearForm';
 import { FlockForm } from '@/components/settings/FlockForm';
 import { ScrollToHash } from '@/components/ui/ScrollToHash';
@@ -29,6 +30,9 @@ import { formatUsd } from '@/lib/runs-util';
 import { getShellData } from '@/lib/shell-data';
 import { SHORTCUTS } from '@/lib/shortcuts';
 import { getLinearSettings, linearView, type LinearView } from '@/lib/tracker';
+import { factoryRepository } from '@/lib/factory';
+import { forgeView, getForgeSettings, repoFromRemote, type ForgeView } from '@/lib/forge';
+import { originUrl } from '@/lib/worktrees';
 import { capReached, capText, spendToday, type SpendToday } from '@/lib/spend';
 import type { MemoryEntry, Settings } from '@/lib/schemas';
 
@@ -79,6 +83,34 @@ async function loadLinear(): Promise<LinearView | null> {
   }
 }
 
+/** GitHub access as Settings shows it, and a repository read from the factory's origin. */
+async function loadForge(): Promise<{ view: ForgeView; suggested: string | null } | null> {
+  try {
+    const db = await getDb();
+    const view = forgeView(await getForgeSettings(db));
+    let suggested: string | null = null;
+    if (!view.repo) {
+      const repo = await factoryRepository(db).catch(() => null);
+      const url = repo ? await originUrl(repo.path) : null;
+      suggested = url ? repoFromRemote(url) : null;
+    }
+    return { view, suggested };
+  } catch {
+    return null;
+  }
+}
+
+const EMPTY_FORGE: ForgeView = {
+  id: 'github',
+  keyHint: null,
+  viewer: null,
+  repo: null,
+  mergeMethod: 'squash',
+  updatedAt: new Date(0),
+  hasKey: false,
+  ready: false,
+};
+
 async function loadSpend(): Promise<SpendToday | null> {
   try {
     return await spendToday(await getDb());
@@ -103,7 +135,7 @@ const MODE_LABEL = {
 
 /** Workspace facts (spec §3.7); the daily spend cap is the one the operator edits (D32). */
 export default async function SettingsPage() {
-  const [settings, spend, user, shell, backend, standing, linear] = await Promise.all([
+  const [settings, spend, user, shell, backend, standing, linear, forge] = await Promise.all([
     loadSettings(),
     loadSpend(),
     currentUser(),
@@ -111,6 +143,7 @@ export default async function SettingsPage() {
     describeModelBackend(),
     loadStanding(),
     loadLinear(),
+    loadForge(),
   ]);
   const backendRows: (readonly [string, string])[] =
     backend.backend === 'claude-code'
@@ -291,6 +324,21 @@ export default async function SettingsPage() {
           ) : (
             <LinearForm
               initial={EMPTY_LINEAR}
+              disabledReason="Needs the database. See the notice at the top of the page."
+            />
+          )}
+        </Section>
+        <Section id="github" title="GitHub" className="md:col-span-2">
+          <p className="max-w-[31rem] text-body-sm text-body">
+            Where goals land. With GitHub set up, a goal that passes its checks is pushed and opened
+            as a pull request, and the merge question waits for you here, in Linear or on GitHub.
+            Without it, goals stop at a branch you merge by hand.
+          </p>
+          {forge ? (
+            <GitHubForm initial={forge.view} suggestedRepo={forge.suggested} />
+          ) : (
+            <GitHubForm
+              initial={EMPTY_FORGE}
               disabledReason="Needs the database. See the notice at the top of the page."
             />
           )}

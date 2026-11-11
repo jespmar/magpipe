@@ -996,3 +996,39 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
   edited beside the spend cap, which stays the governor. The engine takes a new limit at once
   and reads it at start. The factory starts as many ready goals as the limit leaves room for
   beside the builds already running, oldest first, dependencies done.
+
+## D42 · Factory phase 6: pull requests and the merge question
+
+- **Why.** A goal that passes its checks must reach the default branch, with the operator
+  deciding once (gate G2) and the branch tested again against what landed meanwhile.
+- **The GitHub seam.** `lib/forge`, shaped like the tracker (D38): an interface of five
+  operations, GitHub's REST API behind it, and a scripted forge for tests and the e2e server
+  (`MAGPIPE_FORGE_STUB`, ignored in production). Settings → GitHub holds a token (checked with
+  GitHub, sealed, never shown again) and the repository with how pull requests merge, read back
+  when saved and suggested from the factory repository's origin. One row, `forge_settings`,
+  migration 0011. Like the Linear client, the GitHub client was tested against a fake fetch;
+  this environment cannot reach `api.github.com`.
+- **Magpipe pushes, not an agent.** The design gave a `git_push` operation to the Merge Agent.
+  Pushing is mechanical, so it is Magpipe's own git work (`lib/worktrees.ts`) in action steps,
+  with the guards the design set: only the run's own `magpipe/…` branch, the one its worktree
+  has checked out, to origin, never the default branch, never forced. Agents still cannot push.
+- **The build ends in a pull request.** With GitHub set up, the build template gains `open_pr`
+  after the judges: when all passed, the branch is pushed and its pull request opened, and the
+  finish asks the question to merge on the goal's issue with the link. Without GitHub, the step
+  is left out of the plan (and out of its dependants) and the goal stops at a branch to merge
+  by hand, as in D40.
+- **Three doors to G2.** Merge in Magpipe (the issue bar on the goal's flights); moving the goal
+  from the question to done in Linear; merging the pull request on GitHub, which the next check
+  notices (one closed there without merging needs the operator). The first two start a land run;
+  the third is already merged. Send back in Magpipe posts the operator's note on the issue, moves
+  the goal back to approved and gives the note to the Code Agent in the rebuild.
+- **The land template.** Read the goal; bring the branch up to date by merging the default branch
+  into it, then push (a merge, not the design's rebase, because a rebased branch could only be
+  pushed by force, which the design also forbids; a conflict stops the land); the Test Agent runs
+  the tests again; the Merge Agent, now a judge with a reading role, checks the branch can land;
+  and a step that runs however they ended merges the pull request and moves the goal to done,
+  or moves it to needs you with the reason, the pull request left open. Judges in a land have
+  nothing to send back (`sendBackTo: []`).
+- **Done means merged.** A goal with a pull request counts as done for its dependants, for its
+  spec's closing and for removing its worktree only once it merged: Linear's done is the
+  operator's answer, not the merge.

@@ -25,6 +25,7 @@ import {
 import {
   agentStatuses,
   issueStages,
+  mergeMethods,
   runEventKinds,
   runStatuses,
   toolStatuses,
@@ -256,6 +257,13 @@ export const trackerIssues = pgTable(
     goal: jsonb().$type<TrackerIssue['goal']>(),
     goalsRunId: text().references(() => runs.id, { onDelete: 'set null' }),
     buildRunId: text().references(() => runs.id, { onDelete: 'set null' }),
+    prNumber: integer(),
+    prUrl: text(),
+    mergeRequestedAt: timestamptz(),
+    mergeRequestedVia: text({ enum: ['magpipe', 'linear'] }),
+    landRunId: text().references(() => runs.id, { onDelete: 'set null' }),
+    mergedAt: timestamptz(),
+    operatorNote: text(),
     approvedAt: timestamptz(),
     approvedVia: text({ enum: ['linear', 'magpipe'] }),
     createdAt: timestamptz().notNull().defaultNow(),
@@ -266,4 +274,20 @@ export const trackerIssues = pgTable(
     index('tracker_issues_run_idx').on(t.runId),
     index('tracker_issues_parent_idx').on(t.parentId),
   ],
+);
+
+// ─── the forge (GitHub, D42) ───────────────────────────────────────────────
+
+export const forgeSettings = pgTable(
+  'forge_settings',
+  {
+    id: text().$type<'github'>().primaryKey().default('github'),
+    keyRef: text(),
+    keyHint: text(),
+    viewer: text(),
+    repo: text(),
+    mergeMethod: text({ enum: mergeMethods }).notNull().default('squash'),
+    updatedAt: timestamptz().notNull().defaultNow(),
+  },
+  (t) => [check('forge_settings_single_row', sql`${t.id} = 'github'`)],
 );

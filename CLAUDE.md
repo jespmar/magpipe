@@ -112,7 +112,9 @@ engine and no sign-in on desktop.
   Magpipe checks (`record_goals`, D39), never by parsing an agent's prose. Factory runs start
   only from `factoryTick` (after a Linear check) or a gate's own door, never from a timer of
   their own (D40). A build run works in its goal's worktree (`lib/worktrees.ts`, D41): repository
-  tools and write locks resolve through `run.input.worktree`, never the bound folder.
+  tools and write locks resolve through `run.input.worktree`, never the bound folder. GitHub
+  goes through `lib/forge` (D42) the way Linear goes through `lib/tracker`; Magpipe pushes and
+  merges in action steps, agents never do.
 - **Tests never need model credentials.** Unit tests script `ModelClient`; the Playwright
   server runs with `MAGPIPE_MODEL_STUB=scripted` (`lib/engine/stub-model.ts`), which the engine
   ignores in production builds.

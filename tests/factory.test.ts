@@ -177,7 +177,11 @@ describe('lib/factory.ts mirrors docs/factory.md', () => {
           s.dependsOn.map((d) => `\`${d}\``).join(', ') || 'none',
           s.writesDocument || s.recordsGoals ? 'yes' : 'no',
           s.judges ? 'yes' : 'no',
-          s.when === 'linear' ? 'Linear is set up' : 'always',
+          s.when === 'linear'
+            ? 'Linear is set up'
+            : s.when === 'github'
+              ? 'GitHub is set up'
+              : 'always',
           s.instructions,
         ]),
       );

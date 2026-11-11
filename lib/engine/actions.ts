@@ -8,13 +8,18 @@ import type { Db } from '../db';
 import { getLinearSettings, getTracker, linearReady } from '../tracker';
 import { acceptanceCriteria, type Criterion } from '../goals';
 import { workFacts } from '../work';
+import { getForge } from '../forge';
+import { pushBranch, updateBranch } from '../worktrees';
 import {
   getIssue,
   goalIssues,
   issueForRun,
   recordFiledIssue,
   recordState,
+  recordMerged,
+  recordPull,
   releaseBuildRun,
+  releaseGoal,
   releaseGoalsRun,
   relinkIssue,
   threadIssue,
@@ -76,7 +81,145 @@ export async function runAction(opts: {
       return fileGoals(opts);
     case 'finish_goal':
       return finishGoal(opts);
+    case 'open_pr':
+      return openPr(opts);
+    case 'update_branch':
+      return updateGoalBranch(opts);
+    case 'merge_goal':
+      return mergeGoal(opts);
   }
+}
+
+/** The run's worktree, which a landing action needs (D41, D42). */
+function worktreeOf(run: Run) {
+  const wt = run.input.worktree;
+  if (!wt) throw new EngineError('no_worktree', 'This run has no worktree to push from.');
+  return wt;
+}
+
+/** Every judge before this step passed, and nothing before it failed. */
+function allPassed(upstream: Step[]): boolean {
+  const judges = upstream.filter((s) => s.judges);
+  return (
+    upstream.every((s) => s.status !== 'failed') &&
+    judges.length > 0 &&
+    judges.every((s) => s.status === 'done' && s.verdict === 'pass')
+  );
+}
+
+/**
+ * Pushes the goal's branch and opens its pull request (D42), once every judge passed. Magpipe
+ * pushes, not an agent: only the run's own `magpipe/…` branch, to origin, never forced.
+ */
+async function openPr({
+  db,
+  run,
+  step,
+  signal,
+}: Parameters<typeof runAction>[0]): Promise<ActionOutcome> {
+  const { issue } = await goalsContext(db, run);
+  if (!allPassed(upstreamOf(run.plan, step))) {
+    return { status: 'skipped', summary: 'Not opened: the judges did not all pass.' };
+  }
+  const wt = worktreeOf(run);
+  const { forge, repo } = await getForge(db);
+  const { defaultBranch } = await forge.repository(repo, signal);
+  await pushBranch(wt.path, wt.branch);
+  const pr = await forge.openPullRequest(
+    repo,
+    {
+      head: wt.branch,
+      base: defaultBranch,
+      title: `${issue.identifier}: ${issue.title}`,
+      body: `Built by Magpipe for ${issue.identifier} (${issue.url}). The tests pass, the review approves and the skeptic has no objection.\n\n${upstreamOf(run.plan, step).find((s) => s.action === 'read_issue')?.document ?? ''}`,
+    },
+    signal,
+  );
+  await recordPull(db, issue.id, pr);
+  return { status: 'done', summary: `Opened pull request #${pr.number}: ${pr.url}` };
+}
+
+/**
+ * Brings the goal's branch up to date with the base before it merges (D42): the base is merged in
+ * (not rebased, so nothing is forced) and the branch pushed. A conflict stops the land.
+ */
+async function updateGoalBranch({
+  db,
+  run,
+  signal,
+}: Parameters<typeof runAction>[0]): Promise<ActionOutcome> {
+  const wt = worktreeOf(run);
+  const { forge, repo } = await getForge(db);
+  const { defaultBranch } = await forge.repository(repo, signal);
+  const update = await updateBranch(wt.path, defaultBranch);
+  if (!update.ok) {
+    throw new EngineError(
+      'conflict',
+      `${wt.branch} does not merge cleanly with ${defaultBranch}: ${update.conflicts.join(', ') || 'git could not say which files'}. Resolve it on the branch, or send the goal back.`,
+    );
+  }
+  if (update.changed) await pushBranch(wt.path, wt.branch);
+  return {
+    status: 'done',
+    summary: update.changed
+      ? `Merged ${defaultBranch} into ${wt.branch} and pushed it; the tests run again on the result.`
+      : `${wt.branch} was already up to date with ${defaultBranch}.`,
+  };
+}
+
+/**
+ * Merges the goal's pull request (D42) when the branch updated cleanly and every judge passed
+ * after the update: the goal is done, and the goals that wait for it may start. Anything else
+ * moves the goal to needs you with the reason, and it starts over when moved back to approved.
+ */
+async function mergeGoal({
+  db,
+  run,
+  step,
+  agentNames,
+  signal,
+}: Parameters<typeof runAction>[0]): Promise<ActionOutcome> {
+  const { settings, issue, tracker } = await goalsContext(db, run);
+  const upstream = upstreamOf(run.plan, step);
+  const who = (s: Step) => (s.agentId ? (agentNames.get(s.agentId) ?? 'Agent') : 'Magpipe');
+  const report = upstream
+    .filter((s) => s.judges || s.status === 'failed')
+    .map(
+      (s) =>
+        `**${who(s)}**, ${s.title.toLowerCase()}: ${s.status === 'done' ? (s.verdict ?? s.status) : s.status}\n\n${s.result?.summary ?? s.error?.message ?? ''}`,
+    )
+    .join('\n\n');
+  if (!issue.prNumber)
+    throw new EngineError('no_pull', `${issue.identifier} has no pull request to merge.`);
+  if (!allPassed(upstream)) {
+    const failed = upstream.find((s) => s.status === 'failed');
+    const why = failed
+      ? `“${failed.title}” failed: ${failed.error?.message ?? 'no reason given'}`
+      : 'a check before merging did not pass';
+    await tracker.comment(
+      issue.externalId,
+      `Not merged: ${why}. The pull request stays open. Move this issue back to ${settings.states.approved!.name} to build it again.\n\n${report}`,
+      signal,
+    );
+    const moved = await tracker.setState(issue.externalId, settings.states.needs_you!.id, signal);
+    await recordState(db, issue.id, settings, moved);
+    await releaseGoal(db, issue.id);
+    return { status: 'done', summary: `${issue.identifier} needs you: ${why}.` };
+  }
+  const { forge, repo, settings: forgeSettings } = await getForge(db);
+  const merged = await forge.merge(repo, issue.prNumber, forgeSettings.mergeMethod, signal);
+  await recordMerged(db, issue.id);
+  await tracker.comment(
+    issue.externalId,
+    `Merged pull request #${issue.prNumber} (${merged.sha}) after bringing it up to date and running the tests again.\n\n${report}`,
+    signal,
+  );
+  const moved = await tracker.setState(issue.externalId, settings.states.done!.id, signal);
+  await recordState(db, issue.id, settings, moved);
+  return {
+    status: 'done',
+    summary: `Merged ${issue.identifier}'s pull request #${issue.prNumber}. Moved to ${moved.state.name}.`,
+  };
 }
 
 /** The branch a goal is built on (D40): `magpipe/<goal key>`. */
@@ -120,12 +263,15 @@ async function finishGoal({
     judges.length > 0 &&
     judges.every((s) => s.status === 'done' && s.verdict === 'pass');
 
+  const pull = upstream.find((s) => s.action === 'open_pr' && s.status === 'done');
+  const current = (await getIssue(db, issue.id)) ?? issue;
   if (passed) {
-    await tracker.comment(
-      issue.externalId,
-      `Ready to merge: branch \`${branch}\`. The tests pass, the review approves and the skeptic has no objection. Merge the branch, then move this issue to ${settings.states.done!.name}; the goals that wait for it start after.\n\n${report}${recorded}`,
-      signal,
-    );
+    // The question to merge (G2, D42): with a pull request, any of three doors answers it.
+    const question =
+      pull && current.prUrl
+        ? `Merge? Pull request #${current.prNumber}: ${current.prUrl}. The tests pass, the review approves and the skeptic has no objection. Answer with Merge or Send back on the goal's flight in Magpipe, by moving this issue to ${settings.states.done!.name}, or by merging the pull request on GitHub.`
+        : `Ready to merge: branch \`${branch}\`. The tests pass, the review approves and the skeptic has no objection. Merge the branch, then move this issue to ${settings.states.done!.name}; the goals that wait for it start after.`;
+    await tracker.comment(issue.externalId, `${question}\n\n${report}${recorded}`, signal);
     const moved = await tracker.setState(
       issue.externalId,
       settings.states.merge_question!.id,
@@ -134,7 +280,9 @@ async function finishGoal({
     await recordState(db, issue.id, settings, moved);
     return {
       status: 'done',
-      summary: `${issue.identifier} is ready to merge on ${branch}. Moved to ${moved.state.name}.`,
+      summary: current.prUrl
+        ? `${issue.identifier} asks to merge pull request #${current.prNumber}. Moved to ${moved.state.name}.`
+        : `${issue.identifier} is ready to merge on ${branch}. Moved to ${moved.state.name}.`,
     };
   }
 
