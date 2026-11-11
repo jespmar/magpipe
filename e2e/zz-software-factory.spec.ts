@@ -227,6 +227,21 @@ test('settings connects Linear, a passing spec is filed, Home approves it, its g
     /Merged MAG-\d+'s pull request #1/,
   );
 
+  // The factory screen (D43): the goal sits in Done with its merged pull request, its spec in
+  // Building with the goal counted.
+  await page
+    .getByRole('navigation', { name: 'Main' })
+    .getByRole('link', { name: 'Factory' })
+    .click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Factory' })).toBeVisible({
+    timeout: 15_000,
+  });
+  const doneColumn = page.getByRole('region', { name: 'Done' });
+  await expect(doneColumn).toContainText('Meet criterion 1');
+  await expect(doneColumn).toContainText('merged');
+  await expect(doneColumn.getByRole('list', { name: /MAG-\d+ checks/ })).toContainText('pass');
+  await expect(page.getByRole('region', { name: 'Building' })).toContainText('1 of 1 goals done');
+
   // Leave no tool card behind for a folder that is about to be deleted.
   const { tools } = (await (await request.get('/api/tools')).json()) as {
     tools: { id: string; name: string }[];

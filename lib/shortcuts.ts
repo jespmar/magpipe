@@ -10,6 +10,7 @@ export const GO_TO: Readonly<Record<string, { href: string; label: string }>> = 
   r: { href: '/runs', label: 'Runs' },
   t: { href: '/tools', label: 'Tools' },
   m: { href: '/memory', label: 'Memory' },
+  f: { href: '/factory', label: 'Factory' },
   s: { href: '/settings', label: 'Settings' },
 };
 

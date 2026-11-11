@@ -3,6 +3,7 @@ export const NAV_LINKS = [
   { href: '/runs', label: 'Runs' },
   { href: '/tools', label: 'Tools' },
   { href: '/memory', label: 'Memory' },
+  { href: '/factory', label: 'Factory' },
 ] as const;
 
 /** `/runs/flight_8f3a21` keeps "Runs" active; `/` activates nothing. */
