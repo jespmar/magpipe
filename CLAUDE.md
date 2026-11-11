@@ -114,7 +114,8 @@ engine and no sign-in on desktop.
   their own (D40). A build run works in its goal's worktree (`lib/worktrees.ts`, D41): repository
   tools and write locks resolve through `run.input.worktree`, never the bound folder. GitHub
   goes through `lib/forge` (D42) the way Linear goes through `lib/tracker`; Magpipe pushes and
-  merges in action steps, agents never do.
+  merges in action steps, agents never do. Unattended merges happen only under the operator's own rule
+  (`ruleVerdict`, D44), off by default, and still go through the land.
 - **Tests never need model credentials.** Unit tests script `ModelClient`; the Playwright
   server runs with `MAGPIPE_MODEL_STUB=scripted` (`lib/engine/stub-model.ts`), which the engine
   ignores in production builds.

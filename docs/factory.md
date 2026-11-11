@@ -1,17 +1,17 @@
 # The software factory
 
-Status: phases 1 to 7 are built (D37 to D43 in `decisions.md`): the nine agents load from
-Settings, "Send to the factory" on Home runs the spec template, a spec that passes review is
-filed in Linear, gate G1 opens from Linear or from Magpipe, approval splits the spec into goals
-filed as sub-issues, goals build side by side in their own worktrees, tests first, a passing
-goal is pushed and opened as a pull request, gate G2 answers the question to merge from Magpipe,
-Linear or GitHub before Magpipe brings the branch up to date, tests it again and merges, and the
-factory screen shows it all by stage with both gates in reach. The last phase, unattended
-merges, is design (D36). This document says what the factory is, what each agent produces,
-where the operator decides, what the engine must gain, and the order to build it in. It builds
-on the development flock (`flock.md`) and the engine work recorded in D25 to D35.
-`lib/factory.ts` mirrors [the roster](#the-roster-in-magpipe) and [the templates](#templates)
-below, and `tests/factory.test.ts` fails when they drift.
+Status: built (D37 to D44 in `decisions.md`). The nine agents load from Settings, "Send to the
+factory" on Home runs the spec template, a spec that passes review is filed in Linear, gate G1
+opens from Linear or from Magpipe, approval splits the spec into goals filed as sub-issues, goals
+build side by side in their own worktrees, tests first, a passing goal is pushed and opened as a
+pull request, gate G2 answers the question to merge from Magpipe, Linear or GitHub (or, when the
+operator turns it on, from their own rule) before Magpipe brings the branch up to date, tests it
+again and merges, and the factory screen shows it all by stage with both gates in reach. This
+document says what the factory is, what each agent produces, where the operator decides, what
+the engine gained, and the order it was built in. It builds on the development flock
+(`flock.md`) and the engine work recorded in D25 to D35. `lib/factory.ts` mirrors
+[the roster](#the-roster-in-magpipe) and [the templates](#templates) below, and
+`tests/factory.test.ts` fails when they drift.
 
 ## Goal
 
@@ -511,7 +511,8 @@ build runs that ended without reporting and closes finished specs (D40). Phase 5
 locks that follow a run's worktree, and the run limit as a setting (D41). Phase 6 added the GitHub seam
 (`lib/forge`) and its Settings section, Magpipe's guarded push and branch update, the pull
 request step, the land template, and the merge question's three doors (D42). Phase 7 added the
-factory screen (D43).
+factory screen (D43). Phase 8 added unattended merges under the operator's own rule, off by default
+(D44).
 
 Needed, smallest first:
 
@@ -541,8 +542,9 @@ Each phase is one pull request, useful on its own, and testable with the scripte
    merge.
 7. **The factory screen.** Built (D43). The board, replacing the lists phases 1 to 6 get by
    with.
-8. **Earning unattended merges.** A rule the operator sets (for example: a label, every script
-   green, no finding, the skeptic silent) under which G2 answers itself. Its own decision.
+8. **Earning unattended merges.** Built (D44), off by default. A rule the operator sets (a
+   label, every judge passing on the first try, green checks) under which G2 answers itself;
+   the land still re-tests and checks before merging.
 
 ## Settled before building
 

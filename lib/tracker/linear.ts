@@ -8,7 +8,8 @@ import { TrackerError, type RemoteIssue, type Tracker, type TrackerState } from 
 
 export const LINEAR_API = 'https://api.linear.app/graphql';
 
-const ISSUE = 'id identifier url title updatedAt state { id name type } parent { id }';
+const ISSUE =
+  'id identifier url title updatedAt state { id name type } parent { id } labels(first: 50) { nodes { name } }';
 
 type GraphQLError = { message: string; extensions?: { type?: string; code?: string } };
 
@@ -61,10 +62,14 @@ export function linearTracker(
     return body.data;
   }
 
-  type RawIssue = Omit<RemoteIssue, 'parentId'> & { parent: { id: string } | null };
-  const shape = ({ parent, ...rest }: RawIssue): RemoteIssue => ({
+  type RawIssue = Omit<RemoteIssue, 'parentId' | 'labels'> & {
+    parent: { id: string } | null;
+    labels?: { nodes: { name: string }[] } | null;
+  };
+  const shape = ({ parent, labels, ...rest }: RawIssue): RemoteIssue => ({
     ...rest,
     parentId: parent?.id ?? null,
+    labels: labels?.nodes.map((l) => l.name) ?? [],
   });
   const issueOf = (raw: RawIssue | null | undefined, what: string): RemoteIssue => {
     if (!raw) throw new TrackerError(`Linear did not return the issue it ${what}.`, 'unknown');

@@ -21,7 +21,11 @@ export const SCRIPTED_STATES: TrackerState[] = [
 
 type Store = {
   labels: (TrackerRef & { teamId: string })[];
-  issues: (RemoteIssue & { labelIds: string[]; description: string; comments: string[] })[];
+  issues: (Omit<RemoteIssue, 'labels'> & {
+    labelIds: string[];
+    description: string;
+    comments: string[];
+  })[];
   /** `blocking blocks blocked`, by issue id. */
   relations: { blocking: string; blocked: string }[];
   next: number;
@@ -65,12 +69,12 @@ export function scriptedTracker(
   const touch = (i: Store['issues'][number]) => {
     i.updatedAt = new Date().toISOString();
   };
-  const view = ({
-    labelIds: _l,
-    description: _d,
-    comments: _c,
-    ...rest
-  }: Store['issues'][number]) => ({ ...rest, state: { ...rest.state } }) as RemoteIssue;
+  const view = ({ labelIds, description: _d, comments: _c, ...rest }: Store['issues'][number]) =>
+    ({
+      ...rest,
+      state: { ...rest.state },
+      labels: labelIds.map((id) => store.labels.find((l) => l.id === id)?.name ?? id),
+    }) as RemoteIssue;
 
   return {
     name: 'scripted',
@@ -163,4 +167,21 @@ export function scriptedTracker(
       return view(found);
     },
   };
+}
+
+/** Puts a label on an issue the way a person would in Linear (tests, D44). */
+export function addScriptedLabel(
+  store: ReturnType<typeof scriptedStore>,
+  identifier: string,
+  name: string,
+) {
+  let label = store.labels.find((l) => l.name.toLowerCase() === name.toLowerCase());
+  if (!label) {
+    label = { id: `lbl_${store.labels.length + 1}`, name, teamId: SCRIPTED_TEAM.id };
+    store.labels.push(label);
+  }
+  const issue = store.issues.find((i) => i.identifier === identifier);
+  if (!issue) throw new Error(`No issue ${identifier}`);
+  if (!issue.labelIds.includes(label.id)) issue.labelIds.push(label.id);
+  issue.updatedAt = new Date().toISOString();
 }

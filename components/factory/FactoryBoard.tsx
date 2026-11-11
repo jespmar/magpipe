@@ -70,7 +70,7 @@ function Card({ card }: { card: BoardCard }) {
           {card.merged ? (
             <Badge tone="success">merged</Badge>
           ) : card.mergeRequested ? (
-            <Badge tone="neutral">merging</Badge>
+            <Badge tone="neutral">{card.mergeVia === 'rule' ? 'merging by rule' : 'merging'}</Badge>
           ) : null}
         </p>
       ) : null}

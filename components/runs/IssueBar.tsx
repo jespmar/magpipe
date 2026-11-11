@@ -193,7 +193,7 @@ export function IssueBar({ run, emphasis = 'primary', className }: Props) {
   const caption = issue.mergedAt
     ? `Merged at ${clockTime(new Date(issue.mergedAt))}.`
     : issue.mergeRequestedAt
-      ? `Merge requested ${issue.mergeRequestedVia === 'linear' ? 'in Linear' : 'in Magpipe'} at ${clockTime(new Date(issue.mergeRequestedAt))}: the branch is brought up to date and tested again first.`
+      ? `Merge requested ${issue.mergeRequestedVia === 'linear' ? 'in Linear' : issue.mergeRequestedVia === 'rule' ? 'by your rule' : 'in Magpipe'} at ${clockTime(new Date(issue.mergeRequestedAt))}: the branch is brought up to date and tested again first.`
       : waitingSpec
         ? 'Waiting for you: approve it here, or move it to the approved status in Linear.'
         : question

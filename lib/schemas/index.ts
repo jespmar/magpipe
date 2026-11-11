@@ -734,7 +734,7 @@ export const trackerIssue = z.object({
   prUrl: z.string().nullable(),
   /** When the operator answered yes to the merge question (G2), and through which door. */
   mergeRequestedAt: z.date().nullable(),
-  mergeRequestedVia: z.enum(['magpipe', 'linear']).nullable(),
+  mergeRequestedVia: z.enum(['magpipe', 'linear', 'rule']).nullable(),
   /** The land run that brings the branch up to date, re-tests and merges it (D42). */
   landRunId: runId.nullable(),
   /** When the pull request was merged, by Magpipe or on GitHub. Dependencies wait for this. */
@@ -803,6 +803,17 @@ export const forgeSettings = z.object({
   /** The repository pull requests are opened on: `owner/name`. */
   repo: z.string().nullable(),
   mergeMethod: z.enum(mergeMethods),
+  /**
+   * Unattended merges (D44): off unless the operator turns them on. When the rule holds for a
+   * goal at the merge question, the question answers itself; the land still re-tests it.
+   */
+  autoMerge: z.boolean(),
+  /** The Linear label the goal or its spec must carry for the rule to hold. */
+  autoMergeLabel: z.string().min(1).max(80),
+  /** The rule holds only when every judge passed on the first try, nothing sent back. */
+  autoMergeFirstPass: z.boolean(),
+  /** The rule holds only when the pull request's checks are green. */
+  autoMergeChecks: z.boolean(),
   updatedAt: z.date(),
 });
 export type ForgeSettings = z.infer<typeof forgeSettings>;
@@ -820,6 +831,15 @@ export const forgeRepoInput = z.object({
     .regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, 'Give the repository as owner/name.'),
   mergeMethod: z.enum(mergeMethods),
 });
+
+/** Settings → GitHub → Unattended merges (D44). */
+export const autoMergeInput = z.object({
+  autoMerge: z.boolean(),
+  autoMergeLabel: z.string().trim().min(1, 'Name the label that allows it.').max(80),
+  autoMergeFirstPass: z.boolean(),
+  autoMergeChecks: z.boolean(),
+});
+export type AutoMergeInput = z.infer<typeof autoMergeInput>;
 
 /** The merge question answered no from Magpipe (D42): the note goes back to the Code Agent. */
 export const sendBackInput = z.object({

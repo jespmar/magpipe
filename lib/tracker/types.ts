@@ -18,6 +18,8 @@ export type RemoteIssue = {
   updatedAt: string;
   /** The parent issue's id, for a sub-issue (a goal, D39). */
   parentId: string | null;
+  /** The names of its labels (the unattended-merge rule reads them, D44). */
+  labels: string[];
 };
 
 export interface Tracker {

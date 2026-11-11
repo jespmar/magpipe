@@ -9,7 +9,7 @@ import type { Db } from '../db';
 import * as t from '../db/schema';
 import { env } from '../env';
 import { deleteSecret, readSecret, storeSecret } from '../secrets';
-import type { ForgeRepoInput, ForgeSettings } from '../schemas';
+import type { AutoMergeInput, ForgeRepoInput, ForgeSettings } from '../schemas';
 import { githubForge } from './github';
 import { scriptedForge } from './scripted';
 import { ForgeError, type Forge } from './types';
@@ -24,6 +24,10 @@ const DEFAULTS: Omit<ForgeSettings, 'updatedAt'> = {
   viewer: null,
   repo: null,
   mergeMethod: 'squash',
+  autoMerge: false,
+  autoMergeLabel: 'auto-merge',
+  autoMergeFirstPass: true,
+  autoMergeChecks: true,
 };
 
 type ForgeFactory = (token: string) => Forge;
@@ -136,4 +140,9 @@ export function repoFromRemote(url: string): string | null {
 export function forgeMessage(err: unknown): string {
   if (err instanceof ForgeError || err instanceof ForgeNotReadyError) return err.message;
   return `GitHub could not be reached: ${err instanceof Error ? err.message : String(err)}`;
+}
+
+/** Saves the unattended-merge rule (D44). */
+export async function saveAutoMerge(db: Db, input: AutoMergeInput): Promise<ForgeSettings> {
+  return writeForge(db, input);
 }

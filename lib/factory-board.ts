@@ -41,6 +41,8 @@ export type BoardCard = {
   pr: { number: number; url: string } | null;
   merged: boolean;
   mergeRequested: boolean;
+  /** How the merge question was answered: in Magpipe, in Linear, or by the rule (D44). */
+  mergeVia: 'magpipe' | 'linear' | 'rule' | null;
   /** The latest build's judges, in order. */
   verdicts: BoardVerdict[];
   /** The run to follow: the spec run, the goals run, the build or the land, latest first. */
@@ -130,6 +132,7 @@ export async function getBoard(db: Db): Promise<Board> {
       pr: i.prNumber && i.prUrl ? { number: i.prNumber, url: i.prUrl } : null,
       merged: i.mergedAt !== null,
       mergeRequested: i.mergeRequestedAt !== null,
+      mergeVia: i.mergeRequestedVia,
       verdicts: verdictsOf(i.buildRunId ? byRun.get(i.buildRunId) : undefined),
       runs: isGoal
         ? [...link('Land', i.landRunId), ...link('Build', i.buildRunId)]
