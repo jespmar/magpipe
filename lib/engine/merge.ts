@@ -51,12 +51,18 @@ export function documentAnswer(steps: Step[], agentNames: Map<string, string>): 
   const after = new Set<string>([source.id]);
   const parts = [source.document!.trim()];
   for (const s of steps) {
-    if (!s.agentId || !s.dependsOn.some((d) => after.has(d))) continue;
+    if ((!s.agentId && !s.action) || !s.dependsOn.some((d) => after.has(d))) continue;
     after.add(s.id);
-    if (s.status !== 'done' || !s.result?.summary) continue;
+    // An action that did not file says why (D38): skipped after a failed review, or failed.
+    if (s.action && s.status === 'failed') {
+      parts.push(`## ${s.title}\n\nMagpipe: Not filed. ${s.error?.message ?? 'It failed.'}`);
+      continue;
+    }
+    if ((s.status !== 'done' && s.status !== 'skipped') || !s.result?.summary) continue;
     const facts = workFacts(s.work);
+    const who = s.agentId ? (agentNames.get(s.agentId) ?? 'Agent') : 'Magpipe';
     parts.push(
-      `## ${s.title}\n\n${agentNames.get(s.agentId) ?? 'Agent'}: ${s.result.summary}${
+      `## ${s.title}\n\n${who}: ${s.result.summary}${
         facts.length ? `\n\nRecorded by Magpipe:\n${facts.map((f) => `- ${f}`).join('\n')}` : ''
       }`,
     );

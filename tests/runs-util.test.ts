@@ -122,6 +122,17 @@ describe('steps and queries', () => {
         }),
       ),
     ).toBe('00:02 · plan');
+    expect(
+      stepMeta(
+        step({
+          agentId: null,
+          action: 'file_issue',
+          status: 'done',
+          startedAt: '2026-11-09T11:00:00Z',
+          finishedAt: '2026-11-09T11:00:01Z',
+        }),
+      ),
+    ).toBe('00:01 · no model');
     expect(stepMeta(step({ status: 'done' }))).toBe('done');
     expect(stepMeta(step({ status: 'live', startedAt: '2026-11-09T11:59:18' }), now)).toBe(
       'running · 00:42',

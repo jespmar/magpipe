@@ -104,6 +104,11 @@ engine and no sign-in on desktop.
   prompts and grants, and the templates; `tests/factory.test.ts` parses the document. Factory
   agents are `templateOnly`, so the orchestrator never plans them; a template is a preset plan
   passed to `createRun`, and a step that writes a document sets `writesDocument`.
+- **Linear goes through `lib/tracker`** (D38): the `Tracker` interface, never a raw fetch or the
+  MCP server. Tests use `scriptedTracker` via `useTrackerFactory`, and the e2e server sets
+  `MAGPIPE_TRACKER_STUB=scripted`. The key stays sealed; screens get `linearView`, never the
+  row. Work Magpipe does itself is an `action` step, and a step whose result gates others sets
+  `judges` so its verdict line is read.
 - **Tests never need model credentials.** Unit tests script `ModelClient`; the Playwright
   server runs with `MAGPIPE_MODEL_STUB=scripted` (`lib/engine/stub-model.ts`), which the engine
   ignores in production builds.

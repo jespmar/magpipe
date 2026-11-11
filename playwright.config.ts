@@ -39,6 +39,7 @@ export default defineConfig({
       MAGPIPE_SECRET_KEY: 'ZTJlLXRlc3Qta2V5LWUyZS10ZXN0LWtleS1lMmUtdHM',
       // No model credentials in CI: a scripted model lets a run go queued → running → done.
       MAGPIPE_MODEL_STUB: 'scripted',
+      MAGPIPE_TRACKER_STUB: 'scripted',
     },
   },
 });

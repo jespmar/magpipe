@@ -8,6 +8,7 @@ import { DemoDataForm } from '@/components/settings/DemoDataForm';
 import { StandingInstructions } from '@/components/settings/StandingInstructions';
 import { SpendCapForm } from '@/components/settings/SpendCapForm';
 import { FactoryForm } from '@/components/settings/FactoryForm';
+import { LinearForm } from '@/components/settings/LinearForm';
 import { FlockForm } from '@/components/settings/FlockForm';
 import { ScrollToHash } from '@/components/ui/ScrollToHash';
 import { TextBlock } from '@/components/ui/TextBlock';
@@ -26,10 +27,29 @@ import { currentUser } from '@/lib/session';
 import { formatUsd } from '@/lib/runs-util';
 import { getShellData } from '@/lib/shell-data';
 import { SHORTCUTS } from '@/lib/shortcuts';
+import { getLinearSettings, linearView, type LinearView } from '@/lib/tracker';
 import { capReached, capText, spendToday, type SpendToday } from '@/lib/spend';
 import type { MemoryEntry, Settings } from '@/lib/schemas';
 
 export const metadata: Metadata = { title: 'Settings' };
+
+/** What the Linear form starts from when the database cannot be read; it is not shown. */
+const EMPTY_LINEAR: LinearView = {
+  id: 'linear',
+  keyHint: null,
+  viewer: null,
+  team: null,
+  label: null,
+  states: {},
+  pollSeconds: 60,
+  paused: false,
+  lastCheckAt: null,
+  lastCheck: null,
+  lastError: null,
+  updatedAt: new Date(0),
+  hasKey: false,
+  ready: false,
+};
 
 async function loadSettings(): Promise<Settings | null> {
   try {
@@ -44,6 +64,15 @@ async function loadSettings(): Promise<Settings | null> {
 async function loadStanding(): Promise<MemoryEntry[] | null> {
   try {
     return await listMemory(await getDb(), { ns: STANDING_NS });
+  } catch {
+    return null;
+  }
+}
+
+/** Linear access as Settings shows it (no key), or null when the database cannot be read. */
+async function loadLinear(): Promise<LinearView | null> {
+  try {
+    return linearView(await getLinearSettings(await getDb()));
   } catch {
     return null;
   }
@@ -73,13 +102,14 @@ const MODE_LABEL = {
 
 /** Workspace facts (spec §3.7); the daily spend cap is the one the operator edits (D32). */
 export default async function SettingsPage() {
-  const [settings, spend, user, shell, backend, standing] = await Promise.all([
+  const [settings, spend, user, shell, backend, standing, linear] = await Promise.all([
     loadSettings(),
     loadSpend(),
     currentUser(),
     getShellData(),
     describeModelBackend(),
     loadStanding(),
+    loadLinear(),
   ]);
   const backendRows: (readonly [string, string])[] =
     backend.backend === 'claude-code'
@@ -242,6 +272,21 @@ export default async function SettingsPage() {
             />
           </Section>
         </div>
+        <Section id="linear" title="Linear" className="md:col-span-2">
+          <p className="max-w-[31rem] text-body-sm text-body">
+            Where the factory keeps its record. A spec that passes review is filed as an issue with
+            the label, and you approve it there or from the spec&rsquo;s flight. Without Linear,
+            specs stay in Magpipe.
+          </p>
+          {linear ? (
+            <LinearForm initial={linear} />
+          ) : (
+            <LinearForm
+              initial={EMPTY_LINEAR}
+              disabledReason="Needs the database. See the notice at the top of the page."
+            />
+          )}
+        </Section>
         <Section id="orchestrator" title="Orchestrator" className="md:col-span-2">
           <p className="max-w-[31rem] text-body-sm text-body">
             Every run starts with a plan. The orchestrator writes it from these rules, the agents

@@ -139,6 +139,10 @@ export function scriptedModelClient(): ModelClient {
           ].join('\n'),
         );
       }
+      // A reviewer that owes a verdict line (D38) passes the work.
+      if (system.includes('"Verdict: pass"')) {
+        return message('Verdict: pass\n\n- Every checklist item holds in the scripted review.');
+      }
       return message('Scripted answer: the task was read and answered in one line.');
     },
   };

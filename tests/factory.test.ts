@@ -151,10 +151,12 @@ describe('lib/factory.ts mirrors docs/factory.md', () => {
     expect(rows).toEqual(
       FACTORY_TEMPLATES.spec.steps.map((s) => [
         `\`${s.id}\``,
-        FACTORY_AGENTS.find((a) => a.slug === s.agent)!.name,
+        s.agent ? FACTORY_AGENTS.find((a) => a.slug === s.agent)!.name : 'Magpipe',
         s.title,
         s.dependsOn.map((d) => `\`${d}\``).join(', ') || 'none',
         s.writesDocument ? 'yes' : 'no',
+        s.judges ? 'yes' : 'no',
+        s.when === 'linear' ? 'Linear is set up' : 'always',
         s.instructions,
       ]),
     );

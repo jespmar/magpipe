@@ -25,6 +25,7 @@ export const runId = id('run');
 export const eventId = id('evt');
 export const stepId = z.string().min(1);
 export const memoryId = id('mem');
+export const issueId = id('iss');
 
 export const slug = z
   .string()
@@ -87,6 +88,10 @@ export const agent = z.object({
 /** The longest document a step may keep (D37): a spec, with room to spare. */
 export const DOCUMENT_CAP = 40_000;
 
+/** What an action step does (D38); the engine runs it in `lib/engine/actions.ts`. */
+export const stepActions = ['file_issue'] as const;
+export type StepAction = (typeof stepActions)[number];
+
 export const stepStatus = z.enum(['todo', 'live', 'done', 'failed', 'skipped']);
 
 /**
@@ -136,6 +141,15 @@ export const step = z.object({
    * or the run it follows up). Kept when the step is sent back, so the next round revises it.
    */
   document: z.string().max(DOCUMENT_CAP).optional(),
+  /** The step judges the work before it (a review, D38): its result opens with a verdict. */
+  judges: z.boolean().optional(),
+  /** The verdict Magpipe read from a judging step's result (D38). */
+  verdict: z.enum(['pass', 'fail']).optional(),
+  /**
+   * Work Magpipe does itself, with no model (D38): `file_issue` files the spec in the tracker.
+   * Such a step has `agentId: null` and runs in the DAG like any other.
+   */
+  action: z.enum(stepActions).optional(),
   /**
    * Set when the step changed or ran something in a bound repository, done or failed. Saved as
    * each item is recorded, so a restart keeps what the step had done (D33).
@@ -576,3 +590,117 @@ export type MemoryEntry = z.infer<typeof memoryEntry>;
 export type MemoryNamespace = z.infer<typeof memoryNamespace>;
 export type Settings = z.infer<typeof settings>;
 export type Secret = z.infer<typeof secret>;
+
+// ─── the tracker (Linear, D38) ─────────────────────────────────────────────
+
+/**
+ * The six states of the factory's pipeline (docs/factory.md), each mapped by the operator onto
+ * one of the team's own statuses. `other` is a status none of them maps to.
+ */
+export const pipelineStates = [
+  'spec_ready',
+  'approved',
+  'building',
+  'merge_question',
+  'done',
+  'needs_you',
+] as const;
+export type PipelineState = (typeof pipelineStates)[number];
+export const issueStages = [...pipelineStates, 'other'] as const;
+export type IssueStage = (typeof issueStages)[number];
+
+export const trackerRef = z.object({ id: z.string().min(1), name: z.string() });
+export const trackerTeam = trackerRef.extend({ key: z.string() });
+export const pipelineStateMap = z.object({
+  spec_ready: trackerRef.optional(),
+  approved: trackerRef.optional(),
+  building: trackerRef.optional(),
+  merge_question: trackerRef.optional(),
+  done: trackerRef.optional(),
+  needs_you: trackerRef.optional(),
+});
+
+/** Linear access and the watcher's pace (D38): one row, `linear`. The key is a sealed secret. */
+export const linearSettings = z.object({
+  id: z.literal('linear'),
+  /** The `secrets` row that holds the API key, sealed; the key is never read back out. */
+  keyRef: z.string().nullable(),
+  /** The key's last four characters, so the operator can tell which key is saved. */
+  keyHint: z.string().nullable(),
+  /** Who the key belongs to, as Linear said when it was saved. */
+  viewer: z.string().nullable(),
+  team: trackerTeam.nullable(),
+  /** The label that marks the issues the factory owns. */
+  label: trackerRef.nullable(),
+  states: pipelineStateMap,
+  /** Seconds between the watcher's checks: 15 to 1800. */
+  pollSeconds: z.number().int().min(15).max(1800),
+  paused: z.boolean(),
+  lastCheckAt: z.date().nullable(),
+  /** What the last check saw: issues with the label, and how many changed stage. */
+  lastCheck: z.object({ issues: z.number().int(), changed: z.number().int() }).nullable(),
+  lastError: z.string().nullable(),
+  updatedAt: z.date(),
+});
+
+/** An issue the factory owns, as the watcher last saw it (D38). */
+export const trackerIssue = z.object({
+  id: issueId,
+  /** Linear's id for the issue. */
+  externalId: z.string(),
+  /** `ENG-12`. */
+  identifier: z.string(),
+  url: z.string(),
+  title: z.string(),
+  /** The spec run that filed it; null for an issue the operator labelled by hand. */
+  runId: runId.nullable(),
+  stage: z.enum(issueStages),
+  /** The team's own name for the status it is in. */
+  stateName: z.string(),
+  /** When gate G1 opened, and through which door. */
+  approvedAt: z.date().nullable(),
+  approvedVia: z.enum(['linear', 'magpipe']).nullable(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+export const POLL_SECONDS_MIN = 15;
+export const POLL_SECONDS_MAX = 1800;
+
+/** Settings → Linear: the key, pasted once. */
+export const linearKeyInput = z.object({
+  key: z.string().trim().min(1, 'Paste the API key from Linear.').max(500),
+});
+
+/** Settings → Linear: the team, the label and the six statuses. */
+export const linearMappingInput = z.object({
+  teamId: z.string().min(1, 'Pick a team.'),
+  label: z.string().trim().min(1, 'Name the label that marks factory issues.').max(80),
+  states: z.object({
+    spec_ready: z.string().min(1, 'Pick a status for each state.'),
+    approved: z.string().min(1, 'Pick a status for each state.'),
+    building: z.string().min(1, 'Pick a status for each state.'),
+    merge_question: z.string().min(1, 'Pick a status for each state.'),
+    done: z.string().min(1, 'Pick a status for each state.'),
+    needs_you: z.string().min(1, 'Pick a status for each state.'),
+  }),
+});
+
+/** Settings → Linear: the watcher's pace. */
+export const watcherInput = z.object({
+  pollSeconds: z.coerce
+    .number()
+    .int('Whole seconds only.')
+    .min(POLL_SECONDS_MIN, `At least ${POLL_SECONDS_MIN} seconds.`)
+    .max(POLL_SECONDS_MAX, `At most ${POLL_SECONDS_MAX} seconds (30 minutes).`),
+  paused: z.boolean(),
+});
+
+export type LinearSettings = z.infer<typeof linearSettings>;
+export type TrackerIssue = z.infer<typeof trackerIssue>;
+export type TrackerRef = z.infer<typeof trackerRef>;
+export type TrackerTeam = z.infer<typeof trackerTeam>;
+export type PipelineStateMap = z.infer<typeof pipelineStateMap>;
+export type LinearMappingInput = z.infer<typeof linearMappingInput>;
+export type LinearKeyInput = z.infer<typeof linearKeyInput>;
+export type WatcherInput = z.infer<typeof watcherInput>;

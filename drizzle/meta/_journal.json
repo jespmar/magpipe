@@ -50,6 +50,13 @@
       "when": 1794389355403,
       "tag": "0006_chief_thor_girl",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794391817959,
+      "tag": "0007_busy_miss_america",
+      "breakpoints": true
     }
   ]
 }

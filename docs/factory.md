@@ -1,11 +1,13 @@
 # The software factory
 
-Status: phase 1 is built (D37 in `decisions.md`): the nine agents load from Settings, and
-"Send to the factory" on Home runs the spec template. The rest is design (D36). This document
-says what the factory is, what each agent produces, where the operator decides, what the engine
-must gain, and the order to build it in. It builds on the development flock (`flock.md`) and the
-engine work recorded in D25 to D35. `lib/factory.ts` mirrors [the roster](#the-roster-in-magpipe)
-and [the templates](#templates) below, and `tests/factory.test.ts` fails when they drift.
+Status: phases 1 and 2 are built (D37, D38 in `decisions.md`): the nine agents load from
+Settings, "Send to the factory" on Home runs the spec template, a spec that passes review is
+filed in Linear, and gate G1 opens from Linear or from Magpipe. The rest is design (D36). This
+document says what the factory is, what each agent produces, where the operator decides, what
+the engine must gain, and the order to build it in. It builds on the development flock
+(`flock.md`) and the engine work recorded in D25 to D35. `lib/factory.ts` mirrors
+[the roster](#the-roster-in-magpipe) and [the templates](#templates) below, and
+`tests/factory.test.ts` fails when they drift.
 
 ## Goal
 
@@ -171,7 +173,7 @@ You review one spec you did not write. You read; you never edit the spec or the 
 4. If it fails and the send_back tool is offered, call it with the failed items and what would make each one pass: the spec is written again and you review once more.
 5. Finish your step even when the spec fails. The verdict is your result, not a failure.
 
-Finish with: Verdict (pass or fail), then the checklist, one line per item.
+Finish with a line that reads exactly "Verdict: pass" or "Verdict: fail", then the checklist, one line per item. Magpipe reads that line: only a pass lets the work go on.
 ```
 
 ### Goal Builder
@@ -214,7 +216,7 @@ You review the goals split from one spec. You read; you never edit them.
 4. If they fail and the send_back tool is offered, call it with the failed items: the goals are written again and you review once more.
 5. Finish your step even when they fail. The verdict is your result, not a failure.
 
-Finish with: Verdict (pass or fail), then the checklist, one line per item.
+Finish with a line that reads exactly "Verdict: pass" or "Verdict: fail", then the checklist, one line per item. Magpipe reads that line: only a pass lets the work go on.
 ```
 
 ### Test Agent
@@ -343,12 +345,17 @@ document step starts from it as its draft.
 
 Sent from Home with "Send to the factory". The Spec Builder's result is the spec, kept whole (up
 to 40 000 characters) rather than cut to a summary; the Spec Review reads all of it and may send
-it back once. The run's answer is the spec, then the review.
+it back once. Its result opens with a verdict line, which Magpipe reads. Once Linear is set up,
+Magpipe files the spec as an issue when the verdict is pass, in the spec-ready status with the
+factory label, and posts the review as a comment; a fail, or a verdict it cannot read, files
+nothing. Filing is optional: Linear out of reach costs the issue, not the spec. The run's
+answer is the spec, then the review, then what happened to the issue.
 
-| Step     | Agent        | Title           | Depends on | Writes the document | Instructions                                                                                                                                      |
-| -------- | ------------ | --------------- | ---------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `spec`   | Spec Builder | Write the spec  | none       | yes                 | Write the spec for the task under the six headings. When a draft is given, revise it with the feedback or the follow-up instead of starting over. |
-| `review` | Spec Review  | Review the spec | `spec`     | no                  | Check the spec against the checklist, item by item, and give the verdict. Send it back with the failed items if it does not pass.                 |
+| Step     | Agent        | Title           | Depends on | Writes the document | Judges | When             | Instructions                                                                                                                                      |
+| -------- | ------------ | --------------- | ---------- | ------------------- | ------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `spec`   | Spec Builder | Write the spec  | none       | yes                 | no     | always           | Write the spec for the task under the six headings. When a draft is given, revise it with the feedback or the follow-up instead of starting over. |
+| `review` | Spec Review  | Review the spec | `spec`     | no                  | yes    | always           | Check the spec against the checklist, item by item, and give the verdict. Send it back with the failed items if it does not pass.                 |
+| `issue`  | Magpipe      | File the issue  | `review`   | no                  | no     | Linear is set up | When every review passed, file the spec in Linear with the factory label in the spec-ready status, and post each review as a comment.             |
 
 The hand-over step is titled "Hand over the spec".
 
@@ -375,6 +382,9 @@ Code Agent with the operator's note.
 - **Statuses are mapped, not assumed.** Teams name their statuses differently, so Settings
   maps six pipeline states (spec ready, approved, building, merge question, done, needs you)
   to the team's own.
+- **A revised spec updates its issue.** A follow-up sent to the factory revises the spec, and
+  while the issue still waits in spec ready, Magpipe rewrites its title and description there
+  instead of filing a second one. Once it is approved, a revision is a new issue.
 - **Findings are comments.** Each verdict is a comment on the issue it concerns, written by the
   agent that owns it. The pull request links the sub-issue.
 - **Text from Linear is data.** A spec the operator approved is an instruction; a comment from
@@ -400,21 +410,20 @@ resuming a step from its record (D33), repository conventions in every prompt (D
 for a roster (D35), typed repository operations with a script runner (D27), one writer per work
 tree (D28), and each step's recorded branches, commits and script results handed to the next
 step (D29). Phase 1 added runs from a template, a step result kept whole as a document, agents
-that run only from templates, and the factory's roster with its spec template (D37).
+that run only from templates, and the factory's roster with its spec template (D37). Phase 2
+added Settings → Linear, the tracker seam (`lib/tracker`), action steps that Magpipe runs
+itself, verdicts read from judging steps, the watcher, and gate G1 from both doors (D38).
 
 Needed, smallest first:
 
-| Need                        | Why                                                                 | Shape                                                                                                                                                                                      |
-| --------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Linear and watcher settings | The operator sets access and pace in the app                        | A Settings section: Linear API key, team, label, status mapping with a test button; the polling interval, a pause switch, the last check.                                                  |
-| A tracker seam              | Stages read and write Linear; tests must not need it                | A small interface (create issue, sub-issue, comment, set status, list by label and status) with a Linear implementation over its MCP server and a scripted one for tests.                  |
-| A watcher                   | Nothing in Magpipe starts a run on its own                          | A poll of Linear on a timer, in the app, that starts the next template when an issue's status says so. A desktop app cannot receive webhooks. Each transition is acted on once.            |
-| A worktree per goal         | One checkout allows one writer, and goals should build in parallel  | `git worktree add` per goal under the data folder; repository operations resolve against the run's worktree. The write lock is keyed by work tree, so parallel goals already fit.          |
-| Push, as a typed operation  | No agent can push today                                             | `git_push`: only the run's own `magpipe/…` branch, to `origin`, never forced, never the default branch. Granted to the Merge Agent alone.                                                  |
-| Pull requests and merging   | The Merge Agent must open, watch and merge                          | GitHub's MCP server with a token that can write pull requests, and only the pull request tools ticked for the Merge Agent.                                                                 |
-| A protected-paths check     | The Code Agent must not weaken the tests                            | First as evidence (the diff check in stage 7); later as a guard on `write` for a step.                                                                                                     |
-| The factory screen          | The operator needs the pipeline at a glance and both gates in reach | A board of issues by stage, each goal with its branch, results and verdicts from the recorded work, and the two buttons. Home's prompt has "Send to the factory" beside Run since phase 1. |
-| More than two runs at once  | Parallel goals are parallel runs                                    | The engine's run limit becomes a setting, with the spend cap as the governor.                                                                                                              |
+| Need                       | Why                                                                 | Shape                                                                                                                                                                                      |
+| -------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| A worktree per goal        | One checkout allows one writer, and goals should build in parallel  | `git worktree add` per goal under the data folder; repository operations resolve against the run's worktree. The write lock is keyed by work tree, so parallel goals already fit.          |
+| Push, as a typed operation | No agent can push today                                             | `git_push`: only the run's own `magpipe/…` branch, to `origin`, never forced, never the default branch. Granted to the Merge Agent alone.                                                  |
+| Pull requests and merging  | The Merge Agent must open, watch and merge                          | GitHub's MCP server with a token that can write pull requests, and only the pull request tools ticked for the Merge Agent.                                                                 |
+| A protected-paths check    | The Code Agent must not weaken the tests                            | First as evidence (the diff check in stage 7); later as a guard on `write` for a step.                                                                                                     |
+| The factory screen         | The operator needs the pipeline at a glance and both gates in reach | A board of issues by stage, each goal with its branch, results and verdicts from the recorded work, and the two buttons. Home's prompt has "Send to the factory" beside Run since phase 1. |
+| More than two runs at once | Parallel goals are parallel runs                                    | The engine's run limit becomes a setting, with the spend cap as the governor.                                                                                                              |
 
 ## Build order
 
@@ -423,8 +432,9 @@ Each phase is one pull request, useful on its own, and testable with the scripte
 1. **Templates and the roster.** Built (D37). Runs from a preset plan; `lib/factory.ts` with
    the nine agents and the spec template; "Send to the factory" produces a reviewed spec in
    Magpipe. No Linear yet.
-2. **Linear.** The Linear section and the polling interval in Settings, the tracker seam,
-   and the spec landing as a labelled issue. The watcher, and gate G1 from both doors.
+2. **Linear.** Built (D38). The Linear section and the polling interval in Settings, the
+   tracker seam, and the spec landing as a labelled issue. The watcher, and gate G1 from both
+   doors.
 3. **Goals.** The goal template: sub-issues, their checklist review, dependencies between them.
 4. **Building one goal.** The build template on the bound repository as it is today: tests
    first, build, run, review, skeptic, with send-backs and "needs you". One goal at a time.
@@ -441,9 +451,9 @@ Each phase is one pull request, useful on its own, and testable with the scripte
 1. **Linear access is set in the app.** Settings gains a Linear section: the API key (pasted,
    stored encrypted like tool tokens, D13, and never shown again), the team, the label that
    marks factory issues, and the mapping of the six pipeline states to the team's own
-   statuses, with a test button that reads them back. Whether the key reaches Linear through
-   its MCP server or its API directly is a detail of the tracker seam, decided in phase 2; the
-   operator sees one form either way.
+   statuses, with a test button that reads them back. Phase 2 settled the route: Linear's GraphQL
+   API directly, with the personal key in the `Authorization` header, because the watcher needs
+   one query by label, team and time, and the MCP server's tools answer one issue at a time.
 2. **Polling is a setting.** Settings holds the watcher's interval (default one minute, from
    15 seconds to 30 minutes), next to a pause switch and the time of the last check. The
    watcher reads one query per check, by label and status, so the default stays well inside

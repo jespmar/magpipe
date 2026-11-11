@@ -257,8 +257,15 @@ export function stepMeta(step: Step, now: Date = new Date()): string {
           : null;
       const tokens = tokensOf(step);
       // No false zero: a step without usage says what it was instead of "0 tok".
+      // An action (D38) is Magpipe's own work and never calls a model.
       const spend =
-        tokens > 0 ? `${formatTokens(tokens)} tok` : step.agentId === null ? 'plan' : null;
+        tokens > 0
+          ? `${formatTokens(tokens)} tok`
+          : step.action
+            ? 'no model'
+            : step.agentId === null
+              ? 'plan'
+              : null;
       return [dur, spend].filter(Boolean).join(' · ') || 'done';
     }
     case 'live':
