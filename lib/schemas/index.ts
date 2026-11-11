@@ -75,12 +75,17 @@ export const agent = z.object({
   pauseAfter: z.boolean(),
   /** How many times this agent's steps may send the work they review back (D31); 0 = never. */
   sendBackRounds: z.number().int().min(0).max(5),
+  /** Runs only from a template (a factory stage, D37): the orchestrator leaves it out of its plans. */
+  templateOnly: z.boolean(),
   status: agentStatus,
   createdAt: z.date(),
   updatedAt: z.date(),
 });
 
 // ─── runs ──────────────────────────────────────────────────────────────────
+
+/** The longest document a step may keep (D37): a spec, with room to spare. */
+export const DOCUMENT_CAP = 40_000;
 
 export const stepStatus = z.enum(['todo', 'live', 'done', 'failed', 'skipped']);
 
@@ -122,6 +127,16 @@ export const step = z.object({
   usage: usage.optional(),
   result: z.object({ summary: z.string().max(1000) }).optional(),
   /**
+   * The step's written result is a document kept whole (a spec, D37), not only the summary: the
+   * steps after it read all of it, and the run's answer is built from it.
+   */
+  writesDocument: z.boolean().optional(),
+  /**
+   * The document as it stands: written by the step, or the draft it starts from (the last round's,
+   * or the run it follows up). Kept when the step is sent back, so the next round revises it.
+   */
+  document: z.string().max(DOCUMENT_CAP).optional(),
+  /**
    * Set when the step changed or ran something in a bound repository, done or failed. Saved as
    * each item is recorded, so a restart keeps what the step had done (D33).
    */
@@ -151,7 +166,16 @@ export const attachment = z.object({
   mime: z.string(),
 });
 
-export const runInput = z.object({ text: z.string().min(1), attachments: z.array(attachment) });
+/** The factory's templates (lib/factory.ts): a run from one starts with its preset plan. */
+export const runTemplates = ['spec'] as const;
+export type RunTemplate = (typeof runTemplates)[number];
+
+export const runInput = z.object({
+  text: z.string().min(1),
+  attachments: z.array(attachment),
+  /** Set when the run started from a factory template's plan (D37); a re-fly does the same. */
+  template: z.enum(runTemplates).optional(),
+});
 /**
  * Something a run produced. An uploaded or hosted file has a `blobUrl`; a file a step created or
  * changed, or a branch it committed to, in a bound repository has `kind`, `repo` and `detail`
@@ -463,6 +487,8 @@ export const runCreateInput = z.object({
     .default([]),
   /** Continue the conversation of this run: its task and answer become context. */
   parentRunId: runId.optional(),
+  /** Run a factory template's preset plan instead of the orchestrator's (D37). */
+  template: z.enum(runTemplates).optional(),
 });
 
 /** POST /api/runs/[id]/approve: let a waiting run go on, with a note for the next steps. */
@@ -506,6 +532,7 @@ const agentFields = z.object({
   limits: agentLimits,
   pauseAfter: z.boolean(),
   sendBackRounds: z.number().int().min(0, 'At least 0').max(5, 'At most 5 rounds'),
+  templateOnly: z.boolean(),
 });
 
 /** POST /api/agents. Slug and (unless given) initials are derived from the name. */
@@ -519,6 +546,7 @@ export const agentInput = agentFields.extend({
   limits: agentLimits.default({ maxTokens: 100_000, maxSteps: 30, timeoutSec: 600 }),
   pauseAfter: agentFields.shape.pauseAfter.default(false),
   sendBackRounds: agentFields.shape.sendBackRounds.default(0),
+  templateOnly: agentFields.shape.templateOnly.default(false),
 });
 
 /** PATCH /api/agents/[id]: any subset of the fields, plus pause/resume. */

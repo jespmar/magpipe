@@ -100,6 +100,10 @@ engine and no sign-in on desktop.
   scopes, limits, grants and standing instructions live in both; `tests/flock.test.ts` parses the
   document, so change them together. A new agent setting the flock should carry goes into
   `FlockAgent` and the fields `upsertAgents` sets, in the same change.
+- **`lib/factory.ts` mirrors `docs/factory.md`** the same way (D37): the nine agents, their
+  prompts and grants, and the templates; `tests/factory.test.ts` parses the document. Factory
+  agents are `templateOnly`, so the orchestrator never plans them; a template is a preset plan
+  passed to `createRun`, and a step that writes a document sets `writesDocument`.
 - **Tests never need model credentials.** Unit tests script `ModelClient`; the Playwright
   server runs with `MAGPIPE_MODEL_STUB=scripted` (`lib/engine/stub-model.ts`), which the engine
   ignores in production builds.

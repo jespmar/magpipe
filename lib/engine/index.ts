@@ -21,7 +21,7 @@ import { acquireWriteLocks, writeTargets, type WriteTarget } from './locks';
 import { capReached, spendCapMessage, spendToday } from '../spend';
 import { foldWork, runArtifacts, workItems, type WorkItem } from '../work';
 import { sendBackSet, threadText } from '../runs-util';
-import { mergeRun } from './merge';
+import { documentAnswer, mergeRun } from './merge';
 import {
   abortError,
   anthropicModelClient,
@@ -382,6 +382,7 @@ export class Engine {
               await this.finishStep(save, () => run!, step.id, {
                 status: 'done',
                 result: { summary: outcome.summary },
+                ...(outcome.document ? { document: outcome.document } : {}),
                 usage: outcome.usage,
                 work: foldWork(work),
                 ...(sendBack?.findings ? { sentBack: sendBack.findings } : {}),
@@ -492,27 +493,33 @@ export class Engine {
       }
 
       const mergeStep = run.plan.find((s) => s.id === MERGE_STEP_ID);
-      const mergeStop = await this.spendCapStop(db, `“${mergeStep?.title ?? 'Merge results'}”`);
-      if (mergeStop) throw mergeStop;
+      // A plan that wrote a document answers with it, and needs no model to do so (D37).
+      const document = documentAnswer(run.plan, names);
+      if (!document) {
+        const mergeStop = await this.spendCapStop(db, `“${mergeStep?.title ?? 'Merge results'}”`);
+        if (mergeStop) throw mergeStop;
+      }
       const mergeStartedAt = new Date().toISOString();
       await save({
         plan: run.plan.map((s) =>
           s.id === MERGE_STEP_ID ? { ...s, status: 'live', startedAt: mergeStartedAt } : s,
         ),
       });
-      const merged = await withRetries(
-        () =>
-          mergeRun({
-            backend: this.backend(),
-            model: orchestratorModel,
-            run: run!,
-            steps: run!.plan,
-            agentNames: names,
-            conversation,
-            signal,
-          }),
-        { signal, onRetry: (f, n) => void emit('error', `Retry ${n}: ${f.message}`) },
-      );
+      const merged = document
+        ? { markdown: document, usage: ZERO_USAGE }
+        : await withRetries(
+            () =>
+              mergeRun({
+                backend: this.backend(),
+                model: orchestratorModel,
+                run: run!,
+                steps: run!.plan,
+                agentNames: names,
+                conversation,
+                signal,
+              }),
+            { signal, onRetry: (f, n) => void emit('error', `Retry ${n}: ${f.message}`) },
+          );
       const finishedAt = new Date();
       const stepUsage = run.plan.reduce(
         (acc, s) => (s.usage ? addUsage(acc, s.usage) : acc),
@@ -526,7 +533,9 @@ export class Engine {
                 status: 'done',
                 finishedAt: finishedAt.toISOString(),
                 usage: merged.usage,
-                result: { summary: 'Composed the final answer' },
+                result: {
+                  summary: document ? 'Handed over the document' : 'Composed the final answer',
+                },
               }
             : s,
         ),

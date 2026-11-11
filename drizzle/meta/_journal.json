@@ -43,6 +43,13 @@
       "when": 1794338727716,
       "tag": "0005_needy_fat_cobra",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794389355403,
+      "tag": "0006_chief_thor_girl",
+      "breakpoints": true
     }
   ]
 }

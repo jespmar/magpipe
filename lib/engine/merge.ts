@@ -39,3 +39,27 @@ export async function mergeRun(opts: {
   const markdown = text || (results ? `## ${opts.run.input.text}\n\n${results}` : 'No output.');
   return { markdown, usage };
 }
+
+/**
+ * The answer of a run whose plan writes a document (D37): the document itself, then what each
+ * step after it reported (the review), with no model call. Null when no step kept a document,
+ * and the orchestrator merges as usual.
+ */
+export function documentAnswer(steps: Step[], agentNames: Map<string, string>): string | null {
+  const source = steps.find((s) => s.writesDocument && s.status === 'done' && s.document);
+  if (!source) return null;
+  const after = new Set<string>([source.id]);
+  const parts = [source.document!.trim()];
+  for (const s of steps) {
+    if (!s.agentId || !s.dependsOn.some((d) => after.has(d))) continue;
+    after.add(s.id);
+    if (s.status !== 'done' || !s.result?.summary) continue;
+    const facts = workFacts(s.work);
+    parts.push(
+      `## ${s.title}\n\n${agentNames.get(s.agentId) ?? 'Agent'}: ${s.result.summary}${
+        facts.length ? `\n\nRecorded by Magpipe:\n${facts.map((f) => `- ${f}`).join('\n')}` : ''
+      }`,
+    );
+  }
+  return parts.join('\n\n');
+}

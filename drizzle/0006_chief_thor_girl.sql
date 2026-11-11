@@ -1,0 +1,1 @@
+ALTER TABLE "agents" ADD COLUMN "template_only" boolean DEFAULT false NOT NULL;

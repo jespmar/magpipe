@@ -855,3 +855,33 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
   the API backend, and the billing rules are re-read before phase 4.
 - **Not yet.** Nothing is built. `docs/factory.md` has the pipeline, the agents, the gates, the
   engine needs and an eight-phase build order.
+
+## D37 · Factory phase 1: templates, documents and the roster
+
+- **Why.** The factory runs the same stages every time, so its runs must not depend on the
+  orchestrator improvising a plan, and a spec is too long for a step's 1000-character result.
+- **A template is a preset plan.** `createRun` takes a plan; the engine already plans only when
+  a run has none, so a template run goes straight to its steps. The run's input records the
+  template, so a re-fly starts from it again, and the trail opens with where the plan came from.
+  `lib/factory.ts` holds the templates; phase 1 has `spec` (Spec Builder writes, Spec Review
+  checks and may send it back once).
+- **A step may write a document.** A template step marked `writesDocument` keeps its whole
+  result (up to 40 000 characters) in `document`, with the summary as its opening. Later steps
+  read the document in full; a step sent back keeps its draft and revises it; a follow-up sent
+  to the factory seeds the draft from the run it continues. A run whose plan kept a document
+  answers with it, then what the steps after it reported, without a merge call to the model, so
+  the spec reaches the operator as written.
+- **Template-only agents.** Agents gain `templateOnly` (a column, migration 0006, and a switch in
+  the editor). The orchestrator leaves them out of its registry, so a plain Run never reaches the
+  Code Agent. All nine factory agents set it.
+- **The roster loader is shared.** The flock's loader pieces (check the folder and scripts, bind
+  a repository, namespaces, decisions, upsert agents by slug) moved to `lib/roster.ts`. Settings
+  → Software factory loads the nine agents onto one repository tool, reusing the flock's binding
+  of the same folder and leaving the flock alone. `tests/factory.test.ts` pins `lib/factory.ts`
+  to `docs/factory.md`.
+- **Home.** "Send to the factory" sits beside Run once the spec template's agents are loaded;
+  POST /api/runs refuses a template whose agents are missing or paused with a message that says
+  where to fix it (409 `factory_not_loaded`). Long texts in the flight log open on request, so a
+  spec does not flood it.
+- **Not yet.** No Linear, no watcher, no goals or building (phases 2 to 7 in `factory.md`). The
+  other seven agents are loaded with their prompts and grants and wait for their templates.

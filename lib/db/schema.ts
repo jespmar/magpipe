@@ -62,6 +62,7 @@ export const agents = pgTable(
     limits: jsonb().$type<Agent['limits']>().notNull(),
     pauseAfter: boolean().notNull().default(false),
     sendBackRounds: integer().notNull().default(0),
+    templateOnly: boolean().notNull().default(false),
     status: text({ enum: agentStatuses }).notNull(),
     createdAt: timestamptz().notNull().defaultNow(),
     updatedAt: timestamptz().notNull().defaultNow(),

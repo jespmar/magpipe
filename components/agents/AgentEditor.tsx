@@ -43,6 +43,7 @@ function draftFrom(agent: Agent | null, defaultModel: string): Draft {
       limits: { maxTokens: 100_000, maxSteps: 30, timeoutSec: 600 },
       pauseAfter: false,
       sendBackRounds: 0,
+      templateOnly: false,
     };
   }
   const {
@@ -58,6 +59,7 @@ function draftFrom(agent: Agent | null, defaultModel: string): Draft {
     limits,
     pauseAfter,
     sendBackRounds,
+    templateOnly,
   } = agent;
   return {
     name,
@@ -72,6 +74,7 @@ function draftFrom(agent: Agent | null, defaultModel: string): Draft {
     limits,
     pauseAfter,
     sendBackRounds,
+    templateOnly,
   };
 }
 
@@ -382,6 +385,12 @@ export function AgentEditor({
                 onChange={(e) => set('sendBackRounds', Number(e.target.value))}
               />
             </div>
+            <Checkbox
+              label="Runs only from a template"
+              description="The orchestrator leaves this bird out of the plans it writes; it works only in the stages a template gives it, such as the software factory's."
+              checked={draft.templateOnly}
+              onCheckedChange={(on) => set('templateOnly', on === true)}
+            />
           </Fieldset>
 
           {/* The commit row stays in view however long the form is; errors sit beside it. */}
