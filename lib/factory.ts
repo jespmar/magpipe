@@ -27,7 +27,8 @@ import {
   type RosterLine,
   type RosterOutcome,
 } from './roster';
-import type { RunTemplate, Step } from './schemas';
+import type { RunTemplate, Step, StepAction } from './schemas';
+import { getLinearSettings, linearReady } from './tracker';
 
 export { parseScripts, RosterValidationError as FactoryValidationError } from './roster';
 
@@ -112,7 +113,7 @@ Start with a level-one heading that names the change, then the six sections. Not
 4. If it fails and the send_back tool is offered, call it with the failed items and what would make each one pass: the spec is written again and you review once more.
 5. Finish your step even when the spec fails. The verdict is your result, not a failure.
 
-Finish with: Verdict (pass or fail), then the checklist, one line per item.`,
+Finish with a line that reads exactly "Verdict: pass" or "Verdict: fail", then the checklist, one line per item. Magpipe reads that line: only a pass lets the work go on.`,
   },
   {
     slug: 'goal-builder',
@@ -167,7 +168,7 @@ Finish with one section per goal, in the order they can be built, then a line na
 4. If they fail and the send_back tool is offered, call it with the failed items: the goals are written again and you review once more.
 5. Finish your step even when they fail. The verdict is your result, not a failure.
 
-Finish with: Verdict (pass or fail), then the checklist, one line per item.`,
+Finish with a line that reads exactly "Verdict: pass" or "Verdict: fail", then the checklist, one line per item. Magpipe reads that line: only a pass lets the work go on.`,
   },
   {
     slug: 'test-agent',
@@ -313,14 +314,23 @@ export const DEFAULT_FACTORY_SCRIPTS = ['typecheck', 'lint', 'test'];
 
 export type TemplateStep = {
   id: string;
-  /** The agent's slug. */
-  agent: string;
   title: string;
   instructions: string;
   dependsOn: string[];
   /** The step's result is the document the run hands over (D37). */
   writesDocument?: boolean;
-};
+  /** The step judges the work before it; its result opens with a verdict (D38). */
+  judges?: boolean;
+} & (
+  | { /** The agent's slug. */ agent: string; action?: never; when?: never }
+  | {
+      agent?: never;
+      /** Magpipe's own work (D38), no model. */
+      action: StepAction;
+      /** Only in the plan when this holds at the run's start: `linear` = Linear is set up. */
+      when?: 'linear';
+    }
+);
 
 export type FactoryTemplate = {
   id: string;
@@ -352,6 +362,16 @@ export const FACTORY_TEMPLATES = {
         instructions:
           'Check the spec against the checklist, item by item, and give the verdict. Send it back with the failed items if it does not pass.',
         dependsOn: ['spec'],
+        judges: true,
+      },
+      {
+        id: 'issue',
+        action: 'file_issue',
+        when: 'linear',
+        title: 'File the issue',
+        instructions:
+          'When every review passed, file the spec in Linear with the factory label in the spec-ready status, and post each review as a comment.',
+        dependsOn: ['review'],
       },
     ],
   },
@@ -368,7 +388,7 @@ export class FactoryNotReadyError extends Error {
 export async function missingAgents(db: Db, id: TemplateId): Promise<string[]> {
   const agents = await listAgents(db);
   const template: FactoryTemplate = FACTORY_TEMPLATES[id];
-  const slugs = Array.from(new Set(template.steps.map((s) => s.agent)));
+  const slugs = Array.from(new Set(template.steps.flatMap((s) => (s.agent ? [s.agent] : []))));
   return slugs
     .filter((slug) => !agents.some((a) => a.slug === slug && a.status !== 'paused'))
     .map((slug) => FACTORY_AGENTS.find((a) => a.slug === slug)?.name ?? slug);
@@ -394,19 +414,24 @@ export async function templatePlan(
         : `The software factory is not loaded: ${andList(missing)} ${missing.length === 1 ? 'is' : 'are'} missing. Load it in Settings, then send it again.`,
     );
   }
+  // A step that needs Linear is left out while Linear is not set up; the run is what it was.
+  const linear = linearReady(await getLinearSettings(db));
+  const included = template.steps.filter((s) => s.when !== 'linear' || linear);
   let seeded = false;
-  const steps: Step[] = template.steps.map((s) => {
-    const agent = agents.find((a) => a.slug === s.agent)!;
+  const steps: Step[] = included.map((s) => {
     const draft = s.writesDocument && !seeded && opts.draft ? opts.draft : undefined;
     if (draft) seeded = true;
     return {
       id: s.id,
-      agentId: agent.id,
+      agentId: s.agent ? agents.find((a) => a.slug === s.agent)!.id : null,
       title: s.title,
       instructions: s.instructions,
       dependsOn: s.dependsOn,
       status: 'todo',
+      // An action may fail (Linear out of reach) without costing the spec: the run still ends.
+      ...(s.action ? { action: s.action, optional: true } : {}),
       ...(s.writesDocument ? { writesDocument: true } : {}),
+      ...(s.judges ? { judges: true } : {}),
       ...(draft ? { document: draft } : {}),
     };
   });
@@ -420,8 +445,8 @@ export async function templatePlan(
     dependsOn: leaves,
     status: 'todo',
   });
-  const named = template.steps.map(
-    (s) => `${agents.find((a) => a.slug === s.agent)!.name}: ${s.title}`,
+  const named = included.map(
+    (s) => `${s.agent ? agents.find((a) => a.slug === s.agent)!.name : 'Magpipe'}: ${s.title}`,
   );
   return {
     plan: steps,

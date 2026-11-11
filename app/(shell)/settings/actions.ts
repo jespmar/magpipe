@@ -6,7 +6,34 @@ import { loadFactory, summarizeFactory } from '@/lib/factory';
 import { loadFlock, summarizeFlock } from '@/lib/flock';
 import { parseScripts, RosterValidationError, type RosterLine } from '@/lib/roster';
 import { plural } from '@/lib/format';
-import { flockLoadInput, type FlockLoadInput } from '@/lib/schemas';
+import {
+  flockLoadInput,
+  linearKeyInput,
+  linearMappingInput,
+  watcherInput,
+  type FlockLoadInput,
+  type LinearKeyInput,
+  type LinearMappingInput,
+  type PipelineState,
+  type TrackerTeam,
+  type WatcherInput,
+} from '@/lib/schemas';
+import {
+  getLinearSettings,
+  LinearMappingError,
+  LinearNotReadyError,
+  linearOptions,
+  linearView,
+  removeLinearKey,
+  saveLinearKey,
+  saveLinearMapping,
+  saveWatcher,
+  TrackerError,
+  trackerMessage,
+  type LinearView,
+  type TrackerState,
+} from '@/lib/tracker';
+import { checkLinear, type CheckResult } from '@/lib/tracker/issues';
 
 export type DemoState = { status: 'idle' | 'done' | 'error'; message?: string };
 
@@ -121,5 +148,103 @@ export async function loadFactoryAction(
           ? LOCKED
           : `The factory could not be loaded. ${err instanceof Error ? err.message : ''}`.trim(),
     };
+  }
+}
+
+// ─── Linear (D38) ──────────────────────────────────────────────────────────
+
+/** What every Linear action answers: the settings as Settings shows them, or what went wrong. */
+export type LinearResult<T = object> =
+  ({ ok: true; view: LinearView } & T) | { ok: false; message: string; field?: string };
+
+async function linearFailure(err: unknown, what: string): Promise<{ ok: false; message: string }> {
+  if (err instanceof DbLockedError) return { ok: false, message: LOCKED };
+  if (err instanceof TrackerError || err instanceof LinearNotReadyError) {
+    return { ok: false, message: err.message };
+  }
+  if (err instanceof LinearMappingError) return { ok: false, message: err.message };
+  console.error(`[settings] ${what} failed:`, err);
+  return { ok: false, message: trackerMessage(err) };
+}
+
+/** Saves a pasted key once Linear accepts it; answers with the teams it can see. */
+export async function saveLinearKeyAction(
+  input: LinearKeyInput,
+): Promise<LinearResult<{ teams: TrackerTeam[] }>> {
+  const parsed = linearKeyInput.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]!.message, field: 'key' };
+  }
+  try {
+    const { settings, teams } = await saveLinearKey(await getDb(), parsed.data.key);
+    return { ok: true, view: linearView(settings), teams };
+  } catch (err) {
+    const failed = await linearFailure(err, 'save the Linear key');
+    return { ...failed, field: 'key' };
+  }
+}
+
+export async function removeLinearKeyAction(): Promise<LinearResult> {
+  try {
+    return { ok: true, view: linearView(await removeLinearKey(await getDb())) };
+  } catch (err) {
+    return linearFailure(err, 'remove the Linear key');
+  }
+}
+
+/** The teams the key can see and, for one team, its statuses with a first guess at the mapping. */
+export async function linearOptionsAction(teamId?: string): Promise<
+  LinearResult<{
+    teams: TrackerTeam[];
+    states: TrackerState[];
+    suggested: Record<PipelineState, string> | null;
+  }>
+> {
+  try {
+    const db = await getDb();
+    const options = await linearOptions(db, teamId);
+    return { ok: true, view: linearView(await getLinearSettings(db)), ...options };
+  } catch (err) {
+    return linearFailure(err, 'read the Linear teams');
+  }
+}
+
+/** Saves the team, label and statuses after reading them back from Linear. */
+export async function saveLinearMappingAction(
+  input: LinearMappingInput,
+): Promise<LinearResult<{ labelCreated: boolean; statuses: number }>> {
+  const parsed = linearMappingInput.safeParse(input);
+  if (!parsed.success) return { ok: false, message: parsed.error.issues[0]!.message };
+  try {
+    const { settings, labelCreated, statuses } = await saveLinearMapping(
+      await getDb(),
+      parsed.data,
+    );
+    return { ok: true, view: linearView(settings), labelCreated, statuses };
+  } catch (err) {
+    return linearFailure(err, 'save the Linear mapping');
+  }
+}
+
+export async function saveWatcherAction(input: WatcherInput): Promise<LinearResult> {
+  const parsed = watcherInput.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]!.message, field: 'pollSeconds' };
+  }
+  try {
+    return { ok: true, view: linearView(await saveWatcher(await getDb(), parsed.data)) };
+  } catch (err) {
+    return linearFailure(err, 'save the watcher');
+  }
+}
+
+/** Check now: one check, even while the watcher is paused. */
+export async function checkLinearAction(): Promise<LinearResult<{ check: CheckResult }>> {
+  try {
+    const db = await getDb();
+    const check = await checkLinear(db, { force: true });
+    return { ok: true, view: linearView(await getLinearSettings(db)), check };
+  } catch (err) {
+    return linearFailure(err, 'check Linear');
   }
 }

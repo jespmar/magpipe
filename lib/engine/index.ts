@@ -13,7 +13,7 @@ import { env } from '../env';
 import { listMemory } from '../memory';
 import { loadThread } from '../runs';
 import { addUsage, ZERO_USAGE } from '../pricing';
-import type { Agent, MemoryEntry, Run, Step } from '../schemas';
+import type { Agent, MemoryEntry, Run, RunEventKind, Step } from '../schemas';
 import { apiBackend, type RunBackend } from './backend';
 import { claudeCodeBackend } from './claude-code';
 import { emitEvent } from './events';
@@ -21,7 +21,9 @@ import { acquireWriteLocks, writeTargets, type WriteTarget } from './locks';
 import { capReached, spendCapMessage, spendToday } from '../spend';
 import { foldWork, runArtifacts, workItems, type WorkItem } from '../work';
 import { sendBackSet, threadText } from '../runs-util';
+import { parseVerdict, runAction } from './actions';
 import { documentAnswer, mergeRun } from './merge';
+import { TrackerError } from '../tracker/types';
 import {
   abortError,
   anthropicModelClient,
@@ -309,6 +311,11 @@ export class Engine {
 
         await Promise.all(
           wave.map(async (step) => {
+            // Magpipe's own work (D38): no agent, no model, no spend, no lock.
+            if (step.action) {
+              await this.runActionStep(db, save, () => run!, step, names, emit, signal);
+              return;
+            }
             const agent = agents.find((a) => a.id === step.agentId);
             if (!agent) {
               await this.finishStep(save, () => run!, step.id, {
@@ -383,6 +390,8 @@ export class Engine {
                 status: 'done',
                 result: { summary: outcome.summary },
                 ...(outcome.document ? { document: outcome.document } : {}),
+                // A judging step's verdict, read once from its result (D38).
+                ...(step.judges ? { verdict: parseVerdict(outcome.summary) ?? undefined } : {}),
                 usage: outcome.usage,
                 work: foldWork(work),
                 ...(sendBack?.findings ? { sentBack: sendBack.findings } : {}),
@@ -446,6 +455,7 @@ export class Engine {
                     startedAt: undefined,
                     finishedAt: undefined,
                     sentBack: undefined,
+                    verdict: undefined,
                     approvedAt: undefined,
                     approvalNote: undefined,
                   }
@@ -590,6 +600,64 @@ export class Engine {
   private async spendCapStop(db: Db, before: string): Promise<EngineError | null> {
     const spend = await spendToday(db);
     return capReached(spend) ? new EngineError('spend_cap', spendCapMessage(spend, before)) : null;
+  }
+
+  /** Runs an action step (D38) and records its outcome; a failure fails the step, not the run. */
+  private async runActionStep(
+    db: Db,
+    save: (patch: Partial<Run>) => Promise<void>,
+    current: () => Run,
+    step: Step,
+    names: Map<string, string>,
+    emit: (
+      kind: RunEventKind,
+      text: string,
+      payload?: unknown,
+      stepId?: string | null,
+    ) => Promise<unknown>,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const startedAt = new Date().toISOString();
+    await save({
+      plan: current().plan.map((s) => (s.id === step.id ? { ...s, status: 'live', startedAt } : s)),
+    });
+    try {
+      const outcome = await withRetries(
+        () =>
+          runAction({
+            db,
+            run: current(),
+            step: step as Step & { action: NonNullable<Step['action']> },
+            agentNames: names,
+            signal,
+          }).catch((err: unknown) => {
+            // Linear out of reach is worth another try; a refused key is not.
+            throw err instanceof TrackerError
+              ? new EngineError(`tracker_${err.code}`, err.message, err.code === 'network')
+              : err;
+          }),
+        {
+          signal,
+          onRetry: (f, n) => void emit('error', `Retry ${n}: ${f.message}`, null, step.id),
+        },
+      );
+      await this.finishStep(save, current, step.id, {
+        status: outcome.status,
+        result: { summary: outcome.summary.slice(0, 1000) },
+      });
+      await emit('message', outcome.summary, null, step.id);
+    } catch (err) {
+      if (signal.aborted) throw err;
+      const f =
+        err instanceof EngineError
+          ? { code: err.code, message: err.message }
+          : describeFailure(err);
+      await this.finishStep(save, current, step.id, {
+        status: 'failed',
+        error: { code: f.code, message: f.message },
+      });
+      await emit('error', f.message, { code: f.code }, step.id);
+    }
   }
 
   private async finishStep(

@@ -5,6 +5,7 @@
 import type * as t from './schema';
 import type {
   Agent,
+  LinearSettings,
   MemoryEntry,
   MemoryNamespace,
   Run,
@@ -12,6 +13,7 @@ import type {
   Secret,
   Settings,
   Tool,
+  TrackerIssue,
 } from '../schemas';
 
 type Equals<A, B> =
@@ -28,4 +30,6 @@ export type SchemaChecks = [
   Assert<Equals<typeof t.memoryNamespaces.$inferSelect, MemoryNamespace>>,
   Assert<Equals<typeof t.settings.$inferSelect, Settings>>,
   Assert<Equals<typeof t.secrets.$inferSelect, Secret>>,
+  Assert<Equals<typeof t.linearSettings.$inferSelect, LinearSettings>>,
+  Assert<Equals<typeof t.trackerIssues.$inferSelect, TrackerIssue>>,
 ];

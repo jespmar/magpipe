@@ -2,6 +2,7 @@
 
 import { ApprovalBar } from './ApprovalBar';
 import { ArtifactList } from './ArtifactList';
+import { IssueBar } from './IssueBar';
 import { RunActions } from './RunActions';
 import { RunEventLog } from './RunEventLog';
 import { RunFlightPath } from './RunFlightPath';
@@ -67,6 +68,7 @@ export function RunDetailScreen({ run, events, agents, now }: Props) {
         actions={<RunActions run={run} reflyVariant="secondary" />}
       />
       <ApprovalBar run={run} className="max-w-[48rem]" />
+      <IssueBar run={run} className="max-w-[48rem]" />
       <div className="flex flex-col gap-7 wide:grid wide:grid-cols-[minmax(0,1fr)_minmax(0,34rem)] wide:items-start">
         <section
           aria-labelledby="path-title"

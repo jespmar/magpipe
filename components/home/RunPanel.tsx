@@ -3,6 +3,7 @@
 import { clsx } from 'clsx';
 import { ApprovalBar } from '@/components/runs/ApprovalBar';
 import { ArtifactList } from '@/components/runs/ArtifactList';
+import { IssueBar } from '@/components/runs/IssueBar';
 import { RunActions } from '@/components/runs/RunActions';
 import { RunEventLog } from '@/components/runs/RunEventLog';
 import { RunOutput } from '@/components/runs/RunOutput';
@@ -60,6 +61,7 @@ export function RunPanel({
         <RunActions run={run} size="sm" showOpen onRefly={onRefly} />
       </div>
       <ApprovalBar run={run} emphasis="secondary" />
+      <IssueBar run={run} emphasis="secondary" />
       <div className="flex min-w-0 flex-col gap-4 card p-4">
         {earlier.length > 0 ? (
           <ol

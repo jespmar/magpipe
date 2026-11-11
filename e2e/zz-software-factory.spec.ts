@@ -79,3 +79,61 @@ test('settings loads the software factory, and Home sends a task to its spec tem
     expect((await request.delete(`/api/tools/${tool.id}`)).ok()).toBe(true);
   }
 });
+
+// Linear (D38), against the scripted tracker the e2e server runs with: a refused key is named on
+// its field, a good one is saved, the mapping is suggested and read back, and a spec that passes
+// review is filed as an issue that Home approves.
+test('settings connects Linear, a passing spec is filed, and Home approves it', async ({
+  page,
+}) => {
+  await page.goto('/settings');
+  const section = page.getByRole('region', { name: 'Linear' });
+  const key = section.getByLabel('Personal API key');
+
+  await key.fill('lin_api_bad_e2e');
+  await section.getByRole('button', { name: 'Save key' }).click();
+  await expect(key).toHaveAccessibleDescription(/did not accept the API key/, { timeout: 15_000 });
+
+  await key.fill('lin_api_e2e_7f3a');
+  await section.getByRole('button', { name: 'Save key' }).click();
+  await expect(section.getByText(/Linear knows this key as Scripted Operator/)).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(section.getByText('ends in 7f3a')).toBeVisible();
+  await expect(key).toBeHidden();
+
+  await section.getByRole('button', { name: 'Map the statuses' }).click();
+  await section.getByRole('combobox', { name: 'Team' }).click();
+  await page.getByRole('option', { name: 'Magpipe (MAG)' }).click();
+  // The first guess fills every state from the team's own status names.
+  await expect(section.getByRole('combobox', { name: 'Spec ready' })).toContainText('Spec ready');
+  await expect(section.getByRole('combobox', { name: 'Needs you' })).toContainText('Blocked');
+  await section.getByRole('button', { name: 'Save and read back' }).click();
+  await expect(section.getByText(/Read back from Linear: 7 statuses in Magpipe/)).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(section.getByText('made just now', { exact: false })).toBeVisible();
+
+  await page.goto('/');
+  const composer = page.getByRole('region', { name: 'Ask Magpipe' });
+  const fresh = composer.getByRole('button', { name: 'New question' });
+  if (await fresh.isVisible()) await fresh.click();
+  await composer.getByLabel('Ask Magpipe').fill(`Filed spec ${Date.now().toString(36)}`);
+  await composer.getByRole('button', { name: 'Send to the factory' }).click();
+
+  const panel = page.getByRole('region', { name: /^flight_[0-9a-z]+$/ });
+  await expect(panel.getByText('done', { exact: true }).first()).toBeVisible({ timeout: 30_000 });
+  await expect(panel.getByRole('region', { name: 'Result' })).toContainText(
+    /Filed MAG-\d+ in Spec ready/,
+  );
+  const issue = panel.getByRole('region', { name: 'Linear issue' });
+  await expect(issue).toContainText('spec ready');
+  await expect(issue.getByRole('link', { name: /MAG-\d+/ })).toHaveAttribute(
+    'href',
+    /linear\.app\/scripted\/issue\/MAG-\d+/,
+  );
+  await issue.getByRole('button', { name: 'Approve the spec' }).click();
+  await expect(issue).toContainText('approved');
+  await expect(issue).toContainText(/Approved in Magpipe at \d\d:\d\d/);
+  await expect(issue.getByRole('button', { name: 'Approve the spec' })).toBeHidden();
+});

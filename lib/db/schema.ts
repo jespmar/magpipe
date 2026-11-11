@@ -24,10 +24,12 @@ import {
 } from 'drizzle-orm/pg-core';
 import {
   agentStatuses,
+  issueStages,
   runEventKinds,
   runStatuses,
   toolStatuses,
   type Agent,
+  type LinearSettings,
   type MemoryEntry,
   type Run,
   type Settings,
@@ -212,4 +214,48 @@ export const settings = pgTable(
     updatedAt: timestamptz().notNull().defaultNow(),
   },
   (t) => [check('settings_single_row', sql`${t.id} = 'settings'`)],
+);
+
+// ─── the tracker (Linear, D38) ─────────────────────────────────────────────
+
+export const linearSettings = pgTable(
+  'linear_settings',
+  {
+    id: text().$type<'linear'>().primaryKey().default('linear'),
+    keyRef: text(),
+    keyHint: text(),
+    viewer: text(),
+    team: jsonb().$type<LinearSettings['team']>(),
+    label: jsonb().$type<LinearSettings['label']>(),
+    states: jsonb().$type<LinearSettings['states']>().notNull(),
+    pollSeconds: integer().notNull().default(60),
+    paused: boolean().notNull().default(false),
+    lastCheckAt: timestamptz(),
+    lastCheck: jsonb().$type<LinearSettings['lastCheck']>(),
+    lastError: text(),
+    updatedAt: timestamptz().notNull().defaultNow(),
+  },
+  (t) => [check('linear_settings_single_row', sql`${t.id} = 'linear'`)],
+);
+
+export const trackerIssues = pgTable(
+  'tracker_issues',
+  {
+    id: text().primaryKey(),
+    externalId: text().notNull().unique(),
+    identifier: text().notNull(),
+    url: text().notNull(),
+    title: text().notNull(),
+    runId: text().references(() => runs.id, { onDelete: 'set null' }),
+    stage: text({ enum: issueStages }).notNull(),
+    stateName: text().notNull(),
+    approvedAt: timestamptz(),
+    approvedVia: text({ enum: ['linear', 'magpipe'] }),
+    createdAt: timestamptz().notNull().defaultNow(),
+    updatedAt: timestamptz().notNull().defaultNow(),
+  },
+  (t) => [
+    check('tracker_issues_stage_check', oneOf(t.stage, issueStages)),
+    index('tracker_issues_run_idx').on(t.runId),
+  ],
 );

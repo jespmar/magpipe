@@ -885,3 +885,37 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
   spec does not flood it.
 - **Not yet.** No Linear, no watcher, no goals or building (phases 2 to 7 in `factory.md`). The
   other seven agents are loaded with their prompts and grants and wait for their templates.
+
+## D38 · Factory phase 2: Linear, the watcher and gate G1
+
+- **Why.** The factory keeps its record in Linear (D36): a spec that passes review becomes an
+  issue there, and the operator approves it there or from Magpipe.
+- **Settings → Linear.** A personal API key, checked with Linear before it is stored, sealed in
+  `secrets` like a tool token (D13) and never shown again, only its last four characters and
+  who it belongs to. The team, the label (made in Linear when missing) and the six pipeline
+  states, each on its own status, are read back from Linear when saved; the first guess comes
+  from the team's status names and types. The watcher's interval (15 to 1800 seconds, default
+  60), a pause switch, the last good check and the last error, and Check now. One row,
+  `linear_settings`, migration 0007.
+- **The tracker seam.** `lib/tracker`: an interface of eight operations, Linear's GraphQL API
+  behind it, and a scripted tracker for tests and the e2e server (`MAGPIPE_TRACKER_STUB`,
+  ignored in production). The API directly rather than Linear's MCP server, because the watcher
+  needs one query by team, label and time. The client was written against Linear's published
+  schema and tested against a fake fetch; this environment cannot reach `api.linear.app`, so its
+  first live call is on the operator's machine.
+- **Action steps and verdicts.** A step may be Magpipe's own work (`action`, no agent, no model,
+  no spend). A judging step (`judges`) has its verdict read from its `Verdict:` line, and the
+  reviewers' prompts now ask for that line exactly. The spec template gains `file_issue` after
+  the review, in the plan only while Linear is set up and optional, so Linear out of reach
+  costs the issue, never the spec: the run's answer says it was not filed. A pass files the
+  spec in spec ready with the label and posts each review as a comment; a fail, or no readable
+  verdict, files nothing. A follow-up that revises a spec still waiting rewrites that issue.
+- **Issues and gate G1.** `tracker_issues` keeps each labelled issue as the watcher last saw it.
+  The watcher runs while the app is open, reads the labelled issues updated since the last good
+  check (all of them after the mapping changes), and acts on each stage change once: a move to
+  the approved status records the approval and says so on the spec's run. Approve in Magpipe
+  (the issue bar on the run's panel and page) sets the status in Linear first, so Linear holds
+  the one answer. Nothing starts on approval yet: that is the goal template, phase 3.
+- **Not yet.** Linear out of reach during filing is retried twice, then left to a re-fly rather
+  than waited on; the design's "the run waits and retries" comes with the watcher acting on
+  approvals in phase 3.

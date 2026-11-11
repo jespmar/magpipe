@@ -1,12 +1,13 @@
 /**
  * Server start-up (D5): open the database, run the memory job if it is due, resume interrupted
- * runs, and keep the job on a timer while the app is open. Called from `instrumentation.ts`.
+ * runs, and keep the job and the Linear watcher (D38) on timers while the app is open. Called from `instrumentation.ts`.
  */
 import { DbLockedError, getDb } from '../db';
 import { env } from '../env';
 import { findClaudeCli } from './claude-code';
 import { getEngine } from './index';
 import { runHousekeeping, scheduleHousekeeping } from './housekeeping';
+import { scheduleWatcher } from '../tracker/issues';
 
 const g = globalThis as unknown as { __magpipeBooted?: boolean };
 
@@ -23,6 +24,8 @@ export async function bootEngine(): Promise<void> {
     const { staleMarked } = await runHousekeeping(db);
     if (staleMarked) console.log(`[housekeeping] marked ${staleMarked} memories stale`);
     scheduleHousekeeping(getDb);
+    // The factory's watcher (D38): checks Linear while the app is open, catching up first.
+    scheduleWatcher(getDb);
     const resumed = await getEngine().resumeInterrupted(db);
     if (resumed) console.log(`[engine] resumed ${resumed} run(s)`);
   } catch (err) {
