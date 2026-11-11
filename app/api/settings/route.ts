@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { apiError, dbError, parseBody, requireUser } from '@/lib/api';
 import { getDb } from '@/lib/db';
+import { getEngine } from '@/lib/engine';
 import { settingsPatch } from '@/lib/schemas';
 import { getSettings, updateSettings } from '@/lib/settings';
 import { spendToday } from '@/lib/spend';
@@ -22,7 +23,10 @@ export async function GET() {
   }
 }
 
-/** PATCH /api/settings { spendCapUsd }: the daily spend cap in dollars; 0 means no cap (D32). */
+/**
+ * PATCH /api/settings { spendCapUsd?, maxRuns? }: the daily spend cap in dollars, 0 meaning no
+ * cap (D32), and how many runs work at once (D41), which the engine takes at once.
+ */
 export async function PATCH(req: Request) {
   const user = await requireUser();
   if (user instanceof NextResponse) return user;
@@ -30,6 +34,7 @@ export async function PATCH(req: Request) {
   if (!body.ok) return body.res;
   try {
     const settings = await updateSettings(await getDb(), body.data);
+    if (settings && body.data.maxRuns !== undefined) getEngine().setConcurrency(settings.maxRuns);
     return settings
       ? NextResponse.json({ settings })
       : apiError('not_found', 'The workspace has no settings yet', 404);

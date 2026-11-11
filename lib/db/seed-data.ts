@@ -744,6 +744,7 @@ export function buildSeed(now = new Date()): SeedData {
       workspaceName: 'Magpipe',
       region: 'eu-north-1',
       spendCapUsd: 50,
+      maxRuns: 2,
       models: { orchestrator: 'claude-opus-5-5', default: 'claude-sonnet-5-5' },
       updatedAt: now,
     },

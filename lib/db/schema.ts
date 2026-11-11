@@ -211,6 +211,7 @@ export const settings = pgTable(
     workspaceName: text().notNull(),
     region: text().notNull(),
     spendCapUsd: doublePrecision().notNull(),
+    maxRuns: integer().notNull().default(2),
     models: jsonb().$type<Settings['models']>().notNull(),
     updatedAt: timestamptz().notNull().defaultNow(),
   },

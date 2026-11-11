@@ -235,6 +235,8 @@ describe('the goals template', () => {
 
   beforeAll(async () => {
     process.env.MAGPIPE_SECRET_KEY = SECRET;
+    // Worktrees a tick may make stay in a temp folder, never the project's (D41).
+    process.env.MAGPIPE_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'magpipe-goals-data-'));
     useTrackerFactory((key) => scriptedTracker(key, store));
     ({ db, close } = await openDb('memory://'));
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'magpipe-goals-'));
@@ -264,6 +266,8 @@ describe('the goals template', () => {
     fs.rmSync(dir, { recursive: true, force: true });
     if (previous === undefined) delete process.env.MAGPIPE_SECRET_KEY;
     else process.env.MAGPIPE_SECRET_KEY = previous;
+    fs.rmSync(process.env.MAGPIPE_DATA_DIR!, { recursive: true, force: true });
+    delete process.env.MAGPIPE_DATA_DIR;
   });
 
   it('approval in Magpipe starts it once; it files the goals as blocked sub-issues', async () => {

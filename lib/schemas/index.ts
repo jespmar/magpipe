@@ -220,6 +220,11 @@ export const runInput = z.object({
   template: z.enum(runTemplates).optional(),
   /** The tracker issue a goals or build run works on (D39, D40): the spec, or the goal. */
   issueId: issueId.optional(),
+  /**
+   * The worktree a build run works in (D41): the repository tool it stands in for, its folder and
+   * its branch. Every operation of that tool in the run's steps resolves against it.
+   */
+  worktree: z.object({ toolId, path: z.string().min(1), branch: z.string().min(1) }).optional(),
 });
 /**
  * Something a run produced. An uploaded or hosted file has a `blobUrl`; a file a step created or
@@ -400,6 +405,8 @@ export const settings = z.object({
   region: z.string().min(1),
   /** Dollars a day across all runs; 0 means no cap (D32). */
   spendCapUsd: z.number().nonnegative(),
+  /** How many runs work at the same time (D41); the spend cap governs what they cost. */
+  maxRuns: z.number().int().min(1).max(8),
   models: modelDefaults,
   updatedAt: z.date(),
 });
@@ -414,8 +421,21 @@ export const spendCapInput = z
   .max(SPEND_CAP_MAX_USD, `The cap can be at most $${SPEND_CAP_MAX_USD.toLocaleString('en-US')}`)
   .transform((usd) => Math.round(usd * 100) / 100);
 
-/** PATCH /api/settings: the settings the operator may change. Only the spend cap so far (D32). */
-export const settingsPatch = z.object({ spendCapUsd: spendCapInput });
+export const MAX_RUNS_LIMIT = 8;
+
+/** How many runs may work at once, as the operator types it (D41). */
+export const maxRunsInput = z
+  .number({ error: 'Enter a whole number of runs, for example 2' })
+  .int('Enter a whole number of runs, for example 2')
+  .min(1, 'At least one run must be able to work')
+  .max(MAX_RUNS_LIMIT, `At most ${MAX_RUNS_LIMIT} runs at once`);
+
+/** PATCH /api/settings: the settings the operator may change: the spend cap (D32), the run limit (D41). */
+export const settingsPatch = z
+  .object({ spendCapUsd: spendCapInput.optional(), maxRuns: maxRunsInput.optional() })
+  .refine((p) => p.spendCapUsd !== undefined || p.maxRuns !== undefined, {
+    message: 'Change the spend cap or the run limit',
+  });
 
 export type SettingsPatch = z.infer<typeof settingsPatch>;
 

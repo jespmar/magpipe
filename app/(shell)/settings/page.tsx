@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { Kbd } from '@/components/ui/Kbd';
 import { DemoDataForm } from '@/components/settings/DemoDataForm';
 import { StandingInstructions } from '@/components/settings/StandingInstructions';
+import { RunLimitForm } from '@/components/settings/RunLimitForm';
 import { SpendCapForm } from '@/components/settings/SpendCapForm';
 import { FactoryForm } from '@/components/settings/FactoryForm';
 import { LinearForm } from '@/components/settings/LinearForm';
@@ -197,8 +198,9 @@ export default async function SettingsPage() {
           <Section id="factory" title="Software factory">
             <p className="max-w-[31rem] text-body-sm text-body">
               Nine birds that turn an idea into a reviewed change, each stage run from a template
-              rather than a plan. For now the factory writes specs: Send to the factory on Home has
-              the Spec Builder write one and the Spec Review check it. The building stages follow.
+              rather than a plan. Send to the factory on Home has the Spec Builder write a spec and
+              the Spec Review check it. With Linear set up, an approved spec is split into goals,
+              and each goal is built on its own branch, tests first, until it is ready to merge.
             </p>
             <FactoryForm
               defaultScripts={DEFAULT_FACTORY_SCRIPTS}
@@ -238,6 +240,12 @@ export default async function SettingsPage() {
               }
             />
             <p className="text-caption text-mute">{SPEND_COUNTS[backend.backend]}</p>
+            <RunLimitForm
+              maxRuns={settings?.maxRuns ?? 2}
+              disabledReason={
+                settings ? undefined : 'Needs the database. See the notice at the top of the page.'
+              }
+            />
           </Section>
           <Section id="demo" title="Demo data">
             <p className="text-body-sm text-body">

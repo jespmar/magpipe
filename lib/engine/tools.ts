@@ -132,6 +132,8 @@ export type ToolSetup = {
    * checks.
    */
   recordGoals?: { criteria: number[] | null; goals?: Goal[] };
+  /** A repository tool's folder for this run (D41): a goal's worktree stands in for the folder. */
+  repoPaths?: Record<string, string>;
   /**
    * Called after each item lands in `work`, so the engine can save the record onto the step
    * before the step ends (D33). A failure here is logged, never the tool call's.
@@ -676,6 +678,8 @@ export async function setupTools(setup: ToolSetup): Promise<ToolRuntime> {
       }
 
       if (tool.kind === 'repository') {
+        const override = setup.repoPaths?.[tool.id];
+        if (override && tool.repository) tool.repository = { ...tool.repository, path: override };
         // A folder that is gone loses the step these tools, not the step itself (D19).
         const found = tool.repository ? await inspectRepository(tool.repository.path) : null;
         if (!tool.repository || !found?.ok) {
