@@ -847,5 +847,11 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
   started by a watcher when an issue's status says so, instead of one long run per idea. The
   engine already skips planning for a run that has a plan and already locks per work tree, so
   templates and parallel worktrees fit what is there.
+- **Settled with the operator.** Linear access (key, team, label, status mapping) and the
+  polling interval are set in the app's Settings. The app must be open for the factory to run.
+  A Claude subscription may power it as Magpipe uses it: Anthropic's legal page permits an end
+  user signing in to the unmodified `claude` binary with their own subscription, which is what
+  D22 does. Its usage limits assume ordinary individual use, so heavy unattended work belongs on
+  the API backend, and the billing rules are re-read before phase 4.
 - **Not yet.** Nothing is built. `docs/factory.md` has the pipeline, the agents, the gates, the
-  engine needs and an eight-phase build order, with four points to confirm first.
+  engine needs and an eight-phase build order.
