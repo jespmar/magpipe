@@ -6,12 +6,12 @@
  * what the next check compares with.
  */
 import 'server-only';
-import { desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull } from 'drizzle-orm';
 import type { Db } from '../db';
 import * as t from '../db/schema';
 import { emitEvent } from '../engine/events';
 import { newId } from '../ids';
-import type { IssueStage, LinearSettings, TrackerIssue } from '../schemas';
+import type { Goal, IssueStage, LinearSettings, TrackerIssue } from '../schemas';
 import {
   getLinearSettings,
   getTracker,
@@ -91,7 +91,7 @@ export async function listIssues(db: Db): Promise<TrackerIssue[]> {
 export async function recordFiledIssue(
   db: Db,
   remote: RemoteIssue,
-  opts: { runId: string; settings: LinearSettings },
+  opts: { runId: string; settings: LinearSettings; parentId?: string; goal?: Goal },
 ): Promise<TrackerIssue> {
   const now = new Date();
   const row: TrackerIssue = {
@@ -103,6 +103,10 @@ export async function recordFiledIssue(
     runId: opts.runId,
     stage: stageOf(opts.settings, remote.state.id),
     stateName: remote.state.name,
+    parentId: opts.parentId ?? null,
+    externalParentId: remote.parentId,
+    goal: opts.goal ?? null,
+    goalsRunId: null,
     approvedAt: null,
     approvedVia: null,
     createdAt: now,
@@ -110,6 +114,72 @@ export async function recordFiledIssue(
   };
   await db.insert(t.trackerIssues).values(row);
   return row;
+}
+
+/** The goals filed under a spec issue, oldest first (D39). */
+export async function goalIssues(db: Db, parentId: string): Promise<TrackerIssue[]> {
+  return db
+    .select()
+    .from(t.trackerIssues)
+    .where(eq(t.trackerIssues.parentId, parentId))
+    .orderBy(asc(t.trackerIssues.createdAt));
+}
+
+/** Records the status Magpipe just moved an issue to in Linear. */
+export async function recordState(
+  db: Db,
+  id: string,
+  settings: Pick<LinearSettings, 'states'>,
+  remote: RemoteIssue,
+): Promise<TrackerIssue> {
+  const [row] = await db
+    .update(t.trackerIssues)
+    .set({
+      stage: stageOf(settings, remote.state.id),
+      stateName: remote.state.name,
+      title: remote.title,
+      updatedAt: new Date(),
+    })
+    .where(eq(t.trackerIssues.id, id))
+    .returning();
+  return row!;
+}
+
+/** Marks the goals run a spec issue started, once: false when another start got there first. */
+export async function claimGoalsRun(db: Db, id: string, runId: string): Promise<boolean> {
+  const rows = await db
+    .update(t.trackerIssues)
+    .set({ goalsRunId: runId, updatedAt: new Date() })
+    .where(and(eq(t.trackerIssues.id, id), isNull(t.trackerIssues.goalsRunId)))
+    .returning({ id: t.trackerIssues.id });
+  return rows.length > 0;
+}
+
+/**
+ * Lets a spec start a goals run again: its goals did not pass review and it went to needs you,
+ * so moving it back to the approved status splits it afresh.
+ */
+export async function releaseGoalsRun(db: Db, id: string): Promise<void> {
+  await db
+    .update(t.trackerIssues)
+    .set({ goalsRunId: null, updatedAt: new Date() })
+    .where(eq(t.trackerIssues.id, id));
+}
+
+/** Spec issues that are approved but have not started their goals run (D39). */
+export async function approvedWithoutGoals(db: Db): Promise<TrackerIssue[]> {
+  return db
+    .select()
+    .from(t.trackerIssues)
+    .where(
+      and(
+        eq(t.trackerIssues.stage, 'approved'),
+        // A spec has no parent at all; a goal's parent may be one Magpipe does not track.
+        isNull(t.trackerIssues.parentId),
+        isNull(t.trackerIssues.externalParentId),
+        isNull(t.trackerIssues.goalsRunId),
+      ),
+    );
 }
 
 async function say(db: Db, issue: TrackerIssue, text: string): Promise<void> {
@@ -162,8 +232,15 @@ export async function approveIssue(db: Db, id: string): Promise<TrackerIssue | u
 
 export type CheckResult =
   | { status: 'skipped'; reason: 'not_ready' | 'paused' | 'busy' }
-  | { status: 'done'; issues: number; changed: number }
+  | { status: 'done'; issues: number; changed: number; started: string[] }
   | { status: 'error'; message: string };
+
+/**
+ * What happens when a spec issue is approved and has no goals run yet (D39): the factory starts
+ * one. Injected, so the tracker does not depend on the engine; it may throw to say why it could
+ * not start, and the check records that as its error.
+ */
+export type OnApproved = (db: Db, issue: TrackerIssue) => Promise<{ displayId: string } | null>;
 
 /** How far back a check reaches past the last one, for clocks that disagree a little. */
 const OVERLAP_MS = 2 * 60_000;
@@ -179,7 +256,10 @@ const g = globalThis as unknown as {
  * filed the issue; a move to the approved status opens gate G1. `force` checks even while the
  * watcher is paused (Check now).
  */
-export async function checkLinear(db: Db, opts: { force?: boolean } = {}): Promise<CheckResult> {
+export async function checkLinear(
+  db: Db,
+  opts: { force?: boolean; onApproved?: OnApproved } = {},
+): Promise<CheckResult> {
   if (g.__magpipeCheck) return { status: 'skipped', reason: 'busy' };
   const run = (async (): Promise<CheckResult> => {
     const settings = await getLinearSettings(db);
@@ -198,8 +278,26 @@ export async function checkLinear(db: Db, opts: { force?: boolean } = {}): Promi
       });
       let changed = 0;
       for (const r of remote) if (await applyRemote(db, settings, r)) changed++;
+      // Every approved spec without a goals run gets one, including approvals from before.
+      const started: string[] = [];
+      const blocked: string[] = [];
+      if (opts.onApproved) {
+        for (const issue of await approvedWithoutGoals(db)) {
+          try {
+            const run = await opts.onApproved(db, issue);
+            if (run) started.push(`${issue.identifier} → ${run.displayId}`);
+          } catch (err) {
+            blocked.push(
+              `${issue.identifier}: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        }
+      }
       await recordCheck(db, { at, issues: remote.length, changed });
-      return { status: 'done', issues: remote.length, changed };
+      if (blocked.length) {
+        await recordCheck(db, { error: `Goals not started for ${blocked.join('; ')}` });
+      }
+      return { status: 'done', issues: remote.length, changed, started };
     } catch (err) {
       const message = trackerMessage(err);
       await recordCheck(db, { error: message });
@@ -223,6 +321,13 @@ async function applyRemote(db: Db, settings: LinearSettings, r: RemoteIssue): Pr
     .from(t.trackerIssues)
     .where(eq(t.trackerIssues.externalId, r.id));
   if (!local) {
+    // A sub-issue labelled by hand belongs to its parent when Magpipe knows the parent.
+    const [parent] = r.parentId
+      ? await db
+          .select({ id: t.trackerIssues.id })
+          .from(t.trackerIssues)
+          .where(eq(t.trackerIssues.externalId, r.parentId))
+      : [];
     await db.insert(t.trackerIssues).values({
       id: newId('iss'),
       externalId: r.id,
@@ -232,6 +337,10 @@ async function applyRemote(db: Db, settings: LinearSettings, r: RemoteIssue): Pr
       runId: null,
       stage,
       stateName: r.state.name,
+      parentId: parent?.id ?? null,
+      externalParentId: r.parentId,
+      goal: null,
+      goalsRunId: null,
       approvedAt: stage === 'approved' ? now : null,
       approvedVia: stage === 'approved' ? 'linear' : null,
       createdAt: now,
@@ -251,6 +360,7 @@ async function applyRemote(db: Db, settings: LinearSettings, r: RemoteIssue): Pr
       title: r.title,
       identifier: r.identifier,
       url: r.url,
+      externalParentId: r.parentId,
       updatedAt: now,
       ...(opensGate ? { approvedAt: now, approvedVia: 'linear' as const } : {}),
     })
@@ -271,14 +381,18 @@ async function applyRemote(db: Db, settings: LinearSettings, r: RemoteIssue): Pr
  * The watcher (D38): checks Linear on the interval Settings holds, while the app is open. The
  * first check comes shortly after start and catches up on everything since the last one.
  */
-export function scheduleWatcher(getDb: () => Promise<Db>, firstDelayMs = 5_000): void {
+export function scheduleWatcher(
+  getDb: () => Promise<Db>,
+  onApproved?: OnApproved,
+  firstDelayMs = 5_000,
+): void {
   if (g.__magpipeWatcher) return;
   const tick = async () => {
     let delay = 60_000;
     try {
       const db = await getDb();
       delay = (await getLinearSettings(db)).pollSeconds * 1000;
-      const result = await checkLinear(db);
+      const result = await checkLinear(db, { onApproved });
       if (result.status === 'error') console.warn(`[watcher] ${result.message}`);
     } catch (err) {
       console.warn('[watcher] check failed:', err);

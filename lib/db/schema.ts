@@ -31,6 +31,7 @@ import {
   type Agent,
   type LinearSettings,
   type MemoryEntry,
+  type TrackerIssue,
   type Run,
   type Settings,
   type Step,
@@ -249,6 +250,10 @@ export const trackerIssues = pgTable(
     runId: text().references(() => runs.id, { onDelete: 'set null' }),
     stage: text({ enum: issueStages }).notNull(),
     stateName: text().notNull(),
+    parentId: text().references((): AnyPgColumn => trackerIssues.id, { onDelete: 'set null' }),
+    externalParentId: text(),
+    goal: jsonb().$type<TrackerIssue['goal']>(),
+    goalsRunId: text().references(() => runs.id, { onDelete: 'set null' }),
     approvedAt: timestamptz(),
     approvedVia: text({ enum: ['linear', 'magpipe'] }),
     createdAt: timestamptz().notNull().defaultNow(),
@@ -257,5 +262,6 @@ export const trackerIssues = pgTable(
   (t) => [
     check('tracker_issues_stage_check', oneOf(t.stage, issueStages)),
     index('tracker_issues_run_idx').on(t.runId),
+    index('tracker_issues_parent_idx').on(t.parentId),
   ],
 );

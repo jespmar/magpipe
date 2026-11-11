@@ -83,7 +83,7 @@ test('settings loads the software factory, and Home sends a task to its spec tem
 // Linear (D38), against the scripted tracker the e2e server runs with: a refused key is named on
 // its field, a good one is saved, the mapping is suggested and read back, and a spec that passes
 // review is filed as an issue that Home approves.
-test('settings connects Linear, a passing spec is filed, and Home approves it', async ({
+test('settings connects Linear, a passing spec is filed, Home approves it, and its goals are filed', async ({
   page,
 }) => {
   await page.goto('/settings');
@@ -136,4 +136,24 @@ test('settings connects Linear, a passing spec is filed, and Home approves it', 
   await expect(issue).toContainText('approved');
   await expect(issue).toContainText(/Approved in Magpipe at \d\d:\d\d/);
   await expect(issue.getByRole('button', { name: 'Approve the spec' })).toBeHidden();
+
+  // Approval starts the goals run (D39): it reads the spec from Linear, records the goals, has
+  // them reviewed and files them as sub-issues; the spec moves to building.
+  const goalsLink = issue.getByRole('link', { name: /^flight_[0-9a-z]+$/ });
+  await expect(issue).toContainText('Goals: split in');
+  await goalsLink.click();
+  await expect(
+    page.getByRole('heading', { level: 1, name: /^Split MAG-\d+ into goals/ }),
+  ).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.getByText('done', { exact: true }).first()).toBeVisible({ timeout: 30_000 });
+  const spec = page.getByRole('region', { name: 'Linear issue' });
+  await expect(spec).toContainText('building');
+  const goals = spec.getByRole('list', { name: 'Goals' });
+  await expect(goals).toContainText('Meet criterion 1');
+  await expect(goals.getByRole('link', { name: /MAG-\d+/ })).toHaveCount(1);
+  await expect(page.getByRole('region', { name: 'Result' })).toContainText(
+    /Filed 1 goal under MAG-\d+/,
+  );
 });

@@ -216,7 +216,9 @@ export function LinearForm({ initial, disabledReason }: Props) {
         c.status === 'done'
           ? {
               tone: 'done',
-              text: `Checked: ${c.issues === 1 ? 'one issue' : `${c.issues} issues`} with the label changed since the last check, ${c.changed} moved.`,
+              text: `Checked: ${c.issues === 1 ? 'one issue' : `${c.issues} issues`} with the label changed since the last check, ${c.changed} moved.${
+                c.started.length ? ` Started goals for ${c.started.join(', ')}.` : ''
+              }`,
             }
           : c.status === 'error'
             ? { tone: 'error', text: c.message }

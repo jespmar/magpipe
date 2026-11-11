@@ -460,10 +460,10 @@ describe('Linear for the factory', () => {
 
   it('the watcher notices a move to the approved status once, and says it on the run', async () => {
     const first = await checkLinear(db);
-    expect(first).toEqual({ status: 'done', issues: 1, changed: 0 });
+    expect(first).toMatchObject({ status: 'done', issues: 1, changed: 0 });
 
     scriptedTracker('k', store).move('MAG-1', 'Approved');
-    expect(await checkLinear(db)).toEqual({ status: 'done', issues: 1, changed: 1 });
+    expect(await checkLinear(db)).toMatchObject({ status: 'done', issues: 1, changed: 1 });
     const issue = (await issueForRun(db, runId))!;
     expect(issue).toMatchObject({ stage: 'approved', approvedVia: 'linear' });
     expect(issue.approvedAt).toBeInstanceOf(Date);

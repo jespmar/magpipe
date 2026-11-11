@@ -46,7 +46,10 @@ export async function mergeRun(opts: {
  * and the orchestrator merges as usual.
  */
 export function documentAnswer(steps: Step[], agentNames: Map<string, string>): string | null {
-  const source = steps.find((s) => s.writesDocument && s.status === 'done' && s.document);
+  // The last document the plan wrote: the spec, or the goals split from it (D39).
+  const source = steps.findLast(
+    (s) => (s.writesDocument || s.recordsGoals) && s.status === 'done' && s.document,
+  );
   if (!source) return null;
   const after = new Set<string>([source.id]);
   const parts = [source.document!.trim()];

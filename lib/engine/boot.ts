@@ -8,6 +8,7 @@ import { findClaudeCli } from './claude-code';
 import { getEngine } from './index';
 import { runHousekeeping, scheduleHousekeeping } from './housekeeping';
 import { scheduleWatcher } from '../tracker/issues';
+import { startGoalsRun } from '../factory';
 
 const g = globalThis as unknown as { __magpipeBooted?: boolean };
 
@@ -25,7 +26,10 @@ export async function bootEngine(): Promise<void> {
     if (staleMarked) console.log(`[housekeeping] marked ${staleMarked} memories stale`);
     scheduleHousekeeping(getDb);
     // The factory's watcher (D38): checks Linear while the app is open, catching up first.
-    scheduleWatcher(getDb);
+    // An approved spec starts its goals run (D39).
+    scheduleWatcher(getDb, (db, issue) =>
+      startGoalsRun(db, issue, (id) => getEngine().enqueue(id)),
+    );
     const resumed = await getEngine().resumeInterrupted(db);
     if (resumed) console.log(`[engine] resumed ${resumed} run(s)`);
   } catch (err) {

@@ -17,7 +17,7 @@ export async function createRun(
   db: Db,
   input: Run['input'],
   parentRunId: string | null = null,
-  preset?: { plan: Step[]; text: string },
+  preset?: { plan: Step[]; text: string; createdBy?: string },
 ): Promise<Run> {
   const run: Run = {
     id: newId('run'),
@@ -32,7 +32,7 @@ export async function createRun(
     output: null,
     parentRunId,
     dismissedAt: null,
-    createdBy: 'user',
+    createdBy: preset?.createdBy ?? 'user',
     createdAt: new Date(),
   };
   await db.insert(t.runs).values(run);

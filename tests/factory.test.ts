@@ -29,6 +29,7 @@ import {
   summarizeFactory,
   templatePlan,
   type FactoryResult,
+  type TemplateStep,
 } from '@/lib/factory';
 import { loadFlock } from '@/lib/flock';
 import { createRun, getRun } from '@/lib/runs';
@@ -59,6 +60,25 @@ function bullet(text: string, label: string): string {
     parts.push(lines[j]!.trim());
   }
   return parts.join(' ');
+}
+
+/** The rows of the table with these first two header cells inside `### <name>`. */
+function tableIn(name: string, first: string, second: string): string[][] {
+  const lines = section(name).split('\n');
+  const cells = (line: string) =>
+    line
+      .split('|')
+      .slice(1, -1)
+      .map((c) => c.trim());
+  const header = lines.findIndex(
+    (l) => l.startsWith('|') && cells(l)[0] === first && cells(l)[1] === second,
+  );
+  if (header === -1) throw new Error(`No table with ${first} | ${second} under ${name}`);
+  const rows: string[][] = [];
+  for (let i = header + 2; i < lines.length && lines[i]!.startsWith('|'); i++) {
+    rows.push(cells(lines[i]!));
+  }
+  return rows;
 }
 
 /** The rows of the table whose header has these first two cells. */
@@ -146,22 +166,26 @@ describe('lib/factory.ts mirrors docs/factory.md', () => {
     }
   });
 
-  it('the spec template: steps, agents, titles, dependencies, the document, instructions', () => {
-    const rows = table('Step', 'Agent');
-    expect(rows).toEqual(
-      FACTORY_TEMPLATES.spec.steps.map((s) => [
-        `\`${s.id}\``,
-        s.agent ? FACTORY_AGENTS.find((a) => a.slug === s.agent)!.name : 'Magpipe',
-        s.title,
-        s.dependsOn.map((d) => `\`${d}\``).join(', ') || 'none',
-        s.writesDocument ? 'yes' : 'no',
-        s.judges ? 'yes' : 'no',
-        s.when === 'linear' ? 'Linear is set up' : 'always',
-        s.instructions,
-      ]),
-    );
-    expect(md).toContain(`The hand-over step is titled "${FACTORY_TEMPLATES.spec.handOver}".`);
-  });
+  for (const template of Object.values(FACTORY_TEMPLATES)) {
+    it(`the ${template.id} template: steps, agents, titles, dependencies, instructions`, () => {
+      const rows = tableIn(template.name, 'Step', 'Agent');
+      expect(rows).toEqual(
+        template.steps.map((s: TemplateStep) => [
+          `\`${s.id}\``,
+          s.agent ? FACTORY_AGENTS.find((a) => a.slug === s.agent)!.name : 'Magpipe',
+          s.title,
+          s.dependsOn.map((d) => `\`${d}\``).join(', ') || 'none',
+          s.writesDocument || s.recordsGoals ? 'yes' : 'no',
+          s.judges ? 'yes' : 'no',
+          s.when === 'linear' ? 'Linear is set up' : 'always',
+          s.instructions,
+        ]),
+      );
+      expect(section(template.name)).toContain(
+        `The hand-over step is titled "${template.handOver}".`,
+      );
+    });
+  }
 });
 
 // ─── loading it ────────────────────────────────────────────────────────────

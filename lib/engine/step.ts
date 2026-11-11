@@ -11,6 +11,7 @@ import {
   DOCUMENT_CAP,
   type Agent,
   type Attachment,
+  type Goal,
   type MemoryEntry,
   type Run,
   type Step,
@@ -37,6 +38,9 @@ export function documentSummary(text: string, cap = 1000): string {
 
 /** What the step must finish with: a short result, or the whole document (D37). */
 function resultRule(step: Step): string {
+  if (step.recordsGoals) {
+    return `You are one agent in a run orchestrated by Magpipe. Do the step you are given and use your tools when they help. Your result is the goals: record them with the record_goals tool until Magpipe accepts them, then finish with a short summary under 1000 characters. Magpipe hands the goals themselves to the steps after yours.`;
+  }
   return step.writesDocument
     ? `You are one agent in a run orchestrated by Magpipe. Do the step you are given and use your tools when they help. Your result is a document: finish with the whole document in Markdown and nothing after it. The steps after yours read all of it, and the operator receives it.`
     : `You are one agent in a run orchestrated by Magpipe. Do the step you are given, use your tools when they help, and finish with a clear written result: what you found or did, and anything the next step must know. Keep it under 1000 characters.`;
@@ -59,6 +63,8 @@ export async function runStep(opts: {
   work?: WorkItem[];
   /** Offers the send_back tool while rounds remain (D31); the caller reads `findings`. */
   sendBack?: { remaining: number; findings?: string };
+  /** Offers the record_goals tool (D39); the caller reads `goals`. */
+  recordGoals?: { criteria: number[] | null; goals?: Goal[] };
   /** Saves the record onto the step as it grows, so a restart keeps it (D33). */
   onWork?: (work: readonly WorkItem[]) => Promise<void>;
   signal: AbortSignal;
@@ -93,6 +99,7 @@ export async function runStep(opts: {
         onToolUnavailable: (text) => trail.emit('error', text),
         work: opts.work,
         sendBack: opts.sendBack,
+        recordGoals: opts.recordGoals,
         onWork: opts.onWork,
       }),
     { signal, onRetry: (f, n) => trail.emit('error', `Retry ${n}: ${f.message}`) },
@@ -132,7 +139,9 @@ export async function runStep(opts: {
       // The draft this step revises: its own from the last round, or the run it follows up.
       step.writesDocument && step.document
         ? `The document so far. Revise it; your result replaces it:\n${step.document}`
-        : '',
+        : step.recordsGoals && step.document
+          ? `The goals so far. Revise them, and record the whole set again with record_goals:\n${step.document}`
+          : '',
       resumeNote(step) ?? '',
       context ? `Earlier results:\n${context}` : '',
       opts.attachments.length

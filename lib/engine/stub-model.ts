@@ -5,6 +5,7 @@
  * document) and merges a short markdown result, so a run goes queued → running → done through
  * the real engine, events and screens.
  */
+import { acceptanceCriteria } from '../goals';
 import type { ModelClient, ModelMessage, ModelParams } from './model';
 
 const DELAY_MS = 250;
@@ -19,6 +20,14 @@ function message(text: string): ModelMessage {
     stop_sequence: null,
     content: [{ type: 'text', text, citations: null }],
     usage: { input_tokens: 120, output_tokens: 40 },
+  } as unknown as ModelMessage;
+}
+
+function toolUse(name: string, input: Record<string, unknown>): ModelMessage {
+  return {
+    ...message(''),
+    stop_reason: 'tool_use',
+    content: [{ type: 'tool_use', id: `tu_stub_${Date.now().toString(36)}`, name, input }],
   } as unknown as ModelMessage;
 }
 
@@ -105,6 +114,34 @@ export function scriptedModelClient(): ModelClient {
             '',
             '- No tools were called and nothing was written to memory.',
           ].join('\n'),
+        );
+      }
+      // A step that splits a spec (D39) records one goal per criterion, then summarises.
+      const offersGoals = (params.tools ?? []).some(
+        (t) => (t as { name?: string }).name === 'record_goals',
+      );
+      if (offersGoals) {
+        const answered = params.messages.some(
+          (m) =>
+            Array.isArray(m.content) &&
+            m.content.some((b) => (b as { type: string }).type === 'tool_result'),
+        );
+        if (!answered) {
+          const numbers = acceptanceCriteria(user).map((c) => c.n);
+          const criteria = numbers.length ? numbers : [1];
+          return toolUse('record_goals', {
+            goals: criteria.map((n, i) => ({
+              key: `goal-${n}`,
+              title: `Meet criterion ${n}`,
+              summary: `Build what acceptance criterion ${n} asks for, with a test that checks it.`,
+              criteria: [n],
+              files: [`src/goal-${n}.ts`],
+              dependsOn: i === 0 ? [] : [`goal-${criteria[i - 1]}`],
+            })),
+          });
+        }
+        return message(
+          'Recorded the goals: one per acceptance criterion, each after the one before.',
         );
       }
       // A step whose result is a document (a factory spec, D37) hands one over.
