@@ -26,6 +26,7 @@ export const eventId = id('evt');
 export const stepId = z.string().min(1);
 export const memoryId = id('mem');
 export const issueId = id('iss');
+export const projectId = id('proj');
 
 export const slug = z
   .string()
@@ -226,6 +227,8 @@ export const runInput = z.object({
   attachments: z.array(attachment),
   /** Set when the run started from a factory template's plan (D37); a re-fly does the same. */
   template: z.enum(runTemplates).optional(),
+  /** The factory project the run works for (D45): its folder, Linear, GitHub, context, models. */
+  projectId: projectId.optional(),
   /** The tracker issue a goals or build run works on (D39, D40): the spec, or the goal. */
   issueId: issueId.optional(),
   /**
@@ -565,6 +568,8 @@ export const runCreateInput = z.object({
    * template starts from a prompt; the goals template starts when a spec is approved (D39).
    */
   template: z.enum(['spec']).optional(),
+  /** The factory project a spec is for (D45); needed once there is more than one. */
+  projectId: projectId.optional(),
 });
 
 /** POST /api/runs/[id]/approve: let a waiting run go on, with a note for the next steps. */
@@ -714,6 +719,8 @@ export const trackerIssue = z.object({
   identifier: z.string(),
   url: z.string(),
   title: z.string(),
+  /** The factory project it belongs to (D45). */
+  projectId: projectId.nullable(),
   /** The spec run that filed it; null for an issue the operator labelled by hand. */
   runId: runId.nullable(),
   stage: z.enum(issueStages),
@@ -848,3 +855,79 @@ export const sendBackInput = z.object({
 
 export type ForgeKeyInput = z.infer<typeof forgeKeyInput>;
 export type ForgeRepoInput = z.infer<typeof forgeRepoInput>;
+
+// ─── factory projects (D45) ────────────────────────────────────────────────
+
+/** A project's Linear side: the team, an optional Linear project, the label and the statuses. */
+export const projectLinear = z.object({
+  team: trackerTeam.nullable(),
+  /** Issues are filed in this Linear project, and the watcher reads only its issues. */
+  project: trackerRef.nullable(),
+  label: trackerRef.nullable(),
+  states: pipelineStateMap,
+});
+
+/** A project's GitHub side: the repository, how pull requests merge, the unattended rule (D44). */
+export const projectGithub = z.object({
+  repo: z.string().nullable(),
+  mergeMethod: z.enum(mergeMethods),
+  autoMerge: z.boolean(),
+  autoMergeLabel: z.string().min(1).max(80),
+  autoMergeFirstPass: z.boolean(),
+  autoMergeChecks: z.boolean(),
+});
+
+/**
+ * A factory project (D45): one repository and where its work is tracked and lands. The Linear key
+ * and GitHub token are the workspace's unless the project carries its own (sealed, never shown).
+ */
+export const factoryProject = z.object({
+  id: projectId,
+  name: z.string().min(1).max(80),
+  /** The repository folder agents work in (worktrees for goals), and the scripts they may run. */
+  repoPath: z.string().min(1),
+  scripts: z.array(z.string()),
+  /** A brief for every factory agent working on this project, added to their prompts. */
+  context: z.string().max(4000),
+  linear: projectLinear,
+  github: projectGithub,
+  linearKeyRef: z.string().nullable(),
+  linearKeyHint: z.string().nullable(),
+  githubKeyRef: z.string().nullable(),
+  githubKeyHint: z.string().nullable(),
+  /** Runs of this project working at once, inside the workspace limit; null = the workspace's. */
+  maxRuns: z.number().int().min(1).max(8).nullable(),
+  /** Dollars a day for this project's runs, inside the workspace cap; null = no cap of its own. */
+  spendCapUsd: z.number().nonnegative().nullable(),
+  /** A model per factory agent slug, overriding the agent's own for this project's runs. */
+  models: z.record(z.string(), z.string()),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+export type FactoryProject = z.infer<typeof factoryProject>;
+
+/** Project editor: the fields the operator types. Keys are separate, pasted once. */
+export const projectInput = z.object({
+  name: z.string().trim().min(1, 'Give the project a name.').max(80),
+  repoPath: z.string().trim().min(1, 'Give the repository folder as an absolute path.').max(4096),
+  scripts: z.string().max(2000),
+  context: z.string().max(4000, 'Keep the brief under 4000 characters.'),
+  linear: z.object({
+    teamId: z.string(),
+    projectId: z.string(),
+    label: z.string().trim().max(80),
+    states: z.record(z.string(), z.string()),
+  }),
+  github: z.object({
+    repo: z.string().trim(),
+    mergeMethod: z.enum(mergeMethods),
+    autoMerge: z.boolean(),
+    autoMergeLabel: z.string().trim().min(1, 'Name the label that allows it.').max(80),
+    autoMergeFirstPass: z.boolean(),
+    autoMergeChecks: z.boolean(),
+  }),
+  maxRuns: z.number().int().min(1, 'At least one run').max(8, 'At most 8 runs').nullable(),
+  spendCapUsd: z.number().nonnegative('The cap can’t be negative').max(10_000).nullable(),
+  models: z.record(z.string(), z.string()),
+});
+export type ProjectInput = z.infer<typeof projectInput>;

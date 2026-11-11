@@ -2,7 +2,8 @@ import { randomBytes } from 'node:crypto';
 
 const ALPHABET = '0123456789abcdefghjkmnpqrstvwxyz'; // Crockford base32, lower case
 
-export type IdPrefix = 'agt' | 'run' | 'step' | 'evt' | 'tool' | 'mem' | 'upl' | 'sec' | 'iss';
+export type IdPrefix =
+  'agt' | 'run' | 'step' | 'evt' | 'tool' | 'mem' | 'upl' | 'sec' | 'iss' | 'proj';
 
 /** Document ids are prefixed random strings (`agt_7k2m…`) — see docs/decisions.md D2. */
 export function newId(prefix: IdPrefix, length = 16): string {

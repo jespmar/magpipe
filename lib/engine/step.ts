@@ -65,8 +65,10 @@ export async function runStep(opts: {
   sendBack?: { remaining: number; findings?: string };
   /** Offers the record_goals tool (D39); the caller reads `goals`. */
   recordGoals?: { criteria: number[] | null; goals?: Goal[] };
-  /** Repository folders this run works in instead of the bound ones (D41). */
-  repoPaths?: Record<string, string>;
+  /** Repository folders (and scripts) this run works in instead of the bound ones (D41, D45). */
+  repoPaths?: Record<string, { path: string; scripts?: string[] }>;
+  /** What the operator wrote about the factory project this run belongs to (D45). */
+  projectContext?: string;
   /** Saves the record onto the step as it grows, so a restart keeps it (D33). */
   onWork?: (work: readonly WorkItem[]) => Promise<void>;
   signal: AbortSignal;
@@ -113,6 +115,7 @@ export async function runStep(opts: {
       agent.systemPrompt || `You are ${agent.name}, ${agent.role}.`,
       '',
       resultRule(step),
+      opts.projectContext ? `\nAbout the project you are working on:\n${opts.projectContext}` : '',
       readable.length ? `\nShared memory you may rely on:\n${memoryText(readable)}` : '',
       runtime.conventions.length ? `\n${conventionsText(runtime.conventions)}` : '',
     ].join('\n');

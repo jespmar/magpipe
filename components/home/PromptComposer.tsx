@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useId, useRef, useState, type DragEvent } from 'react';
 import { clsx } from 'clsx';
 import { ArrowRight, Factory, FileText, Paperclip, X } from 'lucide-react';
+import { Select } from '@/components/arc/select/select';
 import { Textarea } from '@/components/arc/textarea/textarea';
 import { Button } from '@/components/ui/Button';
 import { Kbd } from '@/components/ui/Kbd';
@@ -33,6 +34,8 @@ type Props = {
   onStarted?: (run: Run) => void;
   /** The software factory's spec template can run (D37): shows "Send to the factory". */
   factory?: boolean;
+  /** With more than one, a fresh spec picks its project (D45); a follow-up keeps its thread's. */
+  projects?: { id: string; name: string }[];
 };
 
 /**
@@ -46,6 +49,7 @@ export function PromptComposer({
   onClearTarget,
   onStarted,
   factory = false,
+  projects = [],
 }: Props) {
   const router = useRouter();
   const id = useId();
@@ -55,6 +59,8 @@ export function PromptComposer({
   const [dragging, setDragging] = useState(false);
   const [sending, setSending] = useState<'run' | RunTemplate | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  const [projectId, setProjectId] = useState(projects[0]?.id ?? '');
+  const picking = factory && projects.length > 1 && !target;
   const [mac, setMac] = useState(true);
   useEffect(() => {
     setMac(/Mac|iPhone|iPad/.test(navigator.platform));
@@ -141,6 +147,7 @@ export function PromptComposer({
           attachmentIds: chips.map((c) => c.uploadId).filter((x): x is string => !!x),
           ...(target ? { parentRunId: target.id } : {}),
           ...(template ? { template } : {}),
+          ...(template && picking && projectId ? { projectId } : {}),
         }),
       });
       if (onStarted) {
@@ -260,7 +267,12 @@ export function PromptComposer({
             ))}
           </ul>
         ) : null}
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div
+          className={clsx(
+            'flex flex-wrap justify-between gap-3',
+            picking ? 'items-end' : 'items-center',
+          )}
+        >
           <div className="flex flex-wrap items-center gap-3">
             <input
               ref={picker}
@@ -277,9 +289,24 @@ export function PromptComposer({
               <Paperclip size={16} strokeWidth={1.75} aria-hidden />
               Attach files
             </Button>
-            <span className="text-caption text-mute">PDF, CSV, images, code · up to 25 MB</span>
+            {/* Room for the project picker; a file over the limit still says so on its chip. */}
+            {picking ? null : (
+              <span className="text-caption text-mute">PDF, CSV, images, code · up to 25 MB</span>
+            )}
           </div>
-          <div className="flex items-center gap-3 max-md:ml-auto">
+          <div className="flex flex-wrap items-end gap-3 max-md:ml-auto">
+            {picking ? (
+              // Where Send to the factory files the spec and builds its goals (D45).
+              <div className="w-[13rem]">
+                <Select
+                  label="Factory project"
+                  options={projects.map((p) => ({ value: p.id, label: p.name }))}
+                  value={projectId}
+                  onValueChange={setProjectId}
+                  disabled={sending !== null}
+                />
+              </div>
+            ) : null}
             <span className="hidden items-center gap-1 font-mono text-code text-mute sm:inline-flex">
               <Kbd>{mac ? '⌘' : 'Ctrl'}</Kbd>
               <span>+</span>

@@ -9,6 +9,12 @@ import { TrackerError, type RemoteIssue, type Tracker, type TrackerState } from 
 
 export const SCRIPTED_TEAM = { id: 'team_mag', key: 'MAG', name: 'Magpipe' };
 
+/** The team's Linear projects (D45). */
+export const SCRIPTED_PROJECTS: TrackerRef[] = [
+  { id: 'lp_web', name: 'Web app' },
+  { id: 'lp_api', name: 'API' },
+];
+
 export const SCRIPTED_STATES: TrackerState[] = [
   { id: 'st_backlog', name: 'Backlog', type: 'backlog' },
   { id: 'st_spec', name: 'Spec ready', type: 'unstarted' },
@@ -23,6 +29,7 @@ type Store = {
   labels: (TrackerRef & { teamId: string })[];
   issues: (Omit<RemoteIssue, 'labels'> & {
     labelIds: string[];
+    projectId: string | null;
     description: string;
     comments: string[];
   })[];
@@ -69,7 +76,13 @@ export function scriptedTracker(
   const touch = (i: Store['issues'][number]) => {
     i.updatedAt = new Date().toISOString();
   };
-  const view = ({ labelIds, description: _d, comments: _c, ...rest }: Store['issues'][number]) =>
+  const view = ({
+    labelIds,
+    projectId: _p,
+    description: _d,
+    comments: _c,
+    ...rest
+  }: Store['issues'][number]) =>
     ({
       ...rest,
       state: { ...rest.state },
@@ -86,6 +99,11 @@ export function scriptedTracker(
     async teams() {
       authed();
       return [SCRIPTED_TEAM];
+    },
+    async projects(teamId) {
+      authed();
+      team(teamId);
+      return SCRIPTED_PROJECTS.map((p) => ({ ...p }));
     },
     async states(teamId) {
       authed();
@@ -113,6 +131,7 @@ export function scriptedTracker(
         state: state(input.stateId),
         updatedAt: new Date().toISOString(),
         labelIds: input.labelIds,
+        projectId: input.projectId ?? null,
         description: input.description,
         comments: [],
         parentId: input.parentId ?? null,
@@ -150,11 +169,12 @@ export function scriptedTracker(
       authed();
       issue(issueId).comments.push(body);
     },
-    async issuesWithLabel({ teamId, labelId, since }) {
+    async issuesWithLabel({ teamId, labelId, projectId, since }) {
       authed();
       team(teamId);
       return store.issues
         .filter((i) => i.labelIds.includes(labelId))
+        .filter((i) => !projectId || i.projectId === projectId)
         .filter((i) => !since || new Date(i.updatedAt) >= since)
         .map(view);
     },

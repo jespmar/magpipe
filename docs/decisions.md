@@ -1079,3 +1079,42 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
 - **Not done.** No rule on the size of a change or the paths it touches, and no per-repository
   rules: the label is the operator's way to scope it. Re-read Anthropic's terms before letting
   the factory run unattended on a subscription (D36).
+
+## D45 · Factory projects
+
+- **Why.** The factory was bound to one repository, one Linear team and one GitHub repository.
+  The operator works on several products and wants each to have its own Linear project, its own
+  repository and what else goes with it, without a second Magpipe.
+- **Decided: a project per repository.** `factory_projects` (migration 0013) holds a name, the
+  folder and its scripts, a brief for the agents, a Linear group (team, optional Linear project,
+  label, the six statuses), a GitHub group (repository, merge method, the D44 rule), an optional
+  Linear key and GitHub token of its own (sealed like every key, D13), builds at once, a daily
+  spend cap and a model per factory agent slug. Every tracker issue carries its `projectId`, and
+  so does every factory run (`run.input.projectId`).
+- **Shared credentials, with an override.** Settings keeps one Linear key and one GitHub token for
+  every project, and its team, label, statuses, repository and rule are the workspace's: a
+  project that sets none of its own inherits them. A project with its own team uses its own
+  mapping, read back from Linear with the key it will use when saved; its own repository is read
+  back from GitHub the same way. `projectLinear` and `projectForge` put the two together, so the
+  watcher, the tick, the action steps and both gates read one settings shape, per issue.
+- **The Default project.** When no project exists and the factory is loaded, the Default project
+  is made on the factory's repository, inheriting everything, and every issue without a project
+  joins it (`ensureDefaultProject`, from the tick, the factory screens and a new spec). A
+  factory set up before projects keeps working with no change.
+- **The watcher per project.** One check reads each project with Linear set up, a project with a
+  Linear project first, so it claims its issues before a project on the same team without one.
+  An issue another project holds is left to it. The check time and the watcher's pace stay the
+  workspace's.
+- **The engine.** A project's run replaces the folder and scripts of the repository the factory's
+  agents hold with the project's (a goal's worktree still stands in for the folder, D41), adds the
+  project's brief to each step's prompt, uses the project's model for an agent where it names
+  one, and stops at the project's own spend cap as well as the workspace's (`spendToday` per
+  project, by `input->>'projectId'`). `readyGoals` keeps each project to its own builds at once
+  inside the workspace limit.
+- **Screens.** Factory → Projects lists the projects; a project's page edits it in sections
+  (repository, context, Linear, GitHub, limits, models, keys). Home shows a project picker beside
+  Send to the factory when there is more than one; a follow-up keeps its thread's project. The
+  board names each card's project and filters by one.
+- **Not done.** No project per non-factory run, no moving an issue between projects, and the
+  Linear project filter and `team.projects` query are untested against live Linear, like the
+  rest of the client (D38).

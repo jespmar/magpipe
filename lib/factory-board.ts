@@ -18,6 +18,7 @@ import {
 } from './schemas';
 import { getLinearSettings, linearReady } from './tracker';
 import { listIssues } from './tracker/issues';
+import { listProjects, projectForge, projectLinear } from './projects';
 
 export type BoardRun = { displayId: string; status: RunStatus };
 export type BoardVerdict = {
@@ -43,6 +44,8 @@ export type BoardCard = {
   mergeRequested: boolean;
   /** How the merge question was answered: in Magpipe, in Linear, or by the rule (D44). */
   mergeVia: 'magpipe' | 'linear' | 'rule' | null;
+  /** The project's name, while the board shows more than one project (D45). */
+  project: string | null;
   /** The latest build's judges, in order. */
   verdicts: BoardVerdict[];
   /** The run to follow: the spec run, the goals run, the build or the land, latest first. */
@@ -50,6 +53,9 @@ export type BoardCard = {
 };
 
 export type Board = {
+  /** Every project with its issue count; the board shows `projectId`'s, or all (D45). */
+  projects: { id: string; name: string; count: number }[];
+  projectId: string | null;
   linear: boolean;
   github: boolean;
   lastCheckAt: Date | null;
@@ -78,12 +84,24 @@ function verdictsOf(run: Pick<Run, 'plan'> | undefined): BoardVerdict[] {
     }));
 }
 
-export async function getBoard(db: Db): Promise<Board> {
-  const [linear, forge, issues] = await Promise.all([
+export async function getBoard(db: Db, opts: { projectId?: string } = {}): Promise<Board> {
+  const [linear, forge, all, projects] = await Promise.all([
     getLinearSettings(db),
     getForgeSettings(db),
     listIssues(db),
+    listProjects(db),
   ]);
+  const projectId = projects.some((p) => p.id === opts.projectId) ? opts.projectId! : null;
+  const issues = projectId ? all.filter((i) => i.projectId === projectId) : all;
+  const names = new Map(projects.map((p) => [p.id, p.name]));
+  const shown = projectId ? projects.filter((p) => p.id === projectId) : projects;
+  // Ready when the projects shown have Linear (GitHub) set up, each its own or the workspace's.
+  const [linearOk, githubOk] = shown.length
+    ? await Promise.all([
+        Promise.all(shown.map(async (p) => linearReady(await projectLinear(db, p)))),
+        Promise.all(shown.map(async (p) => forgeReady(await projectForge(db, p)))),
+      ]).then(([l, g]) => [l.some(Boolean), g.some(Boolean)])
+    : [linearReady(linear), forgeReady(forge)];
   const runIds = Array.from(
     new Set(
       issues
@@ -133,6 +151,8 @@ export async function getBoard(db: Db): Promise<Board> {
       merged: i.mergedAt !== null,
       mergeRequested: i.mergeRequestedAt !== null,
       mergeVia: i.mergeRequestedVia,
+      project:
+        projects.length > 1 && !projectId && i.projectId ? (names.get(i.projectId) ?? null) : null,
       verdicts: verdictsOf(i.buildRunId ? byRun.get(i.buildRunId) : undefined),
       runs: isGoal
         ? [...link('Land', i.landRunId), ...link('Build', i.buildRunId)]
@@ -142,8 +162,14 @@ export async function getBoard(db: Db): Promise<Board> {
 
   const cards = issues.map(card);
   return {
-    linear: linearReady(linear),
-    github: forgeReady(forge),
+    projects: projects.map((p) => ({
+      id: p.id,
+      name: p.name,
+      count: all.filter((i) => i.projectId === p.id).length,
+    })),
+    projectId,
+    linear: linearOk!,
+    github: githubOk!,
     lastCheckAt: linear.lastCheckAt,
     lastError: linear.lastError,
     columns: issueStages

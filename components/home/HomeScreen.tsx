@@ -23,6 +23,8 @@ type Props = {
   core: ReactNode;
   /** The software factory's spec template can run (D37). */
   factory?: boolean;
+  /** The factory's projects, for the picker beside Send to the factory (D45). */
+  projects?: { id: string; name: string }[];
 };
 
 /**
@@ -38,6 +40,7 @@ export function HomeScreen({
   now,
   core,
   factory = false,
+  projects = [],
 }: Props) {
   const router = useRouter();
   const [selectedId, setSelectedId] = useState(initialSelectedId);
@@ -131,6 +134,7 @@ export function HomeScreen({
           onClearTarget={() => setFollowing(false)}
           onStarted={onStarted}
           factory={factory}
+          projects={projects}
         />
       </div>
     </div>

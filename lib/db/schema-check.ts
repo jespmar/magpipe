@@ -5,6 +5,7 @@
 import type * as t from './schema';
 import type {
   Agent,
+  FactoryProject,
   ForgeSettings,
   LinearSettings,
   MemoryEntry,
@@ -34,4 +35,5 @@ export type SchemaChecks = [
   Assert<Equals<typeof t.linearSettings.$inferSelect, LinearSettings>>,
   Assert<Equals<typeof t.trackerIssues.$inferSelect, TrackerIssue>>,
   Assert<Equals<typeof t.forgeSettings.$inferSelect, ForgeSettings>>,
+  Assert<Equals<typeof t.factoryProjects.$inferSelect, FactoryProject>>,
 ];

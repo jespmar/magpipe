@@ -2,12 +2,14 @@ import type { Metadata } from 'next';
 import { Factory } from 'lucide-react';
 import { AutoRefresh } from '@/components/factory/AutoRefresh';
 import { FactoryBoard } from '@/components/factory/FactoryBoard';
+import { ProjectFilter } from '@/components/factory/ProjectFilter';
 import { ButtonLink } from '@/components/ui/Button';
 import { EmptyState, UnavailableState } from '@/components/ui/EmptyState';
 import { PageHead } from '@/components/ui/PageHead';
 import { getDb } from '@/lib/db';
 import { getBoard, type Board } from '@/lib/factory-board';
 import { missingAgents } from '@/lib/factory';
+import { ensureDefaultProject } from '@/lib/projects';
 import { clockTime } from '@/lib/home-util';
 
 export const metadata: Metadata = { title: 'Factory' };
@@ -20,12 +22,16 @@ const DESCRIPTION =
  * stored from Linear and the runs; the watcher keeps that current, and the page re-reads it while
  * it is open.
  */
-export default async function FactoryPage() {
+type Props = { searchParams: Promise<{ project?: string }> };
+
+export default async function FactoryPage({ searchParams }: Props) {
+  const { project } = await searchParams;
   let board: Board;
   let loaded = false;
   try {
     const db = await getDb();
-    board = await getBoard(db);
+    await ensureDefaultProject(db);
+    board = await getBoard(db, { projectId: project });
     loaded = (await missingAgents(db, 'spec')).length === 0;
   } catch (err) {
     console.error('[factory] unavailable:', err);
@@ -39,6 +45,7 @@ export default async function FactoryPage() {
 
   const meta = [
     board.lastCheckAt ? `last check ${clockTime(board.lastCheckAt)}` : 'not checked yet',
+    `${board.projects.length} ${board.projects.length === 1 ? 'project' : 'projects'}`,
     `${board.counts.specs} ${board.counts.specs === 1 ? 'spec' : 'specs'}`,
     `${board.counts.goals} ${board.counts.goals === 1 ? 'goal' : 'goals'}`,
     `${board.counts.building} building`,
@@ -53,17 +60,30 @@ export default async function FactoryPage() {
         <span key={m}>{m}</span>
       ))}
       actions={
-        <ButtonLink href="/settings#linear" size="sm">
-          Linear and GitHub
-        </ButtonLink>
+        <>
+          <ButtonLink href="/settings#linear" size="sm" variant="ghost">
+            Linear and GitHub
+          </ButtonLink>
+          <ButtonLink href="/factory/projects" size="sm">
+            Projects
+          </ButtonLink>
+        </>
       }
     />
   );
+
+  const filter =
+    board.projects.length > 1 ? (
+      <div className="flex">
+        <ProjectFilter projects={board.projects} value={board.projectId} />
+      </div>
+    ) : null;
 
   if (!board.linear || board.counts.specs + board.counts.goals === 0) {
     return (
       <div className="flex flex-col gap-8">
         {head}
+        {filter}
         <EmptyState
           icon={<Factory size={24} strokeWidth={1.75} />}
           label="Factory"
@@ -105,6 +125,7 @@ export default async function FactoryPage() {
           The last check said: {board.lastError}
         </p>
       ) : null}
+      {filter}
       <FactoryBoard board={board} />
       <AutoRefresh />
     </div>

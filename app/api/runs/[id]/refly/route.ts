@@ -26,6 +26,7 @@ export async function POST(_req: Request, { params }: Ctx) {
       const source = parent.parentRunId ? await getRun(db, parent.parentRunId) : undefined;
       preset = await templatePlan(db, parent.input.template, {
         draft: source ? runDocument(source.plan) : undefined,
+        projectId: parent.input.projectId,
       });
     }
     const run = await createRun(db, parent.input, parent.id, preset);

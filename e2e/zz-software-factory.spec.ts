@@ -242,8 +242,9 @@ test('settings connects Linear, a passing spec is filed, Home approves it, its g
     .getByRole('navigation', { name: 'Main' })
     .getByRole('link', { name: 'Factory' })
     .click();
+  // The board's first visit compiles it on the development server.
   await expect(page.getByRole('heading', { level: 1, name: 'Factory' })).toBeVisible({
-    timeout: 15_000,
+    timeout: 30_000,
   });
   const doneColumn = page.getByRole('region', { name: 'Done' });
   await expect(doneColumn).toContainText('Meet criterion 1');
@@ -259,4 +260,73 @@ test('settings connects Linear, a passing spec is filed, Home approves it, its g
   for (const tool of tools.filter((x) => x.name === factoryRepo)) {
     expect((await request.delete(`/api/tools/${tool.id}`)).ok()).toBe(true);
   }
+});
+
+test('factory projects: the Default project, a second one with its own Linear project, and the Home picker', async ({
+  page,
+}) => {
+  const repo = path.join(dir, `second-${Date.now().toString(36)}`);
+  fs.mkdirSync(repo);
+  fs.writeFileSync(
+    path.join(repo, 'package.json'),
+    JSON.stringify({ scripts: { test: 'node -e 0' } }),
+  );
+  execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: repo });
+
+  await page.goto('/factory/projects');
+  await expect(page.getByRole('heading', { level: 1, name: 'Projects' })).toBeVisible();
+  // The factory as it was is the Default project, on the workspace's Linear.
+  await expect(page.getByRole('link', { name: 'Default' })).toBeVisible();
+  await expect(page.getByText('Magpipe (workspace)')).toBeVisible();
+
+  await page.getByRole('link', { name: 'New project' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'New project' })).toBeVisible({
+    timeout: 15_000,
+  });
+  const repository = page.getByRole('region', { name: 'Repository' });
+  await repository.getByLabel('Name').fill('API service');
+  await repository.getByLabel('Folder').fill(repo);
+  await page
+    .getByRole('region', { name: 'Context for the agents' })
+    .getByLabel('Brief')
+    .fill('The public API. Every endpoint is versioned.');
+  const linear = page.getByRole('region', { name: 'Linear' });
+  await linear.getByLabel('Use a Linear team of its own').check();
+  await linear.getByRole('combobox', { name: 'Team' }).click();
+  await page.getByRole('option', { name: 'Magpipe (MAG)' }).click();
+  await linear.getByRole('combobox', { name: 'Linear project' }).click();
+  await page.getByRole('option', { name: 'API' }).click();
+  await expect(linear.getByRole('combobox', { name: 'Needs you' })).toContainText('Blocked');
+  await page.getByRole('button', { name: 'Create project' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'API service' })).toBeVisible({
+    timeout: 15_000,
+  });
+
+  await page.goto('/factory/projects');
+  await expect(page.getByText('2 projects')).toBeVisible();
+  await expect(page.getByText('Magpipe, API', { exact: true })).toBeVisible();
+
+  // Home asks which project a spec is for, now that there are two.
+  await page.goto('/');
+  const composer = page.getByRole('region', { name: 'Ask Magpipe' });
+  // A follow-up keeps its thread's project; a new question picks one.
+  const fresh = composer.getByRole('button', { name: 'New question' });
+  if (await fresh.isVisible()) await fresh.click();
+  await expect(composer.getByRole('combobox', { name: 'Factory project' })).toContainText(
+    'Default',
+  );
+
+  // The board filters by project.
+  await page.goto('/factory');
+  await expect(page.getByRole('group', { name: 'Project' })).toBeVisible({ timeout: 15_000 });
+
+  // Leave one project, as the workspace had before.
+  await page.goto('/factory/projects');
+  await page.getByRole('link', { name: 'API service' }).click();
+  await page.getByRole('button', { name: 'Delete project' }).click();
+  await page.getByRole('button', { name: 'Delete, keeping its issues' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Projects' })).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.getByText('one project')).toBeVisible();
 });

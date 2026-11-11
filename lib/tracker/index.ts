@@ -16,6 +16,7 @@ import {
   type LinearSettings,
   type PipelineState,
   type PipelineStateMap,
+  type TrackerRef,
   type TrackerTeam,
   type WatcherInput,
 } from '../schemas';
@@ -208,11 +209,20 @@ export class LinearMappingError extends Error {
  * Saves the team, the label (made in Linear when it is missing) and the six statuses, after
  * reading them back from Linear. Returns what the read-back found, for the result line.
  */
-export async function saveLinearMapping(
-  db: Db,
-  input: LinearMappingInput,
-): Promise<{ settings: LinearSettings; labelCreated: boolean; statuses: number }> {
-  const tracker = await getTracker(db);
+/**
+ * Reads a mapping back from Linear (D38, D45): the team the key can see, each pipeline state on a
+ * status of its own, and the label (made when missing). Throws what is wrong in the operator's
+ * words; writes nothing.
+ */
+export async function readBackMapping(
+  tracker: Tracker,
+  input: Pick<LinearMappingInput, 'teamId' | 'label'> & { states: Record<string, string> },
+): Promise<{
+  team: TrackerTeam;
+  states: PipelineStateMap;
+  label: TrackerRef & { created: boolean };
+  statuses: number;
+}> {
   const team = (await tracker.teams()).find((x) => x.id === input.teamId);
   if (!team) throw new LinearMappingError('The key cannot see that team any more. Pick another.');
   const states = await tracker.states(team.id);
@@ -235,15 +245,28 @@ export async function saveLinearMapping(
     map[p] = { id: found.id, name: found.name };
   }
   const label = await tracker.ensureLabel(team.id, input.label);
+  return { team, states: map, label, statuses: states.length };
+}
+
+/**
+ * Saves the team, the label and the six statuses after reading them back from Linear. Since
+ * projects (D45) this is the default project's mapping; the row keeps a copy for the default
+ * project to start from.
+ */
+export async function saveLinearMapping(
+  db: Db,
+  input: LinearMappingInput,
+): Promise<{ settings: LinearSettings; labelCreated: boolean; statuses: number }> {
+  const read = await readBackMapping(await getTracker(db), input);
   // The next check reads every labelled issue again, so each takes its stage from this mapping.
   const settings = await writeLinear(db, {
-    team,
-    label: { id: label.id, name: label.name },
-    states: map,
+    team: read.team,
+    label: { id: read.label.id, name: read.label.name },
+    states: read.states,
     lastError: null,
     lastCheckAt: null,
   });
-  return { settings, labelCreated: label.created, statuses: states.length };
+  return { settings, labelCreated: read.label.created, statuses: read.statuses };
 }
 
 export async function saveWatcher(db: Db, input: WatcherInput): Promise<LinearSettings> {

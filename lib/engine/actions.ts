@@ -5,7 +5,8 @@
  * after a restart finds the issue it filed instead of filing a second one.
  */
 import type { Db } from '../db';
-import { getLinearSettings, getTracker, linearReady } from '../tracker';
+import { getTracker, linearReady } from '../tracker';
+import { forgeOf, linearOf, linearProjectOf } from '../projects';
 import { acceptanceCriteria, type Criterion } from '../goals';
 import { workFacts } from '../work';
 import { getForge } from '../forge';
@@ -122,7 +123,7 @@ async function openPr({
     return { status: 'skipped', summary: 'Not opened: the judges did not all pass.' };
   }
   const wt = worktreeOf(run);
-  const { forge, repo } = await getForge(db);
+  const { forge, repo } = await getForge(db, await runForge(db, run));
   const { defaultBranch } = await forge.repository(repo, signal);
   await pushBranch(wt.path, wt.branch);
   const pr = await forge.openPullRequest(
@@ -149,7 +150,7 @@ async function updateGoalBranch({
   signal,
 }: Parameters<typeof runAction>[0]): Promise<ActionOutcome> {
   const wt = worktreeOf(run);
-  const { forge, repo } = await getForge(db);
+  const { forge, repo } = await getForge(db, await runForge(db, run));
   const { defaultBranch } = await forge.repository(repo, signal);
   const update = await updateBranch(wt.path, defaultBranch);
   if (!update.ok) {
@@ -206,7 +207,7 @@ async function mergeGoal({
     await releaseGoal(db, issue.id);
     return { status: 'done', summary: `${issue.identifier} needs you: ${why}.` };
   }
-  const { forge, repo, settings: forgeSettings } = await getForge(db);
+  const { forge, repo, settings: forgeSettings } = await getForge(db, await runForge(db, run));
   const merged = await forge.merge(repo, issue.prNumber, forgeSettings.mergeMethod, signal);
   await recordMerged(db, issue.id);
   await tracker.comment(
@@ -306,18 +307,23 @@ async function finishGoal({
   };
 }
 
-/** Linear set up, and the spec issue a goals run splits. */
+/** A run's GitHub settings: its factory project's (D45), else the workspace's. */
+async function runForge(db: Db, run: Run) {
+  return (await forgeOf(db, run.input.projectId)).settings;
+}
+
+/** Linear set up for the run's project (D45), and the spec issue a goals run splits. */
 async function goalsContext(db: Db, run: Run) {
-  const settings = await getLinearSettings(db);
+  const issue = run.input.issueId ? await getIssue(db, run.input.issueId) : undefined;
+  const { project, settings } = await linearOf(db, run.input.projectId ?? issue?.projectId);
   if (!linearReady(settings)) {
     throw new EngineError(
       'linear_not_ready',
       'Linear is no longer set up. Finish Settings → Linear, then re-fly this run.',
     );
   }
-  const issue = run.input.issueId ? await getIssue(db, run.input.issueId) : undefined;
   if (!issue) throw new EngineError('no_issue', 'This run names no spec issue to split.');
-  return { settings, issue, tracker: await getTracker(db, settings) };
+  return { settings, project, issue, tracker: await getTracker(db, settings) };
 }
 
 /**
@@ -407,7 +413,7 @@ async function fileGoals({
   agentNames,
   signal,
 }: Parameters<typeof runAction>[0]): Promise<ActionOutcome> {
-  const { settings, issue, tracker } = await goalsContext(db, run);
+  const { settings, project, issue, tracker } = await goalsContext(db, run);
   const upstream = upstreamOf(run.plan, step);
   const judges = upstream.filter((s) => s.judges);
   const comment = async (body: string) => tracker.comment(issue.externalId, body, signal);
@@ -457,6 +463,7 @@ async function fileGoals({
         labelIds: [settings.label!.id],
         stateId: settings.states.approved!.id,
         parentId: issue.externalId,
+        ...(linearProjectOf(project) ? { projectId: linearProjectOf(project) } : {}),
       },
       signal,
     );
@@ -465,6 +472,7 @@ async function fileGoals({
       settings,
       parentId: issue.id,
       goal,
+      projectId: issue.projectId ?? project?.id ?? null,
     });
     for (const b of blockers) await tracker.relate(b.externalId, row.externalId, signal);
     filed.set(goal.key, row);
@@ -521,7 +529,7 @@ async function fileIssue({
   const source = upstream.find((s) => s.writesDocument && s.document);
   if (!source) throw new EngineError('no_document', 'There is no spec to file.');
 
-  const settings = await getLinearSettings(db);
+  const { project, settings } = await linearOf(db, run.input.projectId);
   if (!linearReady(settings)) {
     throw new EngineError(
       'linear_not_ready',
@@ -551,10 +559,15 @@ async function fileIssue({
         description: source.document!,
         labelIds: [settings.label!.id],
         stateId: settings.states.spec_ready!.id,
+        ...(linearProjectOf(project) ? { projectId: linearProjectOf(project) } : {}),
       },
       signal,
     );
-    issue = await recordFiledIssue(db, remote, { runId: run.id, settings });
+    issue = await recordFiledIssue(db, remote, {
+      runId: run.id,
+      settings,
+      projectId: project?.id ?? null,
+    });
     verb = 'Filed';
   }
 
