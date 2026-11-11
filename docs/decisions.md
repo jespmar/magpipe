@@ -1032,3 +1032,23 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
 - **Done means merged.** A goal with a pull request counts as done for its dependants, for its
   spec's closing and for removing its worktree only once it merged: Linear's done is the
   operator's answer, not the merge.
+
+## D43 · Factory phase 7: the factory screen
+
+- **Why.** Until now the pipeline was visible only one run at a time, through the issue bar on
+  each flight. The operator needs every spec and goal at a glance, and both gates in reach.
+- **The board.** `/factory`, in the main navigation and on `g f`: one column per pipeline stage
+  (spec ready, approved, building, merge question, done, needs you; a seventh only when an issue
+  sits in an unmapped status), side by side at wide widths and three across below. A spec card
+  counts its goals done (merged, when it has a pull request); a goal card names its spec, its
+  branch, its pull request and whether it merged, the verdicts of its latest build, and the runs
+  to follow. Its data comes from one loader (`lib/factory-board.ts`) that reads what the watcher
+  and the runs stored; the screen never calls Linear or GitHub itself.
+- **Both gates on the cards.** Approve on a spec waiting for it; Merge and Send back with a note
+  on a goal at the merge question with its pull request. They are the same Magpipe doors as the
+  issue bar's (D38, D42), and the board re-reads itself after each, and every 20 seconds while
+  the tab is visible.
+- **Empty and unavailable.** Before Linear is set up, or before the first spec lands, the screen
+  says what will appear and links Home and Settings, with the real facts (agents loaded, Linear,
+  GitHub). The demo data has no factory, so this screen offers none. A database that cannot be
+  opened shows the shell's unavailable state; a loading boundary sits beside the page.

@@ -1,16 +1,17 @@
 # The software factory
 
-Status: phases 1 to 6 are built (D37 to D42 in `decisions.md`): the nine agents load from
+Status: phases 1 to 7 are built (D37 to D43 in `decisions.md`): the nine agents load from
 Settings, "Send to the factory" on Home runs the spec template, a spec that passes review is
 filed in Linear, gate G1 opens from Linear or from Magpipe, approval splits the spec into goals
 filed as sub-issues, goals build side by side in their own worktrees, tests first, a passing
-goal is pushed and opened as a pull request, and gate G2 answers the question to merge from
-Magpipe, Linear or GitHub before Magpipe brings the branch up to date, tests it again and merges.
-The rest is design (D36). This document says what the factory is, what each agent produces,
-where the operator decides, what the engine must gain, and the order to build it in. It builds on
-the development flock (`flock.md`) and the engine work recorded in D25 to D35. `lib/factory.ts`
-mirrors [the roster](#the-roster-in-magpipe) and [the templates](#templates) below, and
-`tests/factory.test.ts` fails when they drift.
+goal is pushed and opened as a pull request, gate G2 answers the question to merge from Magpipe,
+Linear or GitHub before Magpipe brings the branch up to date, tests it again and merges, and the
+factory screen shows it all by stage with both gates in reach. The last phase, unattended
+merges, is design (D36). This document says what the factory is, what each agent produces,
+where the operator decides, what the engine must gain, and the order to build it in. It builds
+on the development flock (`flock.md`) and the engine work recorded in D25 to D35.
+`lib/factory.ts` mirrors [the roster](#the-roster-in-magpipe) and [the templates](#templates)
+below, and `tests/factory.test.ts` fails when they drift.
 
 ## Goal
 
@@ -509,14 +510,14 @@ a judge says fail, and the factory's tick after each check that starts the next 
 build runs that ended without reporting and closes finished specs (D40). Phase 5 added a git worktree per goal under the data folder, repository tools and write
 locks that follow a run's worktree, and the run limit as a setting (D41). Phase 6 added the GitHub seam
 (`lib/forge`) and its Settings section, Magpipe's guarded push and branch update, the pull
-request step, the land template, and the merge question's three doors (D42).
+request step, the land template, and the merge question's three doors (D42). Phase 7 added the
+factory screen (D43).
 
 Needed, smallest first:
 
-| Need                    | Why                                                                 | Shape                                                                                                                                                                                      |
-| ----------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| A protected-paths check | The Code Agent must not weaken the tests                            | First as evidence (the diff check in stage 7); later as a guard on `write` for a step.                                                                                                     |
-| The factory screen      | The operator needs the pipeline at a glance and both gates in reach | A board of issues by stage, each goal with its branch, results and verdicts from the recorded work, and the two buttons. Home's prompt has "Send to the factory" beside Run since phase 1. |
+| Need                    | Why                                      | Shape                                                                                  |
+| ----------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------- |
+| A protected-paths check | The Code Agent must not weaken the tests | First as evidence (the diff check in stage 7); later as a guard on `write` for a step. |
 
 ## Build order
 
@@ -538,7 +539,8 @@ Each phase is one pull request, useful on its own, and testable with the scripte
 6. **Pull requests and the merge question.** Built (D42). Magpipe's guarded push, the Merge
    Agent, gate G2 from all three doors, the branch brought up to date and re-tested before each
    merge.
-7. **The factory screen.** The board, replacing the lists phases 1 to 6 get by with.
+7. **The factory screen.** Built (D43). The board, replacing the lists phases 1 to 6 get by
+   with.
 8. **Earning unattended merges.** A rule the operator sets (for example: a label, every script
    green, no finding, the skeptic silent) under which G2 answers itself. Its own decision.
 

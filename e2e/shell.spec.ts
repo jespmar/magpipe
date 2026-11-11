@@ -18,7 +18,8 @@ test('fresh workspace: nav reaches every screen, marks the active link, offers t
     page.getByRole('region', { name: 'The nest' }).getByText('no runs yet'),
   ).toBeVisible();
 
-  for (const link of ['Agents', 'Runs', 'Tools', 'Memory'] as const) {
+  // Factory has nothing in the demo data, so it offers none; Memory comes last for the link below.
+  for (const link of ['Agents', 'Runs', 'Tools', 'Factory', 'Memory'] as const) {
     await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: link }).click();
     // The dev server compiles each route on its first visit; production answers in a beat.
     await expect(page.getByRole('heading', { level: 1, name: link })).toBeVisible({
@@ -28,7 +29,7 @@ test('fresh workspace: nav reaches every screen, marks the active link, offers t
       'aria-current',
       'page',
     );
-    if (link !== 'Agents') {
+    if (link !== 'Agents' && link !== 'Factory') {
       await expect(page.getByRole('link', { name: 'Load demo data' })).toHaveAttribute(
         'href',
         '/settings#demo',
