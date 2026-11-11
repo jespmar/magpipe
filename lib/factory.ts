@@ -34,6 +34,9 @@ import * as t from './db/schema';
 import {
   approvedWithoutGoals,
   claimBuildRun,
+  claimLandRun,
+  recordMerged,
+  releaseGoal,
   claimGoalsRun,
   getIssue,
   goalIssues,
@@ -43,6 +46,7 @@ import {
 import { goalBranch } from './engine/actions';
 import { ensureWorktree, removeWorktree } from './worktrees';
 import { getLinearSettings, getTracker, linearReady } from './tracker';
+import { ForgeError, forgeReady, getForge, getForgeSettings } from './forge';
 
 export { parseScripts, RosterValidationError as FactoryValidationError } from './roster';
 
@@ -300,9 +304,9 @@ Finish with a line that reads exactly "Verdict: pass" (no objection) or "Verdict
     slug: 'merge-agent',
     name: 'Merge Agent',
     initials: 'MA',
-    role: 'Lands the branch once the operator agrees',
+    role: 'Checks the branch before it merges',
     description:
-      'Checks that the tests pass, the review approves and the skeptic has no objection, then opens the pull request and asks the operator the question to merge. Merges only on their answer. Never changes code.',
+      'Checks, before a goal merges, that its branch is up to date with the default branch, the tests passed after the update and the diff stays inside the goal. Magpipe merges only on its pass and the operator’s answer. Never changes code, pushes or merges.',
     model: 'claude-sonnet-5-5',
     builtins: [],
     memoryScope: { read: ['facts'], write: [] },
@@ -310,16 +314,15 @@ Finish with a line that reads exactly "Verdict: pass" (no objection) or "Verdict
     sendBackRounds: 0,
     templateOnly: true,
     limits: { maxTokens: 100_000, maxSteps: 30, timeoutSec: 900 },
-    grants: { app: [...REVIEW, 'git_branch'] },
-    systemPrompt: `You land one goal's branch once the operator agrees. You never change code.
+    grants: { app: [...REVIEW] },
+    systemPrompt: `You decide whether one goal's branch can land. You read; you never change code, push or merge: Magpipe merges when you pass it and the operator has said yes.
 
-1. Read the goal and the verdicts handed to you: the test runs, the review and the skeptic's result.
-2. Check with the git tools that the branch is the goal's, magpipe/<goal-slug>, that it has commits past the default branch, and that the work tree is clean.
-3. If any verdict is not a pass, stop and say which: a goal lands only when the tests pass, the review approves and the skeptic has no objection.
-4. Open the pull request and ask the question to merge only with the tools you are given. If you have no tool that pushes or opens a pull request, say so and stop.
-5. Never force, never push to the default branch, never merge without the operator's answer.
+1. Read the goal and the results handed to you: the branch brought up to date with the default branch, and the test run after it.
+2. Check with the git tools that the branch is the goal's, magpipe/<goal-slug>, that the work tree is clean, and that its diff against the default branch touches the goal's files and nothing it should not.
+3. Check that the test run after the update passed, and that no test file changed since the Test Agent's commit.
+4. If anything does not hold, say which and what would make it hold.
 
-Finish with: Branch, Verdicts (each with its result), Pull request (its link, or why there is none), Waiting for (what the operator must decide).`,
+Finish with a line that reads exactly "Verdict: pass" or "Verdict: fail", then Branch, Diff (the files and what changed), Tests, Blocking. Magpipe reads that line: only a pass merges the goal.`,
   },
 ];
 
@@ -350,8 +353,11 @@ export type TemplateStep = {
       agent?: never;
       /** Magpipe's own work (D38), no model. */
       action: StepAction;
-      /** Only in the plan when this holds at the run's start: `linear` = Linear is set up. */
-      when?: 'linear';
+      /**
+       * Only in the plan when this holds at the run's start: `linear` = Linear is set up,
+       * `github` = GitHub is set up (D42).
+       */
+      when?: 'linear' | 'github';
     }
 );
 
@@ -507,12 +513,75 @@ export const FACTORY_TEMPLATES = {
         sendBackTo: ['build'],
       },
       {
+        id: 'pr',
+        action: 'open_pr',
+        when: 'github',
+        title: 'Open the pull request',
+        instructions:
+          'When every judge passed, push {branch} to origin, never forced, and open its pull request against the default branch.',
+        dependsOn: ['read', 'run', 'review', 'skeptic'],
+      },
+      {
         id: 'finish',
         action: 'finish_goal',
         title: 'Report on the goal',
         instructions:
-          'When every judge passed, move the goal to the merge question with its branch named; otherwise move it to needs you with the findings. Runs however the steps before it ended.',
-        dependsOn: ['run', 'review', 'skeptic'],
+          'When every judge passed, move the goal to the merge question with its pull request or branch named; otherwise move it to needs you with the findings. Runs however the steps before it ended.',
+        dependsOn: ['run', 'review', 'skeptic', 'pr'],
+        always: true,
+      },
+    ],
+  },
+  land: {
+    id: 'land',
+    name: 'Land',
+    needsLinear: true,
+    handOver: 'Hand over the merge',
+    steps: [
+      {
+        id: 'read',
+        action: 'read_issue',
+        title: 'Read the goal',
+        instructions:
+          'Read the goal issue from Linear as it stands: what was built and the acceptance criteria it owns.',
+        dependsOn: [],
+        writesDocument: true,
+      },
+      {
+        id: 'update',
+        action: 'update_branch',
+        title: 'Bring the branch up to date',
+        instructions:
+          'Merge the default branch into {branch} (no rebase, so nothing is forced) and push it. A conflict stops the land.',
+        dependsOn: ['read'],
+      },
+      {
+        id: 'run',
+        agent: 'test-agent',
+        title: 'Run the tests again',
+        instructions:
+          'Your step is to run the tests after the build, on {branch}, now brought up to date with the default branch. Run the scripts the operator allowed, check with git_diff that no test file changed since your commit, and give the verdict. There is nothing to send back: a fail stops the merge.',
+        dependsOn: ['update'],
+        judges: true,
+        sendBackTo: [],
+      },
+      {
+        id: 'check',
+        agent: 'merge-agent',
+        title: 'Check it can land',
+        instructions:
+          "Check {branch} can land: it is the goal's branch, up to date with the default branch, its diff stays inside the goal, the work tree is clean and the tests passed after the update. Give the verdict.",
+        dependsOn: ['read', 'update', 'run'],
+        judges: true,
+        sendBackTo: [],
+      },
+      {
+        id: 'land',
+        action: 'merge_goal',
+        title: 'Merge the pull request',
+        instructions:
+          'When the branch updated cleanly and every judge passed, merge the pull request and move the goal to done; otherwise move it to needs you with the reason. Runs however the steps before it ended.',
+        dependsOn: ['update', 'run', 'check'],
         always: true,
       },
     ],
@@ -566,7 +635,10 @@ export async function templatePlan(
       `The ${template.name.toLowerCase()} template works on Linear issues. Finish Settings → Linear first.`,
     );
   }
-  const included = template.steps.filter((s) => s.when !== 'linear' || linear);
+  const github = forgeReady(await getForgeSettings(db));
+  const included = template.steps.filter(
+    (s) => (s.when !== 'linear' || linear) && (s.when !== 'github' || github),
+  );
   let seeded = false;
   const steps: Step[] = included.map((s) => {
     const draft = s.writesDocument && !seeded && opts.draft ? opts.draft : undefined;
@@ -576,7 +648,8 @@ export async function templatePlan(
       agentId: s.agent ? agents.find((a) => a.slug === s.agent)!.id : null,
       title: s.title,
       instructions: fill(s.instructions),
-      dependsOn: s.dependsOn,
+      // A step left out of this run (a `when` that does not hold) drops out of its dependants.
+      dependsOn: s.dependsOn.filter((d) => included.some((o) => o.id === d)),
       status: 'todo',
       ...(s.action ? { action: s.action } : {}),
       ...(s.always ? { always: true } : {}),
@@ -682,6 +755,13 @@ export async function startBuildRun(
     }
     const branch = goalBranch(current);
     const preset = await templatePlan(db, 'build', { vars: { branch } });
+    // Sent back from the merge question (D42): the operator's note reaches the Code Agent.
+    if (current.operatorNote) {
+      const build = preset.plan.find((s) => s.id === 'build');
+      if (build) {
+        build.feedback = `The operator sent this goal back from the merge question: ${current.operatorNote}`;
+      }
+    }
     // Each goal builds in its own worktree (D41), so goals go side by side.
     const repo = await factoryRepository(db);
     const wt = await ensureWorktree(repo.path, branch);
@@ -697,6 +777,7 @@ export async function startBuildRun(
       current.runId,
       { ...preset, createdBy: 'factory' },
     );
+    if (current.operatorNote) await releaseGoal(db, current.id, null);
     if (!(await claimBuildRun(db, current.id, run.id))) {
       await db
         .update(t.runs)
@@ -757,7 +838,14 @@ export async function readyGoals(db: Db, limit?: number): Promise<TrackerIssue[]
     .filter((g) => g.stage === 'approved' && !g.buildRunId)
     .filter((g) =>
       g.goal!.dependsOn.every((key) =>
-        goals.some((o) => o.parentId === g.parentId && o.goal?.key === key && o.stage === 'done'),
+        goals.some(
+          (o) =>
+            o.parentId === g.parentId &&
+            o.goal?.key === key &&
+            o.stage === 'done' &&
+            // A goal with a pull request is done for its dependants once it merged (D42).
+            (o.prNumber === null || o.mergedAt !== null),
+        ),
       ),
     )
     .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
@@ -769,13 +857,24 @@ export async function nextGoal(db: Db, limit?: number): Promise<TrackerIssue | n
   return (await readyGoals(db, limit))[0] ?? null;
 }
 
-/** A done goal's worktree is removed (D41); one with uncommitted changes is kept. */
+/**
+ * A done goal's worktree is removed (D41), once merged when it has a pull request (D42); one with
+ * uncommitted changes is kept.
+ */
 async function clearWorktrees(db: Db): Promise<void> {
   const done = await db
-    .select({ buildRunId: t.trackerIssues.buildRunId })
+    .select({
+      buildRunId: t.trackerIssues.buildRunId,
+      prNumber: t.trackerIssues.prNumber,
+      mergedAt: t.trackerIssues.mergedAt,
+      mergeRequestedAt: t.trackerIssues.mergeRequestedAt,
+    })
     .from(t.trackerIssues)
     .where(and(eq(t.trackerIssues.stage, 'done'), isNotNull(t.trackerIssues.buildRunId)));
   for (const goal of done) {
+    // Done in Linear is not merged (D42): a goal with a pull request keeps its worktree until
+    // it merged, since landing it works there.
+    if (goal.prNumber !== null && goal.mergedAt === null) continue;
     const [run] = await db
       .select({ input: t.runs.input })
       .from(t.runs)
@@ -828,7 +927,13 @@ async function closeSpecs(db: Db): Promise<string[]> {
   const out: string[] = [];
   for (const spec of specs) {
     const goals = await goalIssues(db, spec.id);
-    if (goals.length === 0 || goals.some((g) => g.stage !== 'done')) continue;
+    // A goal with a pull request counts once it merged (D42).
+    if (
+      goals.length === 0 ||
+      goals.some((g) => g.stage !== 'done' || (g.prNumber !== null && g.mergedAt === null))
+    ) {
+      continue;
+    }
     const settings = await getLinearSettings(db);
     const tracker = await getTracker(db, settings);
     await tracker.comment(
@@ -840,6 +945,116 @@ async function closeSpecs(db: Db): Promise<string[]> {
     out.push(`${spec.identifier} is done.`);
   }
   return out;
+}
+
+/**
+ * Starts the land run for a goal whose merge question was answered yes (D42), once: in the goal's
+ * worktree, as a follow-up of its build run.
+ */
+export async function startLandRun(
+  db: Db,
+  issue: Pick<TrackerIssue, 'id'>,
+  enqueue: (runId: string) => void,
+): Promise<Run | null> {
+  return serialised(async () => {
+    const current = await getIssue(db, issue.id);
+    if (!current?.goal || !current.prNumber || current.mergedAt || current.landRunId) return null;
+    if (!current.mergeRequestedAt) return null;
+    const branch = goalBranch(current);
+    const preset = await templatePlan(db, 'land', { vars: { branch } });
+    const repo = await factoryRepository(db);
+    const wt = await ensureWorktree(repo.path, branch);
+    const run = await createRun(
+      db,
+      {
+        text: `Land ${current.identifier}: ${current.title}`,
+        attachments: [],
+        template: 'land',
+        issueId: current.id,
+        worktree: { toolId: repo.id, path: wt.path, branch },
+      },
+      current.buildRunId ?? current.runId,
+      { ...preset, createdBy: 'factory' },
+    );
+    if (!(await claimLandRun(db, current.id, run.id))) {
+      await db
+        .update(t.runs)
+        .set({ status: 'cancelled', finishedAt: new Date() })
+        .where(eq(t.runs.id, run.id));
+      return null;
+    }
+    enqueue(run.id);
+    return run;
+  });
+}
+
+/**
+ * The merge question's GitHub door (D42): a goal's pull request merged on GitHub is done; one
+ * closed there without merging needs the operator.
+ */
+async function watchPulls(db: Db): Promise<void> {
+  if (!forgeReady(await getForgeSettings(db))) return;
+  const open = await db
+    .select()
+    .from(t.trackerIssues)
+    .where(and(isNotNull(t.trackerIssues.prNumber), isNull(t.trackerIssues.mergedAt)));
+  if (open.length === 0) return;
+  const { forge, repo } = await getForge(db);
+  const settings = await getLinearSettings(db);
+  const tracker = await getTracker(db, settings);
+  for (const goal of open) {
+    // A land run in progress settles the pull request itself.
+    if (goal.landRunId) {
+      const [land] = await db
+        .select({ status: t.runs.status })
+        .from(t.runs)
+        .where(eq(t.runs.id, goal.landRunId));
+      if (land && ACTIVE.has(land.status)) continue;
+    }
+    const pr = await forge.pullRequest(repo, goal.prNumber!).catch((err: unknown) => {
+      if (err instanceof ForgeError && err.code === 'not_found') return null;
+      throw err;
+    });
+    if (!pr || pr.state === 'open') continue;
+    if (pr.state === 'merged') {
+      await recordMerged(db, goal.id);
+      await tracker.comment(
+        goal.externalId,
+        `Pull request #${goal.prNumber} was merged on GitHub.`,
+      );
+      if (goal.stage !== 'done') {
+        const moved = await tracker.setState(goal.externalId, settings.states.done!.id);
+        await recordState(db, goal.id, settings, moved);
+      }
+      continue;
+    }
+    await tracker.comment(
+      goal.externalId,
+      `Pull request #${goal.prNumber} was closed without merging. Move this issue back to ${settings.states.approved!.name} to build it again.`,
+    );
+    const moved = await tracker.setState(goal.externalId, settings.states.needs_you!.id);
+    await recordState(db, goal.id, settings, moved);
+    await db
+      .update(t.trackerIssues)
+      .set({ prNumber: null, prUrl: null, updatedAt: new Date() })
+      .where(eq(t.trackerIssues.id, goal.id));
+    await releaseGoal(db, goal.id);
+  }
+}
+
+/** Goals whose merge question was answered yes and have not started landing (D42). */
+async function answeredGoals(db: Db): Promise<TrackerIssue[]> {
+  return db
+    .select()
+    .from(t.trackerIssues)
+    .where(
+      and(
+        isNotNull(t.trackerIssues.mergeRequestedAt),
+        isNull(t.trackerIssues.landRunId),
+        isNull(t.trackerIssues.mergedAt),
+        isNotNull(t.trackerIssues.prNumber),
+      ),
+    );
 }
 
 /**
@@ -873,6 +1088,15 @@ export async function factoryTick(
   await attempt('Specs not closed', async () => {
     await closeSpecs(db);
   });
+  await attempt('Pull requests not checked', async () => {
+    await watchPulls(db);
+  });
+  for (const goal of await answeredGoals(db)) {
+    await attempt(`Merge not started for ${goal.identifier}`, async () => {
+      const run = await startLandRun(db, goal, enqueue);
+      if (run) started.push(`${goal.identifier} → ${run.displayId}`);
+    });
+  }
   await attempt('Worktrees not cleared', async () => {
     await clearWorktrees(db);
   });

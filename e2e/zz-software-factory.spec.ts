@@ -49,6 +49,11 @@ test('settings loads the software factory, and Home sends a task to its spec tem
     ],
     { cwd: repo },
   );
+  // A bare origin: the factory pushes goal branches there before opening pull requests (D42).
+  const origin = path.join(dir, `${path.basename(repo)}-origin.git`);
+  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
+  execFileSync('git', ['remote', 'add', 'origin', origin], { cwd: repo });
+  execFileSync('git', ['push', '-q', 'origin', 'main'], { cwd: repo });
   factoryRepo = path.basename(repo);
   const name = factoryRepo;
 
@@ -170,9 +175,24 @@ test('settings connects Linear, a passing spec is filed, Home approves it, its g
     /Filed 1 goal under MAG-\d+/,
   );
 
-  // The goal's turn (D40): Check now in Settings starts its build, which writes the tests, builds,
-  // runs, reviews and tries to break it, then puts the goal to the merge question.
+  // GitHub (D42): a refused token is named, a good one saved, the repository read back.
   await page.goto('/settings');
+  const github = page.getByRole('region', { name: 'GitHub' });
+  const token = github.getByLabel('Token');
+  await token.fill('ghp_bad_e2e');
+  await github.getByRole('button', { name: 'Save token' }).click();
+  await expect(token).toHaveAccessibleDescription(/did not accept the token/, { timeout: 15_000 });
+  await token.fill('ghp_e2e_9d1f');
+  await github.getByRole('button', { name: 'Save token' }).click();
+  await expect(github.getByText('ends in 9d1f')).toBeVisible({ timeout: 15_000 });
+  await github.getByLabel('Repository').fill('magpipe-e2e/app');
+  await github.getByRole('button', { name: 'Save and read back' }).click();
+  await expect(
+    github.getByText('Read back from GitHub: magpipe-e2e/app, default branch main.'),
+  ).toBeVisible({ timeout: 15_000 });
+
+  // The goal's turn (D40): Check now in Settings starts its build, which writes the tests, builds,
+  // runs, reviews and tries to break it, then pushes, opens the pull request and asks to merge.
   const linear = page.getByRole('region', { name: 'Linear' });
   await linear.getByRole('button', { name: 'Check now' }).click();
   const started = linear.getByText(/Started MAG-\d+ → flight_[0-9a-z]+/);
@@ -183,9 +203,28 @@ test('settings connects Linear, a passing spec is filed, Home approves it, its g
     timeout: 15_000,
   });
   await expect(page.getByText('done', { exact: true }).first()).toBeVisible({ timeout: 45_000 });
-  await expect(page.getByRole('region', { name: 'Linear issue' })).toContainText('merge question');
+  const goalBar = page.getByRole('region', { name: 'Linear issue' });
+  await expect(goalBar).toContainText('merge question');
+  await expect(goalBar.getByRole('link', { name: /PR #1/ })).toHaveAttribute(
+    'href',
+    'https://github.com/magpipe-e2e/app/pull/1',
+  );
   await expect(page.getByRole('region', { name: 'Result' })).toContainText(
-    'is ready to merge on magpipe/goal-1',
+    /asks to merge pull request #1/,
+  );
+
+  // Gate G2 from Magpipe: Merge lands it, bringing the branch up to date and testing it again.
+  await goalBar.getByRole('button', { name: 'Merge' }).click();
+  const landing = goalBar.getByRole('link', { name: /^flight_[0-9a-z]+$/ });
+  await expect(goalBar).toContainText('Merge: landing in');
+  await landing.click();
+  await expect(page.getByRole('heading', { level: 1, name: /^Land MAG-\d+/ })).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.getByText('done', { exact: true }).first()).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByRole('region', { name: 'Linear issue' })).toContainText(/Merged at/);
+  await expect(page.getByRole('region', { name: 'Result' })).toContainText(
+    /Merged MAG-\d+'s pull request #1/,
   );
 
   // Leave no tool card behind for a folder that is about to be deleted.

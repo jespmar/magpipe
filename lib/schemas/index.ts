@@ -107,7 +107,15 @@ export type Goal = z.infer<typeof goal>;
 export const MAX_GOALS = 12;
 
 /** What an action step does (D38); the engine runs it in `lib/engine/actions.ts`. */
-export const stepActions = ['file_issue', 'read_issue', 'file_goals', 'finish_goal'] as const;
+export const stepActions = [
+  'file_issue',
+  'read_issue',
+  'file_goals',
+  'finish_goal',
+  'open_pr',
+  'update_branch',
+  'merge_goal',
+] as const;
 export type StepAction = (typeof stepActions)[number];
 
 export const stepStatus = z.enum(['todo', 'live', 'done', 'failed', 'skipped']);
@@ -210,7 +218,7 @@ export const attachment = z.object({
 });
 
 /** The factory's templates (lib/factory.ts): a run from one starts with its preset plan. */
-export const runTemplates = ['spec', 'goals', 'build'] as const;
+export const runTemplates = ['spec', 'goals', 'build', 'land'] as const;
 export type RunTemplate = (typeof runTemplates)[number];
 
 export const runInput = z.object({
@@ -721,6 +729,18 @@ export const trackerIssue = z.object({
   goalsRunId: runId.nullable(),
   /** A goal's build run (D40); released when the goal goes to needs you, so it can build again. */
   buildRunId: runId.nullable(),
+  /** The goal's pull request (D42), once Magpipe has opened it. */
+  prNumber: z.number().int().positive().nullable(),
+  prUrl: z.string().nullable(),
+  /** When the operator answered yes to the merge question (G2), and through which door. */
+  mergeRequestedAt: z.date().nullable(),
+  mergeRequestedVia: z.enum(['magpipe', 'linear']).nullable(),
+  /** The land run that brings the branch up to date, re-tests and merges it (D42). */
+  landRunId: runId.nullable(),
+  /** When the pull request was merged, by Magpipe or on GitHub. Dependencies wait for this. */
+  mergedAt: z.date().nullable(),
+  /** What the operator said when sending the goal back from the merge question (D42). */
+  operatorNote: z.string().max(4000).nullable(),
   /** When gate G1 opened, and through which door. */
   approvedAt: z.date().nullable(),
   approvedVia: z.enum(['linear', 'magpipe']).nullable(),
@@ -768,3 +788,43 @@ export type PipelineStateMap = z.infer<typeof pipelineStateMap>;
 export type LinearMappingInput = z.infer<typeof linearMappingInput>;
 export type LinearKeyInput = z.infer<typeof linearKeyInput>;
 export type WatcherInput = z.infer<typeof watcherInput>;
+
+// ─── the forge (GitHub, D42) ───────────────────────────────────────────────
+
+export const mergeMethods = ['squash', 'merge', 'rebase'] as const;
+
+/** GitHub access for the factory (D42): one row, `github`. The token is a sealed secret. */
+export const forgeSettings = z.object({
+  id: z.literal('github'),
+  keyRef: z.string().nullable(),
+  keyHint: z.string().nullable(),
+  /** Who the token belongs to, as GitHub said when it was saved. */
+  viewer: z.string().nullable(),
+  /** The repository pull requests are opened on: `owner/name`. */
+  repo: z.string().nullable(),
+  mergeMethod: z.enum(mergeMethods),
+  updatedAt: z.date(),
+});
+export type ForgeSettings = z.infer<typeof forgeSettings>;
+
+/** Settings → GitHub: the token, pasted once. */
+export const forgeKeyInput = z.object({
+  key: z.string().trim().min(1, 'Paste a GitHub token.').max(500),
+});
+
+/** Settings → GitHub: the repository and how pull requests merge. */
+export const forgeRepoInput = z.object({
+  repo: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, 'Give the repository as owner/name.'),
+  mergeMethod: z.enum(mergeMethods),
+});
+
+/** The merge question answered no from Magpipe (D42): the note goes back to the Code Agent. */
+export const sendBackInput = z.object({
+  note: z.string().trim().min(1, 'Say what should change.').max(4000),
+});
+
+export type ForgeKeyInput = z.infer<typeof forgeKeyInput>;
+export type ForgeRepoInput = z.infer<typeof forgeRepoInput>;

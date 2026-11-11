@@ -78,6 +78,13 @@
       "when": 1794397700400,
       "tag": "0010_safe_riptide",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794399278915,
+      "tag": "0011_fresh_thena",
+      "breakpoints": true
     }
   ]
 }

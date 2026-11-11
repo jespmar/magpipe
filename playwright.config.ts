@@ -43,6 +43,7 @@ export default defineConfig({
       // No model credentials in CI: a scripted model lets a run go queued → running → done.
       MAGPIPE_MODEL_STUB: 'scripted',
       MAGPIPE_TRACKER_STUB: 'scripted',
+      MAGPIPE_FORGE_STUB: 'scripted',
     },
   },
 });

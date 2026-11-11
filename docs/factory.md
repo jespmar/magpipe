@@ -1,14 +1,15 @@
 # The software factory
 
-Status: phases 1 to 5 are built (D37 to D41 in `decisions.md`): the nine agents load from
+Status: phases 1 to 6 are built (D37 to D42 in `decisions.md`): the nine agents load from
 Settings, "Send to the factory" on Home runs the spec template, a spec that passes review is
 filed in Linear, gate G1 opens from Linear or from Magpipe, approval splits the spec into goals
-filed as sub-issues, and goals build side by side, each in its own worktree on its own branch,
-tests first, until they reach the merge question. The rest is design (D36). This document says
-what the factory is, what each agent produces, where the operator decides, what the engine must
-gain, and the order to build it in. It builds on the development flock (`flock.md`) and the
-engine work recorded in D25 to D35. `lib/factory.ts` mirrors
-[the roster](#the-roster-in-magpipe) and [the templates](#templates) below, and
+filed as sub-issues, goals build side by side in their own worktrees, tests first, a passing
+goal is pushed and opened as a pull request, and gate G2 answers the question to merge from
+Magpipe, Linear or GitHub before Magpipe brings the branch up to date, tests it again and merges.
+The rest is design (D36). This document says what the factory is, what each agent produces,
+where the operator decides, what the engine must gain, and the order to build it in. It builds on
+the development flock (`flock.md`) and the engine work recorded in D25 to D35. `lib/factory.ts`
+mirrors [the roster](#the-roster-in-magpipe) and [the templates](#templates) below, and
 `tests/factory.test.ts` fails when they drift.
 
 ## Goal
@@ -125,7 +126,7 @@ flock's plans, not these stages.
 | Code Agent   | `read`, `search`, `write`, `run`, `git_status`, `git_diff`, `git_log`, `git_branch`, `git_commit` |
 | Code Review  | `read`, `search`, `git_status`, `git_diff`, `git_log`                                             |
 | Code Skeptic | `read`, `search`, `write`, `run`, `git_status`, `git_diff`, `git_log`, `git_branch`, `git_commit` |
-| Merge Agent  | `read`, `search`, `git_status`, `git_diff`, `git_log`, `git_branch`                               |
+| Merge Agent  | `read`, `search`, `git_status`, `git_diff`, `git_log`                                             |
 
 ### Spec Builder
 
@@ -310,30 +311,30 @@ Finish with a line that reads exactly "Verdict: pass" (no objection) or "Verdict
 
 ### Merge Agent
 
-- **Role:** Lands the branch once the operator agrees
-- **Description:** Checks that the tests pass, the review approves and the skeptic has no objection,
-  then opens the pull request and asks the operator the question to merge. Merges only on their
-  answer. Never changes code.
+- **Role:** Checks the branch before it merges
+- **Description:** Checks, before a goal merges, that its branch is up to date with the default
+  branch, the tests passed after the update and the diff stays inside the goal. Magpipe merges only
+  on its pass and the operator’s answer. Never changes code, pushes or merges.
 
 ```text
-You land one goal's branch once the operator agrees. You never change code.
+You decide whether one goal's branch can land. You read; you never change code, push or merge: Magpipe merges when you pass it and the operator has said yes.
 
-1. Read the goal and the verdicts handed to you: the test runs, the review and the skeptic's result.
-2. Check with the git tools that the branch is the goal's, magpipe/<goal-slug>, that it has commits past the default branch, and that the work tree is clean.
-3. If any verdict is not a pass, stop and say which: a goal lands only when the tests pass, the review approves and the skeptic has no objection.
-4. Open the pull request and ask the question to merge only with the tools you are given. If you have no tool that pushes or opens a pull request, say so and stop.
-5. Never force, never push to the default branch, never merge without the operator's answer.
+1. Read the goal and the results handed to you: the branch brought up to date with the default branch, and the test run after it.
+2. Check with the git tools that the branch is the goal's, magpipe/<goal-slug>, that the work tree is clean, and that its diff against the default branch touches the goal's files and nothing it should not.
+3. Check that the test run after the update passed, and that no test file changed since the Test Agent's commit.
+4. If anything does not hold, say which and what would make it hold.
 
-Finish with: Branch, Verdicts (each with its result), Pull request (its link, or why there is none), Waiting for (what the operator must decide).
+Finish with a line that reads exactly "Verdict: pass" or "Verdict: fail", then Branch, Diff (the files and what changed), Tests, Blocking. Magpipe reads that line: only a pass merges the goal.
 ```
 
-No agent can push: the repository has no push operation yet (phase 6 adds `git_push` for the
-Merge Agent alone). The Test Agent, Code Review and Code Skeptic may send work back twice, the
-two reviewers once, as [When something goes wrong](#when-something-goes-wrong) sets out.
+No agent can push: the repository has no push operation. Magpipe pushes a goal's branch itself,
+only its own `magpipe/…` branch, to origin, never forced, and merges its pull request only after
+the operator's answer (D42). The Test Agent, Code Review and Code Skeptic may send work back to
+the build twice, the two reviewers once, as
+[When something goes wrong](#when-something-goes-wrong) sets out.
 
 The prompts follow the flock's pattern: what the agent never does, a numbered procedure, and the
-shape of its result. Phase 1 runs the first two; the other seven are loaded so their templates
-find them, and are tuned when those templates are built.
+shape of its result. Every judge ends with an exact verdict line that Magpipe reads.
 
 ## Templates
 
@@ -411,17 +412,40 @@ findings, and moving it back to approved builds it again. A build run that ends 
 reporting (cancelled, or stopped before its last step) is caught at the next check the same
 way. When every goal of a spec is done, the spec is done.
 
-| Step      | Agent        | Title                   | Depends on                       | Writes the document | Judges | When   | Instructions                                                                                                                                                                                                                                               |
-| --------- | ------------ | ----------------------- | -------------------------------- | ------------------- | ------ | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `read`    | Magpipe      | Read the goal           | none                             | yes                 | no     | always | Read the goal issue from Linear as it stands: what to build, the acceptance criteria it owns and the files it expects to touch.                                                                                                                            |
-| `tests`   | Test Agent   | Write the failing tests | `read`                           | no                  | no     | always | Your step is to write the tests. The goal's branch is {branch}: create it from the default branch if it does not exist. Write tests that pin each acceptance criterion of the goal, run them to see them fail for the right reason, and commit them alone. |
-| `build`   | Code Agent   | Build the goal          | `read`, `tests`                  | no                  | no     | always | Build the goal on {branch} until the tests the Test Agent committed pass, without changing them. When findings are given, fix what they name.                                                                                                              |
-| `run`     | Test Agent   | Run the tests           | `build`                          | no                  | yes    | always | Your step is to run the tests after the build, on {branch}. Run the scripts the operator allowed, check with git_diff against your own commit that no test file changed, and give the verdict. Send it back with the failures if it does not pass.         |
-| `review`  | Code Review  | Review the code         | `read`, `build`, `run`           | no                  | yes    | always | Review the diff of {branch} against the default branch, with the test results, against the goal. Give the verdict, and send it back with the blocking findings if it does not pass.                                                                        |
-| `skeptic` | Code Skeptic | Try to break it         | `read`, `build`, `run`, `review` | no                  | yes    | always | Try to break the code on {branch} with one test file. Commit a test only when it fails on the branch, send it back with it, and give the verdict.                                                                                                          |
-| `finish`  | Magpipe      | Report on the goal      | `run`, `review`, `skeptic`       | no                  | no     | always | When every judge passed, move the goal to the merge question with its branch named; otherwise move it to needs you with the findings. Runs however the steps before it ended.                                                                              |
+| Step      | Agent        | Title                   | Depends on                         | Writes the document | Judges | When             | Instructions                                                                                                                                                                                                                                               |
+| --------- | ------------ | ----------------------- | ---------------------------------- | ------------------- | ------ | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `read`    | Magpipe      | Read the goal           | none                               | yes                 | no     | always           | Read the goal issue from Linear as it stands: what to build, the acceptance criteria it owns and the files it expects to touch.                                                                                                                            |
+| `tests`   | Test Agent   | Write the failing tests | `read`                             | no                  | no     | always           | Your step is to write the tests. The goal's branch is {branch}: create it from the default branch if it does not exist. Write tests that pin each acceptance criterion of the goal, run them to see them fail for the right reason, and commit them alone. |
+| `build`   | Code Agent   | Build the goal          | `read`, `tests`                    | no                  | no     | always           | Build the goal on {branch} until the tests the Test Agent committed pass, without changing them. When findings are given, fix what they name.                                                                                                              |
+| `run`     | Test Agent   | Run the tests           | `build`                            | no                  | yes    | always           | Your step is to run the tests after the build, on {branch}. Run the scripts the operator allowed, check with git_diff against your own commit that no test file changed, and give the verdict. Send it back with the failures if it does not pass.         |
+| `review`  | Code Review  | Review the code         | `read`, `build`, `run`             | no                  | yes    | always           | Review the diff of {branch} against the default branch, with the test results, against the goal. Give the verdict, and send it back with the blocking findings if it does not pass.                                                                        |
+| `skeptic` | Code Skeptic | Try to break it         | `read`, `build`, `run`, `review`   | no                  | yes    | always           | Try to break the code on {branch} with one test file. Commit a test only when it fails on the branch, send it back with it, and give the verdict.                                                                                                          |
+| `pr`      | Magpipe      | Open the pull request   | `read`, `run`, `review`, `skeptic` | no                  | no     | GitHub is set up | When every judge passed, push {branch} to origin, never forced, and open its pull request against the default branch.                                                                                                                                      |
+| `finish`  | Magpipe      | Report on the goal      | `run`, `review`, `skeptic`, `pr`   | no                  | no     | always           | When every judge passed, move the goal to the merge question with its pull request or branch named; otherwise move it to needs you with the findings. Runs however the steps before it ended.                                                              |
 
 The hand-over step is titled "Hand over the goal".
+
+### Land
+
+Started by Magpipe when the merge question is answered yes (D42), as a follow-up of the goal's
+build run, in the goal's worktree. The branch is brought up to date by merging the default
+branch into it (a merge rather than a rebase, so the push is never forced) and pushed; a
+conflict stops the land. The Test Agent runs the tests again on the result, the Merge Agent
+checks the branch can land, and neither has anything to send back. The last step runs however
+the steps before it ended: when everything passed it merges the pull request the way Settings
+says and moves the goal to done, which lets the goals that wait for it start; otherwise the goal
+moves to needs you with the reason, its pull request stays open, and moving it back to approved
+builds it again.
+
+| Step     | Agent       | Title                       | Depends on               | Writes the document | Judges | When   | Instructions                                                                                                                                                                                                                                                                                    |
+| -------- | ----------- | --------------------------- | ------------------------ | ------------------- | ------ | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `read`   | Magpipe     | Read the goal               | none                     | yes                 | no     | always | Read the goal issue from Linear as it stands: what was built and the acceptance criteria it owns.                                                                                                                                                                                               |
+| `update` | Magpipe     | Bring the branch up to date | `read`                   | no                  | no     | always | Merge the default branch into {branch} (no rebase, so nothing is forced) and push it. A conflict stops the land.                                                                                                                                                                                |
+| `run`    | Test Agent  | Run the tests again         | `update`                 | no                  | yes    | always | Your step is to run the tests after the build, on {branch}, now brought up to date with the default branch. Run the scripts the operator allowed, check with git_diff that no test file changed since your commit, and give the verdict. There is nothing to send back: a fail stops the merge. |
+| `check`  | Merge Agent | Check it can land           | `read`, `update`, `run`  | no                  | yes    | always | Check {branch} can land: it is the goal's branch, up to date with the default branch, its diff stays inside the goal, the work tree is clean and the tests passed after the update. Give the verdict.                                                                                           |
+| `land`   | Magpipe     | Merge the pull request      | `update`, `run`, `check` | no                  | no     | always | When the branch updated cleanly and every judge passed, merge the pull request and move the goal to done; otherwise move it to needs you with the reason. Runs however the steps before it ended.                                                                                               |
+
+The hand-over step is titled "Hand over the merge".
 
 ## The two gates
 
@@ -483,16 +507,16 @@ sub-issues with their dependencies as Linear relations, and approval starting th
 (`always`), judges that name where they send work back (`sendBackTo`), agent work skipped after
 a judge says fail, and the factory's tick after each check that starts the next goal, catches
 build runs that ended without reporting and closes finished specs (D40). Phase 5 added a git worktree per goal under the data folder, repository tools and write
-locks that follow a run's worktree, and the run limit as a setting (D41).
+locks that follow a run's worktree, and the run limit as a setting (D41). Phase 6 added the GitHub seam
+(`lib/forge`) and its Settings section, Magpipe's guarded push and branch update, the pull
+request step, the land template, and the merge question's three doors (D42).
 
 Needed, smallest first:
 
-| Need                       | Why                                                                 | Shape                                                                                                                                                                                      |
-| -------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Push, as a typed operation | No agent can push today                                             | `git_push`: only the run's own `magpipe/…` branch, to `origin`, never forced, never the default branch. Granted to the Merge Agent alone.                                                  |
-| Pull requests and merging  | The Merge Agent must open, watch and merge                          | GitHub's MCP server with a token that can write pull requests, and only the pull request tools ticked for the Merge Agent.                                                                 |
-| A protected-paths check    | The Code Agent must not weaken the tests                            | First as evidence (the diff check in stage 7); later as a guard on `write` for a step.                                                                                                     |
-| The factory screen         | The operator needs the pipeline at a glance and both gates in reach | A board of issues by stage, each goal with its branch, results and verdicts from the recorded work, and the two buttons. Home's prompt has "Send to the factory" beside Run since phase 1. |
+| Need                    | Why                                                                 | Shape                                                                                                                                                                                      |
+| ----------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| A protected-paths check | The Code Agent must not weaken the tests                            | First as evidence (the diff check in stage 7); later as a guard on `write` for a step.                                                                                                     |
+| The factory screen      | The operator needs the pipeline at a glance and both gates in reach | A board of issues by stage, each goal with its branch, results and verdicts from the recorded work, and the two buttons. Home's prompt has "Send to the factory" beside Run since phase 1. |
 
 ## Build order
 
@@ -511,8 +535,9 @@ Each phase is one pull request, useful on its own, and testable with the scripte
    at a time.
 5. **Worktrees and parallel goals.** Built (D41). A worktree per goal, the run limit as a
    setting, goals in dependency order.
-6. **Pull requests and the merge question.** `git_push`, the Merge Agent, gate G2 from all
-   three doors, rebase and re-test before each merge.
+6. **Pull requests and the merge question.** Built (D42). Magpipe's guarded push, the Merge
+   Agent, gate G2 from all three doors, the branch brought up to date and re-tested before each
+   merge.
 7. **The factory screen.** The board, replacing the lists phases 1 to 6 get by with.
 8. **Earning unattended merges.** A rule the operator sets (for example: a label, every script
    green, no finding, the skeptic silent) under which G2 answers itself. Its own decision.

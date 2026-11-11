@@ -157,3 +157,83 @@ export async function removeWorktree(dir: string): Promise<'removed' | 'kept' | 
   const res = await git(root, ['worktree', 'remove', dir]);
   return res.code === 0 ? 'removed' : 'kept';
 }
+
+// ─── landing a goal (D42) ──────────────────────────────────────────────────
+
+/** A merge commit needs an identity: the repository's own, else Magpipe's. */
+async function identity(dir: string): Promise<string[]> {
+  const email = await git(dir, ['config', 'user.email']);
+  return email.code === 0 && email.out
+    ? []
+    : ['-c', 'user.name=Magpipe', '-c', 'user.email=magpipe@localhost'];
+}
+
+async function currentBranch(dir: string): Promise<string | null> {
+  const head = await git(dir, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
+  return head.code === 0 ? head.out : null;
+}
+
+async function hasOrigin(dir: string): Promise<boolean> {
+  return (await git(dir, ['remote', 'get-url', 'origin'])).code === 0;
+}
+
+/**
+ * Pushes a goal's branch to `origin` (D42): Magpipe's own push, with the guards the design set.
+ * Only a `magpipe/…` branch, only the one the worktree has checked out, never the base branch,
+ * never forced: a push that is not a fast-forward is refused by git and reported.
+ */
+export async function pushBranch(dir: string, branch: string): Promise<void> {
+  if (!/^magpipe\/[A-Za-z0-9._/-]+$/.test(branch)) {
+    throw new WorktreeError(`Magpipe pushes only its own magpipe/ branches, not ${branch}.`);
+  }
+  if ((await currentBranch(dir)) !== branch) {
+    throw new WorktreeError(`The worktree is not on ${branch}, so nothing was pushed.`);
+  }
+  const common = await git(dir, ['rev-parse', '--git-common-dir']);
+  const root = path.dirname(path.resolve(dir, common.out));
+  if (branch === (await baseBranch(root))) {
+    throw new WorktreeError(`${branch} is the default branch; Magpipe never pushes to it.`);
+  }
+  if (!(await hasOrigin(dir))) throw new WorktreeError('The repository has no origin to push to.');
+  const res = await git(dir, ['push', '--set-upstream', 'origin', `${branch}:${branch}`]);
+  if (res.code !== 0) throw new WorktreeError(`git push refused ${branch}: ${res.out}`);
+}
+
+export type BranchUpdate =
+  { ok: true; changed: boolean; base: string } | { ok: false; conflicts: string[]; base: string };
+
+/**
+ * Brings a goal's branch up to date with its base before it merges (D42): fetches the base from
+ * `origin` and merges it into the branch. A merge, not a rebase, so the push that follows is a
+ * fast-forward and nothing is ever forced. A conflict is aborted and the files are named; the
+ * branch is left as it was.
+ */
+export async function updateBranch(dir: string, base: string): Promise<BranchUpdate> {
+  const dirty = await git(dir, ['status', '--porcelain', '--untracked-files=no']);
+  if (dirty.out) {
+    throw new WorktreeError('The worktree has uncommitted changes, so the branch was not updated.');
+  }
+  let ref = base;
+  if (await hasOrigin(dir)) {
+    const fetched = await git(dir, ['fetch', 'origin', base]);
+    if (fetched.code !== 0) throw new WorktreeError(`git fetch failed: ${fetched.out}`);
+    ref = `origin/${base}`;
+  }
+  const before = await git(dir, ['rev-parse', 'HEAD']);
+  const merged = await git(dir, [...(await identity(dir)), 'merge', '--no-edit', ref]);
+  if (merged.code !== 0) {
+    const conflicts = (await git(dir, ['diff', '--name-only', '--diff-filter=U'])).out
+      .split('\n')
+      .filter(Boolean);
+    await git(dir, ['merge', '--abort']);
+    return { ok: false, conflicts, base };
+  }
+  const after = await git(dir, ['rev-parse', 'HEAD']);
+  return { ok: true, changed: before.out !== after.out, base };
+}
+
+/** The `origin` remote's URL of a folder's repository, or null. */
+export async function originUrl(dir: string): Promise<string | null> {
+  const res = await git(dir, ['remote', 'get-url', 'origin']);
+  return res.code === 0 && res.out ? res.out : null;
+}

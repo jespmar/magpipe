@@ -409,7 +409,9 @@ export class Engine {
             const remaining = agent.sendBackRounds - ((step.round ?? 1) - 1);
             // In a template only a judging step sends back (D40): the Test Agent writing tests
             // never returns them to the goal it was given.
-            const mayJudge = step.judges === true || !run!.input.template;
+            // An empty `sendBackTo` means the judge has nothing to send back (a land, D42).
+            const mayJudge =
+              (step.judges === true || !run!.input.template) && step.sendBackTo?.length !== 0;
             const sendBack: { remaining: number; findings?: string } | undefined =
               remaining > 0 && mayJudge ? { remaining } : undefined;
             // A step that splits a spec records goals against the spec's numbered criteria (D39).
