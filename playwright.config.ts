@@ -9,6 +9,9 @@ export default defineConfig({
   workers: 1,
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? 'github' : 'list',
+  // The suite runs against `next dev`, which compiles a route on its first request; the factory
+  // routes pull in the engine, and that first compile can pass the default 5 s on a busy machine.
+  expect: { timeout: 10_000 },
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,
     trace: 'off',

@@ -130,12 +130,39 @@ export const LIVE: ReadonlySet<RunStatus> = new Set(['queued', 'running']);
  * further back, such as the Planner, keep their result. The merge never reopens.
  */
 export function sendBackSet(
-  plan: readonly Pick<Step, 'id' | 'dependsOn'>[],
+  plan: readonly Pick<Step, 'id' | 'dependsOn' | 'sendBackTo'>[],
   reviewerId: string,
 ): Set<string> {
   const byId = new Map(plan.map((s) => [s.id, s]));
   const reviewer = byId.get(reviewerId);
   if (!reviewer) return new Set();
+  // A step that names its targets (D40) reopens only them and what lies between them and it,
+  // so a judge in the build never sends the tests back.
+  if (reviewer.sendBackTo?.length) {
+    const ancestors = new Set<string>();
+    const up = [...reviewer.dependsOn];
+    while (up.length > 0) {
+      const id = up.pop()!;
+      if (ancestors.has(id)) continue;
+      ancestors.add(id);
+      up.push(...(byId.get(id)?.dependsOn ?? []));
+    }
+    const targets = reviewer.sendBackTo.filter((id) => ancestors.has(id));
+    const below = new Set<string>(targets);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const s of plan) {
+        if (!below.has(s.id) && s.dependsOn.some((d) => below.has(d))) {
+          below.add(s.id);
+          grew = true;
+        }
+      }
+    }
+    const out = new Set<string>([reviewerId]);
+    for (const id of below) if (ancestors.has(id)) out.add(id);
+    return out;
+  }
   // Everything the reviewer depends on, directly or not.
   const ancestors = new Set<string>();
   const up = [...reviewer.dependsOn];

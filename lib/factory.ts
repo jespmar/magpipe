@@ -29,10 +29,19 @@ import {
 } from './roster';
 import type { Run, RunTemplate, Step, StepAction, TrackerIssue } from './schemas';
 import { createRun } from './runs';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import * as t from './db/schema';
-import { claimGoalsRun, getIssue } from './tracker/issues';
-import { getLinearSettings, linearReady } from './tracker';
+import {
+  approvedWithoutGoals,
+  claimBuildRun,
+  claimGoalsRun,
+  getIssue,
+  goalIssues,
+  recordState,
+  releaseBuildRun,
+} from './tracker/issues';
+import { goalBranch } from './engine/actions';
+import { getLinearSettings, getTracker, linearReady } from './tracker';
 
 export { parseScripts, RosterValidationError as FactoryValidationError } from './roster';
 
@@ -204,7 +213,7 @@ When your step is to run the tests after the build:
 2. Compare the test files with your own commit using git_diff, and say whether any were changed, deleted or skipped since.
 3. If a script fails or a test file was changed, and the send_back tool is offered, call it with the failures: the code is built again and you run the tests once more.
 
-Finish with: Branch, Tests (each file and the criteria it pins), Runs (each script and its exit), Test files changed since my commit (yes or no, and which).`,
+Finish with: Branch, Tests (each file and the criteria it pins), Runs (each script and its exit), Test files changed since my commit (yes or no, and which). When your step is to run the tests, start your result with a line that reads exactly "Verdict: pass" (every script exits 0 and no test file changed) or "Verdict: fail". Magpipe reads that line: only a pass lets the goal go on.`,
   },
   {
     slug: 'code-agent',
@@ -258,7 +267,7 @@ Finish with: Branch, Commits (one line each), Files changed, Checks (each script
 6. If there are blocking findings and the send_back tool is offered, call it with them: the code is built again and you review once more.
 7. Finish your step even when the verdict is changes requested. The verdict is your result, not a failure.
 
-Finish with: Verdict (approve or changes requested), Blocking, Should fix, Notes, Criteria not met.`,
+Finish with a line that reads exactly "Verdict: pass" (approve) or "Verdict: fail" (changes requested), then Blocking, Should fix, Notes, Criteria not met. Magpipe reads that line: only a pass lets the goal go on.`,
   },
   {
     slug: 'code-skeptic',
@@ -284,7 +293,7 @@ Finish with: Verdict (approve or changes requested), Blocking, Should fix, Notes
 5. If no case fails, you have no objection: commit nothing, and name the file you wrote so it can be removed.
 6. Never edit the code or the other tests. Never push, never merge.
 
-Finish with: Objection (yes or no), Test file, Failing cases, What I tried.`,
+Finish with a line that reads exactly "Verdict: pass" (no objection) or "Verdict: fail" (a test you committed fails on the branch), then Test file, Failing cases, What I tried. Magpipe reads that line: only a pass lets the goal go on.`,
   },
   {
     slug: 'merge-agent',
@@ -330,6 +339,10 @@ export type TemplateStep = {
   recordsGoals?: boolean;
   /** A failure costs only this step's work, not the run (D38): the answer says what failed. */
   optional?: boolean;
+  /** The step runs once everything before it settled, failures included (a finish, D40). */
+  always?: boolean;
+  /** Where a judging step sends work back (D40): the build, never the tests. */
+  sendBackTo?: string[];
 } & (
   | { /** The agent's slug. */ agent: string; action?: never; when?: never }
   | {
@@ -431,6 +444,78 @@ export const FACTORY_TEMPLATES = {
       },
     ],
   },
+  build: {
+    id: 'build',
+    name: 'Build',
+    needsLinear: true,
+    handOver: 'Hand over the goal',
+    steps: [
+      {
+        id: 'read',
+        action: 'read_issue',
+        title: 'Read the goal',
+        instructions:
+          'Read the goal issue from Linear as it stands: what to build, the acceptance criteria it owns and the files it expects to touch.',
+        dependsOn: [],
+        writesDocument: true,
+      },
+      {
+        id: 'tests',
+        agent: 'test-agent',
+        title: 'Write the failing tests',
+        instructions:
+          "Your step is to write the tests. The goal's branch is {branch}: create it from the default branch if it does not exist. Write tests that pin each acceptance criterion of the goal, run them to see them fail for the right reason, and commit them alone.",
+        dependsOn: ['read'],
+      },
+      {
+        id: 'build',
+        agent: 'code-agent',
+        title: 'Build the goal',
+        instructions:
+          'Build the goal on {branch} until the tests the Test Agent committed pass, without changing them. When findings are given, fix what they name.',
+        dependsOn: ['read', 'tests'],
+      },
+      {
+        id: 'run',
+        agent: 'test-agent',
+        title: 'Run the tests',
+        instructions:
+          'Your step is to run the tests after the build, on {branch}. Run the scripts the operator allowed, check with git_diff against your own commit that no test file changed, and give the verdict. Send it back with the failures if it does not pass.',
+        dependsOn: ['build'],
+        judges: true,
+        sendBackTo: ['build'],
+      },
+      {
+        id: 'review',
+        agent: 'code-review',
+        title: 'Review the code',
+        instructions:
+          'Review the diff of {branch} against the default branch, with the test results, against the goal. Give the verdict, and send it back with the blocking findings if it does not pass.',
+        dependsOn: ['read', 'build', 'run'],
+        judges: true,
+        sendBackTo: ['build'],
+      },
+      {
+        id: 'skeptic',
+        agent: 'code-skeptic',
+        title: 'Try to break it',
+        instructions:
+          'Try to break the code on {branch} with one test file. Commit a test only when it fails on the branch, send it back with it, and give the verdict.',
+        dependsOn: ['read', 'build', 'run', 'review'],
+        judges: true,
+        sendBackTo: ['build'],
+      },
+      {
+        id: 'finish',
+        action: 'finish_goal',
+        title: 'Report on the goal',
+        instructions:
+          'When every judge passed, move the goal to the merge question with its branch named; otherwise move it to needs you with the findings. Runs however the steps before it ended.',
+        dependsOn: ['run', 'review', 'skeptic'],
+        always: true,
+      },
+    ],
+  },
 } satisfies Record<RunTemplate, FactoryTemplate>;
 
 export type TemplateId = RunTemplate;
@@ -457,8 +542,11 @@ export async function missingAgents(db: Db, id: TemplateId): Promise<string[]> {
 export async function templatePlan(
   db: Db,
   id: TemplateId,
-  opts: { draft?: string } = {},
+  opts: { draft?: string; vars?: Record<string, string> } = {},
 ): Promise<{ plan: Step[]; text: string }> {
+  // `{branch}` and the like in a step's instructions, filled for this run.
+  const fill = (text: string) =>
+    text.replace(/\{(\w+)\}/g, (whole, key: string) => opts.vars?.[key] ?? whole);
   const agents = await listAgents(db);
   const template: FactoryTemplate = FACTORY_TEMPLATES[id];
   const missing = await missingAgents(db, id);
@@ -486,10 +574,12 @@ export async function templatePlan(
       id: s.id,
       agentId: s.agent ? agents.find((a) => a.slug === s.agent)!.id : null,
       title: s.title,
-      instructions: s.instructions,
+      instructions: fill(s.instructions),
       dependsOn: s.dependsOn,
       status: 'todo',
       ...(s.action ? { action: s.action } : {}),
+      ...(s.always ? { always: true } : {}),
+      ...(s.sendBackTo ? { sendBackTo: s.sendBackTo } : {}),
       // A filing step may fail (Linear out of reach) without costing the spec or the goals.
       ...(s.optional ? { optional: true } : {}),
       ...(s.writesDocument ? { writesDocument: true } : {}),
@@ -564,9 +654,178 @@ export async function startGoalsRun(
     enqueue(run.id);
     return run;
   };
+  return serialised(start);
+}
+
+/** Starts are serialised: the watcher, Approve and Check now never start the same run twice. */
+function serialised<T>(start: () => Promise<T>): Promise<T> {
   const next = (g.__magpipeGoalsStart ?? Promise.resolve()).catch(() => undefined).then(start);
   g.__magpipeGoalsStart = next;
   return next;
+}
+
+/**
+ * Starts the build run for one goal (D40), once: on its branch `magpipe/<key>`, as a follow-up of
+ * the goals run that filed it. The caller has checked that it is the goal's turn.
+ */
+export async function startBuildRun(
+  db: Db,
+  issue: Pick<TrackerIssue, 'id'>,
+  enqueue: (runId: string) => void,
+): Promise<Run | null> {
+  return serialised(async () => {
+    const current = await getIssue(db, issue.id);
+    if (!current || !current.goal || current.buildRunId || current.stage !== 'approved') {
+      return null;
+    }
+    const preset = await templatePlan(db, 'build', { vars: { branch: goalBranch(current) } });
+    const run = await createRun(
+      db,
+      {
+        text: `Build ${current.identifier}: ${current.title}`,
+        attachments: [],
+        template: 'build',
+        issueId: current.id,
+      },
+      current.runId,
+      { ...preset, createdBy: 'factory' },
+    );
+    if (!(await claimBuildRun(db, current.id, run.id))) {
+      await db
+        .update(t.runs)
+        .set({ status: 'cancelled', finishedAt: new Date() })
+        .where(eq(t.runs.id, run.id));
+      return null;
+    }
+    enqueue(run.id);
+    return run;
+  });
+}
+
+const ACTIVE: ReadonlySet<string> = new Set(['queued', 'running', 'waiting']);
+
+/**
+ * The goal whose turn it is (D40): one build at a time in phase 4, so none while a build run is
+ * active; otherwise the oldest approved goal not yet built whose dependencies are all done.
+ */
+export async function nextGoal(db: Db): Promise<TrackerIssue | null> {
+  const goals = await db.select().from(t.trackerIssues).where(isNotNull(t.trackerIssues.goal));
+  const runIds = goals.flatMap((g) => (g.buildRunId ? [g.buildRunId] : []));
+  const runs = runIds.length
+    ? await db
+        .select({ id: t.runs.id, status: t.runs.status })
+        .from(t.runs)
+        .where(inArray(t.runs.id, runIds))
+    : [];
+  if (runs.some((r) => ACTIVE.has(r.status))) return null;
+  const ready = goals
+    .filter((g) => g.stage === 'approved' && !g.buildRunId)
+    .filter((g) =>
+      g.goal!.dependsOn.every((key) =>
+        goals.some((o) => o.parentId === g.parentId && o.goal?.key === key && o.stage === 'done'),
+      ),
+    )
+    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  return ready[0] ?? null;
+}
+
+/**
+ * Build runs that ended without reporting (cancelled, or failed before their finish step could
+ * run): the goal moves to needs you with what happened, and is released to build again.
+ */
+async function reconcileBuilds(db: Db): Promise<string[]> {
+  const goals = await db
+    .select()
+    .from(t.trackerIssues)
+    .where(and(isNotNull(t.trackerIssues.buildRunId), eq(t.trackerIssues.stage, 'approved')));
+  if (goals.length === 0) return [];
+  const settings = await getLinearSettings(db);
+  const tracker = await getTracker(db, settings);
+  const out: string[] = [];
+  for (const goal of goals) {
+    const [run] = await db.select().from(t.runs).where(eq(t.runs.id, goal.buildRunId!));
+    if (!run || ACTIVE.has(run.status)) continue;
+    const finish = run.plan.find((s) => s.action === 'finish_goal');
+    if (finish?.status === 'done') continue;
+    const failed = run.plan.find((s) => s.status === 'failed');
+    const why =
+      run.status === 'cancelled'
+        ? `${run.displayId} was cancelled`
+        : `${run.displayId} ended before it could report${failed ? `: “${failed.title}” failed, ${failed.error?.message ?? ''}` : ''}`;
+    await tracker.comment(
+      goal.externalId,
+      `Not ready: ${why}. Move this issue back to ${settings.states.approved!.name} to build it again.`,
+    );
+    const moved = await tracker.setState(goal.externalId, settings.states.needs_you!.id);
+    await recordState(db, goal.id, settings, moved);
+    await releaseBuildRun(db, goal.id);
+    out.push(`${goal.identifier} needs you: ${why}.`);
+  }
+  return out;
+}
+
+/** A spec whose goals are all done is done (D40). */
+async function closeSpecs(db: Db): Promise<string[]> {
+  const specs = await db
+    .select()
+    .from(t.trackerIssues)
+    .where(and(eq(t.trackerIssues.stage, 'building'), isNull(t.trackerIssues.parentId)));
+  const out: string[] = [];
+  for (const spec of specs) {
+    const goals = await goalIssues(db, spec.id);
+    if (goals.length === 0 || goals.some((g) => g.stage !== 'done')) continue;
+    const settings = await getLinearSettings(db);
+    const tracker = await getTracker(db, settings);
+    await tracker.comment(
+      spec.externalId,
+      `Every goal is done: ${goals.map((g) => g.identifier).join(', ')}.`,
+    );
+    const moved = await tracker.setState(spec.externalId, settings.states.done!.id);
+    await recordState(db, spec.id, settings, moved);
+    out.push(`${spec.identifier} is done.`);
+  }
+  return out;
+}
+
+/**
+ * What the factory does after each Linear check (D39, D40): approved specs start their goals
+ * run; build runs that ended without reporting move their goal to needs you; specs whose goals
+ * are all done close; and the next goal whose turn it is starts its build. Problems are
+ * returned for Settings rather than thrown, so one stuck issue never stops the rest.
+ */
+export async function factoryTick(
+  db: Db,
+  enqueue: (runId: string) => void,
+): Promise<{ started: string[]; problems: string[] }> {
+  const started: string[] = [];
+  const problems: string[] = [];
+  const attempt = async (what: string, fn: () => Promise<void>) => {
+    try {
+      await fn();
+    } catch (err) {
+      problems.push(`${what}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+  for (const issue of await approvedWithoutGoals(db)) {
+    await attempt(`Goals not started for ${issue.identifier}`, async () => {
+      const run = await startGoalsRun(db, issue, enqueue);
+      if (run) started.push(`${issue.identifier} → ${run.displayId}`);
+    });
+  }
+  await attempt('Builds not reconciled', async () => {
+    await reconcileBuilds(db);
+  });
+  await attempt('Specs not closed', async () => {
+    await closeSpecs(db);
+  });
+  const goal = await nextGoal(db);
+  if (goal) {
+    await attempt(`Build not started for ${goal.identifier}`, async () => {
+      const run = await startBuildRun(db, goal, enqueue);
+      if (run) started.push(`${goal.identifier} → ${run.displayId}`);
+    });
+  }
+  return { started, problems };
 }
 
 /** The document a finished run handed over, for a follow-up to revise. */

@@ -107,6 +107,7 @@ export async function recordFiledIssue(
     externalParentId: remote.parentId,
     goal: opts.goal ?? null,
     goalsRunId: null,
+    buildRunId: null,
     approvedAt: null,
     approvedVia: null,
     createdAt: now,
@@ -163,6 +164,24 @@ export async function releaseGoalsRun(db: Db, id: string): Promise<void> {
   await db
     .update(t.trackerIssues)
     .set({ goalsRunId: null, updatedAt: new Date() })
+    .where(eq(t.trackerIssues.id, id));
+}
+
+/** Marks the build run a goal started, once: false when another start got there first (D40). */
+export async function claimBuildRun(db: Db, id: string, runId: string): Promise<boolean> {
+  const rows = await db
+    .update(t.trackerIssues)
+    .set({ buildRunId: runId, updatedAt: new Date() })
+    .where(and(eq(t.trackerIssues.id, id), isNull(t.trackerIssues.buildRunId)))
+    .returning({ id: t.trackerIssues.id });
+  return rows.length > 0;
+}
+
+/** Lets a goal build again: it went to needs you, and moving it back to approved rebuilds it. */
+export async function releaseBuildRun(db: Db, id: string): Promise<void> {
+  await db
+    .update(t.trackerIssues)
+    .set({ buildRunId: null, updatedAt: new Date() })
     .where(eq(t.trackerIssues.id, id));
 }
 
@@ -236,11 +255,12 @@ export type CheckResult =
   | { status: 'error'; message: string };
 
 /**
- * What happens when a spec issue is approved and has no goals run yet (D39): the factory starts
- * one. Injected, so the tracker does not depend on the engine; it may throw to say why it could
- * not start, and the check records that as its error.
+ * What the factory does after each check (D39, D40): start the runs the issues now call for and
+ * reconcile the ones that ended. Injected, so the tracker does not depend on the engine. It
+ * returns what it started (`MAG-1 → flight_7`) and the problems that kept something from
+ * starting, which the check records as its error.
  */
-export type OnApproved = (db: Db, issue: TrackerIssue) => Promise<{ displayId: string } | null>;
+export type AfterCheck = (db: Db) => Promise<{ started: string[]; problems: string[] }>;
 
 /** How far back a check reaches past the last one, for clocks that disagree a little. */
 const OVERLAP_MS = 2 * 60_000;
@@ -258,7 +278,7 @@ const g = globalThis as unknown as {
  */
 export async function checkLinear(
   db: Db,
-  opts: { force?: boolean; onApproved?: OnApproved } = {},
+  opts: { force?: boolean; afterCheck?: AfterCheck } = {},
 ): Promise<CheckResult> {
   if (g.__magpipeCheck) return { status: 'skipped', reason: 'busy' };
   const run = (async (): Promise<CheckResult> => {
@@ -278,25 +298,11 @@ export async function checkLinear(
       });
       let changed = 0;
       for (const r of remote) if (await applyRemote(db, settings, r)) changed++;
-      // Every approved spec without a goals run gets one, including approvals from before.
-      const started: string[] = [];
-      const blocked: string[] = [];
-      if (opts.onApproved) {
-        for (const issue of await approvedWithoutGoals(db)) {
-          try {
-            const run = await opts.onApproved(db, issue);
-            if (run) started.push(`${issue.identifier} → ${run.displayId}`);
-          } catch (err) {
-            blocked.push(
-              `${issue.identifier}: ${err instanceof Error ? err.message : String(err)}`,
-            );
-          }
-        }
-      }
+      const { started, problems } = opts.afterCheck
+        ? await opts.afterCheck(db)
+        : { started: [], problems: [] };
       await recordCheck(db, { at, issues: remote.length, changed });
-      if (blocked.length) {
-        await recordCheck(db, { error: `Goals not started for ${blocked.join('; ')}` });
-      }
+      if (problems.length) await recordCheck(db, { error: problems.join(' ') });
       return { status: 'done', issues: remote.length, changed, started };
     } catch (err) {
       const message = trackerMessage(err);
@@ -341,6 +347,7 @@ async function applyRemote(db: Db, settings: LinearSettings, r: RemoteIssue): Pr
       externalParentId: r.parentId,
       goal: null,
       goalsRunId: null,
+      buildRunId: null,
       approvedAt: stage === 'approved' ? now : null,
       approvedVia: stage === 'approved' ? 'linear' : null,
       createdAt: now,
@@ -383,7 +390,7 @@ async function applyRemote(db: Db, settings: LinearSettings, r: RemoteIssue): Pr
  */
 export function scheduleWatcher(
   getDb: () => Promise<Db>,
-  onApproved?: OnApproved,
+  afterCheck?: AfterCheck,
   firstDelayMs = 5_000,
 ): void {
   if (g.__magpipeWatcher) return;
@@ -392,7 +399,7 @@ export function scheduleWatcher(
     try {
       const db = await getDb();
       delay = (await getLinearSettings(db)).pollSeconds * 1000;
-      const result = await checkLinear(db, { onApproved });
+      const result = await checkLinear(db, { afterCheck });
       if (result.status === 'error') console.warn(`[watcher] ${result.message}`);
     } catch (err) {
       console.warn('[watcher] check failed:', err);

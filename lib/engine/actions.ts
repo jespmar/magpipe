@@ -7,12 +7,14 @@
 import type { Db } from '../db';
 import { getLinearSettings, getTracker, linearReady } from '../tracker';
 import { acceptanceCriteria, type Criterion } from '../goals';
+import { workFacts } from '../work';
 import {
   getIssue,
   goalIssues,
   issueForRun,
   recordFiledIssue,
   recordState,
+  releaseBuildRun,
   releaseGoalsRun,
   relinkIssue,
   threadIssue,
@@ -72,7 +74,88 @@ export async function runAction(opts: {
       return readIssue(opts);
     case 'file_goals':
       return fileGoals(opts);
+    case 'finish_goal':
+      return finishGoal(opts);
   }
+}
+
+/** The branch a goal is built on (D40): `magpipe/<goal key>`. */
+export function goalBranch(issue: { goal: Goal | null; identifier: string }): string {
+  return `magpipe/${issue.goal?.key ?? issue.identifier.toLowerCase()}`;
+}
+
+/**
+ * How a goal's build ended (D40), on its issue: every judge passed, so the goal moves to the
+ * merge question with its branch named; or something failed or did not pass, so it moves to
+ * needs you with the findings and is released to build again when moved back to approved.
+ * Runs after everything before it settled, so a failed step is reported too.
+ */
+async function finishGoal({
+  db,
+  run,
+  step,
+  agentNames,
+  signal,
+}: Parameters<typeof runAction>[0]): Promise<ActionOutcome> {
+  const { settings, issue, tracker } = await goalsContext(db, run);
+  const upstream = upstreamOf(run.plan, step);
+  const failed = upstream.filter((s) => s.status === 'failed');
+  const judges = upstream.filter((s) => s.judges);
+  const branch = goalBranch(issue);
+  const who = (s: Step) => (s.agentId ? (agentNames.get(s.agentId) ?? 'Agent') : 'Magpipe');
+  const verdictOf = (s: Step) =>
+    s.status === 'done' ? (s.verdict ?? 'no verdict Magpipe could read') : s.status;
+  const report = judges
+    .map(
+      (s) =>
+        `**${who(s)}**, ${s.title.toLowerCase()}: ${verdictOf(s)}\n\n${s.result?.summary ?? s.error?.message ?? ''}`,
+    )
+    .join('\n\n');
+  const facts = upstream.flatMap((s) => workFacts(s.work));
+  const recorded = facts.length
+    ? `\n\nRecorded by Magpipe:\n${facts.map((f) => `- ${f}`).join('\n')}`
+    : '';
+  const passed =
+    failed.length === 0 &&
+    judges.length > 0 &&
+    judges.every((s) => s.status === 'done' && s.verdict === 'pass');
+
+  if (passed) {
+    await tracker.comment(
+      issue.externalId,
+      `Ready to merge: branch \`${branch}\`. The tests pass, the review approves and the skeptic has no objection. Merge the branch, then move this issue to ${settings.states.done!.name}; the goals that wait for it start after.\n\n${report}${recorded}`,
+      signal,
+    );
+    const moved = await tracker.setState(
+      issue.externalId,
+      settings.states.merge_question!.id,
+      signal,
+    );
+    await recordState(db, issue.id, settings, moved);
+    return {
+      status: 'done',
+      summary: `${issue.identifier} is ready to merge on ${branch}. Moved to ${moved.state.name}.`,
+    };
+  }
+
+  const why = failed.length
+    ? failed.map((s) => `“${s.title}” failed: ${s.error?.message ?? 'no reason given'}`).join('; ')
+    : judges
+        .filter((s) => !(s.status === 'done' && s.verdict === 'pass'))
+        .map((s) => `“${s.title}” ${s.status === 'done' ? `said ${verdictOf(s)}` : 'did not run'}`)
+        .join('; ');
+  await tracker.comment(
+    issue.externalId,
+    `Not ready: ${why}. The work so far is on \`${branch}\`. Answer the findings here, then move this issue back to ${settings.states.approved!.name} to build it again.\n\n${report}${recorded}`,
+    signal,
+  );
+  const moved = await tracker.setState(issue.externalId, settings.states.needs_you!.id, signal);
+  await recordState(db, issue.id, settings, moved);
+  await releaseBuildRun(db, issue.id);
+  return {
+    status: 'done',
+    summary: `${issue.identifier} needs you: ${why}. Moved to ${moved.state.name} with the findings.`,
+  };
 }
 
 /** Linear set up, and the spec issue a goals run splits. */

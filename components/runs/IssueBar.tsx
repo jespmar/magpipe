@@ -52,9 +52,9 @@ function IssueLink({ issue }: { issue: Pick<IssueJson, 'url' | 'identifier'> }) 
 }
 
 /**
- * The Linear issue a factory run concerns (D38, D39): the spec a spec run filed, with gate G1's
- * Magpipe door, or the spec a goals run splits; the goals filed under it; and the goals run that
- * approval started. Approve sets the approved status in Linear, so Linear holds the one answer.
+ * The Linear issue a factory run concerns (D38 to D40): the spec a spec run filed, with gate G1's
+ * Magpipe door; the spec a goals run splits, with the goals filed under it; or the goal a build
+ * run builds. A spec run also links the goals run its approval started. Approve sets the approved status in Linear, so Linear holds the one answer.
  * Nothing shows for a run with no issue.
  */
 export function IssueBar({ run, emphasis = 'primary', className }: Props) {
@@ -64,7 +64,8 @@ export function IssueBar({ run, emphasis = 'primary', className }: Props) {
   const [note, setNote] = useState<string | null>(null);
   const template = run.input.template;
   const relevant =
-    (template === 'spec' && run.status === 'done') || (template === 'goals' && !!run.input.issueId);
+    (template === 'spec' && run.status === 'done') ||
+    ((template === 'goals' || template === 'build') && !!run.input.issueId);
 
   useEffect(() => {
     if (!relevant) return;
@@ -114,8 +115,10 @@ export function IssueBar({ run, emphasis = 'primary', className }: Props) {
   const caption = waiting
     ? 'Waiting for you: approve it here, or move it to the approved status in Linear.'
     : issue.stage === 'needs_you'
-      ? `The goals did not pass review: the findings are on the issue. Move it back to ${PIPELINE_LABELS.approved.toLowerCase()} in Linear to split it again.`
-      : (approved ?? `In ${issue.stateName} in Linear.`);
+      ? `Needs you: the findings are on the issue. Move it back to ${PIPELINE_LABELS.approved.toLowerCase()} in Linear to try again.`
+      : issue.stage === 'merge_question'
+        ? `Ready to merge: the issue names the branch. Merge it, then move the issue to ${PIPELINE_LABELS.done.toLowerCase()} in Linear.`
+        : (approved ?? `Linear status: ${issue.stateName}.`);
 
   return (
     <section aria-label="Linear issue" className={clsx('flex flex-col gap-3 card p-4', className)}>
