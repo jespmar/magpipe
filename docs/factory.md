@@ -139,18 +139,19 @@ step (D29).
 
 Needed, smallest first:
 
-| Need                       | Why                                                                                    | Shape                                                                                                                                                                             |
-| -------------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Runs from a template       | A factory runs the same stages every time; the orchestrator improvises a plan per task | `createRun` takes a preset plan. The engine already skips planning when a plan exists, so a template is a fixed list of steps with the stage's instructions.                      |
-| The roster and templates   | Nine agents and three templates must match this document                               | `lib/factory.ts`, loaded like the flock and pinned to this document by a drift test.                                                                                              |
-| A tracker seam             | Stages read and write Linear; tests must not need it                                   | A small interface (create issue, sub-issue, comment, set status, list by label and status) with a Linear implementation over its MCP server and a scripted one for tests.         |
-| A watcher                  | Nothing in Magpipe starts a run on its own                                             | A poll of Linear on a timer, in the app, that starts the next template when an issue's status says so. A desktop app cannot receive webhooks. Each transition is acted on once.   |
-| A worktree per goal        | One checkout allows one writer, and goals should build in parallel                     | `git worktree add` per goal under the data folder; repository operations resolve against the run's worktree. The write lock is keyed by work tree, so parallel goals already fit. |
-| Push, as a typed operation | No agent can push today                                                                | `git_push`: only the run's own `magpipe/…` branch, to `origin`, never forced, never the default branch. Granted to the Merge Agent alone.                                         |
-| Pull requests and merging  | The Merge Agent must open, watch and merge                                             | GitHub's MCP server with a token that can write pull requests, and only the pull request tools ticked for the Merge Agent.                                                        |
-| A protected-paths check    | The Code Agent must not weaken the tests                                               | First as evidence (the diff check in stage 7); later as a guard on `write` for a step.                                                                                            |
-| The factory screen         | The operator needs the pipeline at a glance and both gates in reach                    | A board of issues by stage, each goal with its branch, results and verdicts from the recorded work, and the two buttons. Home's prompt gains "Send to the factory" beside Run.    |
-| More than two runs at once | Parallel goals are parallel runs                                                       | The engine's run limit becomes a setting, with the spend cap as the governor.                                                                                                     |
+| Need                        | Why                                                                                    | Shape                                                                                                                                                                             |
+| --------------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runs from a template        | A factory runs the same stages every time; the orchestrator improvises a plan per task | `createRun` takes a preset plan. The engine already skips planning when a plan exists, so a template is a fixed list of steps with the stage's instructions.                      |
+| The roster and templates    | Nine agents and three templates must match this document                               | `lib/factory.ts`, loaded like the flock and pinned to this document by a drift test.                                                                                              |
+| Linear and watcher settings | The operator sets access and pace in the app                                           | A Settings section: Linear API key, team, label, status mapping with a test button; the polling interval, a pause switch, the last check.                                         |
+| A tracker seam              | Stages read and write Linear; tests must not need it                                   | A small interface (create issue, sub-issue, comment, set status, list by label and status) with a Linear implementation over its MCP server and a scripted one for tests.         |
+| A watcher                   | Nothing in Magpipe starts a run on its own                                             | A poll of Linear on a timer, in the app, that starts the next template when an issue's status says so. A desktop app cannot receive webhooks. Each transition is acted on once.   |
+| A worktree per goal         | One checkout allows one writer, and goals should build in parallel                     | `git worktree add` per goal under the data folder; repository operations resolve against the run's worktree. The write lock is keyed by work tree, so parallel goals already fit. |
+| Push, as a typed operation  | No agent can push today                                                                | `git_push`: only the run's own `magpipe/…` branch, to `origin`, never forced, never the default branch. Granted to the Merge Agent alone.                                         |
+| Pull requests and merging   | The Merge Agent must open, watch and merge                                             | GitHub's MCP server with a token that can write pull requests, and only the pull request tools ticked for the Merge Agent.                                                        |
+| A protected-paths check     | The Code Agent must not weaken the tests                                               | First as evidence (the diff check in stage 7); later as a guard on `write` for a step.                                                                                            |
+| The factory screen          | The operator needs the pipeline at a glance and both gates in reach                    | A board of issues by stage, each goal with its branch, results and verdicts from the recorded work, and the two buttons. Home's prompt gains "Send to the factory" beside Run.    |
+| More than two runs at once  | Parallel goals are parallel runs                                                       | The engine's run limit becomes a setting, with the spend cap as the governor.                                                                                                     |
 
 ## Build order
 
@@ -159,8 +160,8 @@ Each phase is one pull request, useful on its own, and testable with the scripte
 1. **Templates and the roster.** Runs from a preset plan; `lib/factory.ts` with the nine agents
    and the spec template; "Send to the factory" produces a reviewed spec in Magpipe. No Linear
    yet.
-2. **Linear.** The tracker seam, the status mapping in Settings, and the spec landing as a
-   labelled issue. The watcher, and gate G1 from both doors.
+2. **Linear.** The Linear section and the polling interval in Settings, the tracker seam,
+   and the spec landing as a labelled issue. The watcher, and gate G1 from both doors.
 3. **Goals.** The goal template: sub-issues, their checklist review, dependencies between them.
 4. **Building one goal.** The build template on the bound repository as it is today: tests
    first, build, run, review, skeptic, with send-backs and "needs you". One goal at a time.
@@ -172,15 +173,35 @@ Each phase is one pull request, useful on its own, and testable with the scripte
 8. **Earning unattended merges.** A rule the operator sets (for example: a label, every script
    green, no finding, the skeptic silent) under which G2 answers itself. Its own decision.
 
-## To confirm before building
+## Settled before building
 
-1. **Linear's MCP server with an API key.** Magpipe stores pasted tokens, not OAuth sessions
-   (D13). If Linear's server needs OAuth, the tracker seam talks to Linear's API directly
-   instead.
-2. **Polling limits.** How often the watcher may ask Linear without hitting its rate limits;
-   one query per minute by label and status should be far inside them.
-3. **Unattended use of a Claude subscription.** D22 left the terms question open, and a factory
-   that runs without a person watching makes it sharper. The API backend is the safe default
-   for the factory.
-4. **The app must be open.** The watcher lives in the desktop app. A factory that should run
-   while the laptop sleeps needs the hosted mode, which is not built.
+1. **Linear access is set in the app.** Settings gains a Linear section: the API key (pasted,
+   stored encrypted like tool tokens, D13, and never shown again), the team, the label that
+   marks factory issues, and the mapping of the six pipeline states to the team's own
+   statuses, with a test button that reads them back. Whether the key reaches Linear through
+   its MCP server or its API directly is a detail of the tracker seam, decided in phase 2; the
+   operator sees one form either way.
+2. **Polling is a setting.** Settings holds the watcher's interval (default one minute, from
+   15 seconds to 30 minutes), next to a pause switch and the time of the last check. The
+   watcher reads one query per check, by label and status, so the default stays well inside
+   Linear's limits.
+3. **The app must be open.** The watcher lives in the desktop app and stops while it is
+   closed; on start it catches up on every status change since its last check. A factory that
+   runs while the laptop sleeps would need the hosted mode, which is out of scope.
+4. **Running on a Claude subscription: allowed as Magpipe uses it, with limits to watch.**
+   Anthropic's Claude Code legal page (read on 2026-11-11) says products must not offer
+   Claude.ai login, route requests through Free, Pro, Max or Ultra credentials on their users'
+   behalf, or collect those credentials, and that this "does not prevent an end user from
+   signing in to the unmodified Claude Code binary with their own Claude subscription".
+   Magpipe runs the operator's own, unmodified `claude` binary, signed in by the operator
+   through Anthropic's flow, and never touches the credentials (D22), so this is the permitted
+   case. Two cautions remain:
+   - **Usage limits.** The same page says advertised limits "assume ordinary, individual
+     usage of Claude Code and the Agent SDK". Nine agents running goals in parallel without a
+     person watching is heavier than that. Expect to hit plan limits, and keep the API backend
+     (`MAGPIPE_MODEL_BACKEND=api`) as the choice for heavy or unattended stretches.
+   - **Shifting rules.** Coverage in 2026 describes changes to how `claude -p` and Agent SDK
+     use is billed on subscriptions, including a separate monthly credit, and reports of that
+     being paused. The current state is not confirmed. Re-read Anthropic's pages before
+     phase 4, when the factory first builds code unattended, and before sharing Magpipe with
+     anyone else.
