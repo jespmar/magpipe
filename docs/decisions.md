@@ -919,3 +919,30 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
 - **Not yet.** Linear out of reach during filing is retried twice, then left to a re-fly rather
   than waited on; the design's "the run waits and retries" comes with the watcher acting on
   approvals in phase 3.
+
+## D39 · Factory phase 3: goals
+
+- **Why.** An approved spec is split into goals that can each be built and tested on their own,
+  filed in Linear as sub-issues with their order, ready for the build template (phase 4).
+- **Approval starts it, once.** When a spec issue reaches the approved status, by Approve in
+  Magpipe or by a move in Linear the watcher sees, the goals run starts as a follow-up of the
+  spec run. The issue records the run (`goalsRunId`), and starts are serialised, so the two
+  doors cannot start two runs. Each check also starts approved specs that never had one, so an
+  approval made while the factory was not loaded is picked up once it is. A start that cannot
+  happen (an agent paused, Linear not set up) is the check's error in Settings.
+- **The spec as the operator left it.** The run's first step is an action that reads the issue's
+  description from Linear: an edit made before approving is the spec that gets split.
+- **Goals as data, checked by Magpipe.** The Goal Builder records goals through a `record_goals`
+  tool (key, title, summary, criteria by number, files, dependencies). Magpipe checks them
+  before accepting: each numbered acceptance criterion in exactly one goal, dependencies that
+  exist and form no cycle, and goals that share a file ordered. Problems go back as the tool's
+  answer until a set passes; a builder that records none fails its step. The accepted goals are
+  rendered as the step's document, which the Goal Review reads; its checklist now covers what a
+  check cannot (substance, plausible files, testable alone, one pull request each).
+- **Filing.** A passing review files each goal as a sub-issue of the spec, in the approved
+  status, with its criteria in the spec's words and a "blocks" relation from each goal it
+  depends on, and moves the spec to building. A failing one files nothing, moves the spec to
+  needs you with the findings as a comment, and releases it, so moving it back to approved
+  splits it again. A filing resumed after a restart files only the goals not yet filed.
+- **The issue bar** shows a goals run's spec issue and its goals, and links a spec run to the
+  goals run its approval started. The goals template cannot be sent from Home.

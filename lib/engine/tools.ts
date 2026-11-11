@@ -11,7 +11,17 @@ import * as t from '../db/schema';
 import { connectMcp, type McpConnection, type McpTarget } from '../mcp';
 import { listMemory, markRead, writeMemory } from '../memory';
 import { formatConfidence } from '../memory-util';
-import { memoryInput, type Agent, type Attachment, type RunEventKind } from '../schemas';
+import { z } from 'zod';
+import { checkGoals } from '../goals';
+import {
+  goal,
+  MAX_GOALS,
+  memoryInput,
+  type Agent,
+  type Attachment,
+  type Goal,
+  type RunEventKind,
+} from '../schemas';
 import { readSecret } from '../secrets';
 import {
   gitBranch,
@@ -116,6 +126,12 @@ export type ToolSetup = {
   work?: WorkItem[];
   /** Offered to a reviewing agent while rounds remain (D31); `findings` is set when it is used. */
   sendBack?: { remaining: number; findings?: string };
+  /**
+   * Offered to a step that splits a spec into goals (D39). `criteria` are the spec's acceptance
+   * criterion numbers (null when it has no numbered list); `goals` is set once a set passes the
+   * checks.
+   */
+  recordGoals?: { criteria: number[] | null; goals?: Goal[] };
   /**
    * Called after each item lands in `work`, so the engine can save the record onto the step
    * before the step ends (D33). A failure here is logged, never the tool call's.
@@ -489,6 +505,81 @@ export async function setupTools(setup: ToolSetup): Promise<ToolRuntime> {
       sendBack.findings = findings.slice(0, 4000);
       return {
         text: 'Sent back. Finish your step with a short summary of your verdict; the steps you depend on will run again with your findings.',
+      };
+    });
+  }
+
+  // ── record goals: a step that splits a spec hands Magpipe the goals as data (D39) ──
+  const recordGoals = setup.recordGoals;
+  if (recordGoals) {
+    const criteriaNote = recordGoals.criteria
+      ? `The spec's acceptance criteria are numbered ${recordGoals.criteria.join(', ')}; each belongs to exactly one goal.`
+      : 'The spec has no numbered acceptance criteria, so coverage is not checked.';
+    tools.push(
+      clientTool(
+        'record_goals',
+        `Record the goals you split the spec into. Magpipe checks them: ${criteriaNote} Dependencies name other goals' keys and form no cycle, and two goals that touch the same file must be ordered by a dependency. If the answer names problems, fix them and call it again; the last set that passes is kept. Call it before you finish.`,
+        objectSchema(
+          {
+            goals: {
+              type: 'array',
+              maxItems: MAX_GOALS,
+              items: objectSchema(
+                {
+                  key: {
+                    type: 'string',
+                    description:
+                      'Short id: lowercase letters, digits and hyphens, such as export-csv',
+                  },
+                  title: { type: 'string', description: 'What the goal delivers, in a few words' },
+                  summary: {
+                    type: 'string',
+                    description: 'What to build and how it is tested, one paragraph',
+                  },
+                  criteria: {
+                    type: 'array',
+                    items: { type: 'integer' },
+                    description: 'The acceptance criterion numbers from the spec this goal covers',
+                  },
+                  files: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    description: 'Repository paths the goal expects to create or change',
+                  },
+                  dependsOn: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    description: 'Keys of the goals that must land first; empty when none',
+                  },
+                },
+                ['key', 'title', 'summary', 'criteria', 'files', 'dependsOn'],
+              ),
+            },
+          },
+          ['goals'],
+        ),
+      ),
+    );
+    labels.set('record_goals', 'Record goals');
+    dispatch.set('record_goals', async (input) => {
+      const parsed = z.array(goal).min(1).max(MAX_GOALS).safeParse(input.goals);
+      if (!parsed.success) {
+        const issue = parsed.error.issues[0]!;
+        return {
+          text: `Not recorded: ${issue.path.length ? `goals.${issue.path.join('.')}: ` : ''}${issue.message}`,
+          isError: true,
+        };
+      }
+      const problems = checkGoals(parsed.data, recordGoals.criteria);
+      if (problems.length > 0) {
+        return {
+          text: `Not recorded. Fix these and call it again:\n- ${problems.join('\n- ')}`,
+          isError: true,
+        };
+      }
+      recordGoals.goals = parsed.data;
+      return {
+        text: `Recorded ${parsed.data.length} ${parsed.data.length === 1 ? 'goal' : 'goals'}. Finish your step with a short summary; Magpipe hands the goals on.`,
       };
     });
   }

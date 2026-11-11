@@ -13,7 +13,7 @@ import { env } from '../env';
 import { listMemory } from '../memory';
 import { loadThread } from '../runs';
 import { addUsage, ZERO_USAGE } from '../pricing';
-import type { Agent, MemoryEntry, Run, RunEventKind, Step } from '../schemas';
+import type { Agent, Goal, MemoryEntry, Run, RunEventKind, Step } from '../schemas';
 import { apiBackend, type RunBackend } from './backend';
 import { claudeCodeBackend } from './claude-code';
 import { emitEvent } from './events';
@@ -22,6 +22,7 @@ import { capReached, spendCapMessage, spendToday } from '../spend';
 import { foldWork, runArtifacts, workItems, type WorkItem } from '../work';
 import { sendBackSet, threadText } from '../runs-util';
 import { parseVerdict, runAction } from './actions';
+import { acceptanceCriteria, renderGoals } from '../goals';
 import { documentAnswer, mergeRun } from './merge';
 import { TrackerError } from '../tracker/types';
 import {
@@ -369,6 +370,13 @@ export class Engine {
             const remaining = agent.sendBackRounds - ((step.round ?? 1) - 1);
             const sendBack: { remaining: number; findings?: string } | undefined =
               remaining > 0 ? { remaining } : undefined;
+            // A step that splits a spec records goals against the spec's numbered criteria (D39).
+            const upstream = step.dependsOn.map((d) => byId.get(d)!).filter(Boolean);
+            const spec = upstream.find((s) => s.document && !s.recordsGoals)?.document;
+            const criteria = spec ? acceptanceCriteria(spec) : [];
+            const recordGoals = step.recordsGoals
+              ? { criteria: criteria.length ? criteria.map((c) => c.n) : null }
+              : undefined;
             try {
               const outcome = await runStep({
                 db,
@@ -376,19 +384,29 @@ export class Engine {
                 run: run!,
                 step,
                 agent,
-                upstream: step.dependsOn.map((d) => byId.get(d)!).filter(Boolean),
+                upstream,
                 memory,
                 attachments: run!.input.attachments,
                 sandboxDir,
                 conversation,
                 work,
                 sendBack,
+                recordGoals,
                 onWork: saveWork,
                 signal,
               });
+              const goals = (recordGoals as { goals?: Goal[] } | undefined)?.goals;
+              if (recordGoals && !goals) {
+                throw new EngineError(
+                  'no_goals',
+                  `${agent.name} finished without recording goals that pass Magpipe's checks.`,
+                );
+              }
               await this.finishStep(save, () => run!, step.id, {
                 status: 'done',
                 result: { summary: outcome.summary },
+                // The goals are the step's document: what the review reads and the run hands over.
+                ...(goals ? { goals, document: renderGoals(goals, criteria) } : {}),
                 ...(outcome.document ? { document: outcome.document } : {}),
                 // A judging step's verdict, read once from its result (D38).
                 ...(step.judges ? { verdict: parseVerdict(outcome.summary) ?? undefined } : {}),
@@ -644,6 +662,7 @@ export class Engine {
       await this.finishStep(save, current, step.id, {
         status: outcome.status,
         result: { summary: outcome.summary.slice(0, 1000) },
+        ...(outcome.document ? { document: outcome.document } : {}),
       });
       await emit('message', outcome.summary, null, step.id);
     } catch (err) {

@@ -22,6 +22,8 @@ export const SCRIPTED_STATES: TrackerState[] = [
 type Store = {
   labels: (TrackerRef & { teamId: string })[];
   issues: (RemoteIssue & { labelIds: string[]; description: string; comments: string[] })[];
+  /** `blocking blocks blocked`, by issue id. */
+  relations: { blocking: string; blocked: string }[];
   next: number;
 };
 
@@ -30,7 +32,7 @@ const g = globalThis as unknown as { __magpipeScriptedTracker?: Store };
 /** The shared store; tests pass their own so they never see each other's issues. */
 export function scriptedStore(fresh = false): Store {
   if (fresh || !g.__magpipeScriptedTracker) {
-    g.__magpipeScriptedTracker = { labels: [], issues: [], next: 1 };
+    g.__magpipeScriptedTracker = { labels: [], issues: [], relations: [], next: 1 };
   }
   return g.__magpipeScriptedTracker;
 }
@@ -109,6 +111,7 @@ export function scriptedTracker(
         labelIds: input.labelIds,
         description: input.description,
         comments: [],
+        parentId: input.parentId ?? null,
       };
       store.issues.push(made);
       return view(made);
@@ -127,6 +130,17 @@ export function scriptedTracker(
       found.description = input.description;
       touch(found);
       return view(found);
+    },
+    async getIssue(issueId) {
+      authed();
+      const found = issue(issueId);
+      return { ...view(found), description: found.description };
+    },
+    async relate(blockingId, blockedId) {
+      authed();
+      issue(blockingId);
+      issue(blockedId);
+      store.relations.push({ blocking: blockingId, blocked: blockedId });
     },
     async comment(issueId, body) {
       authed();

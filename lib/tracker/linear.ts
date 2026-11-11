@@ -8,7 +8,7 @@ import { TrackerError, type RemoteIssue, type Tracker, type TrackerState } from 
 
 export const LINEAR_API = 'https://api.linear.app/graphql';
 
-const ISSUE = 'id identifier url title updatedAt state { id name type }';
+const ISSUE = 'id identifier url title updatedAt state { id name type } parent { id }';
 
 type GraphQLError = { message: string; extensions?: { type?: string; code?: string } };
 
@@ -61,9 +61,14 @@ export function linearTracker(
     return body.data;
   }
 
-  const issueOf = (raw: RemoteIssue | null | undefined, what: string): RemoteIssue => {
+  type RawIssue = Omit<RemoteIssue, 'parentId'> & { parent: { id: string } | null };
+  const shape = ({ parent, ...rest }: RawIssue): RemoteIssue => ({
+    ...rest,
+    parentId: parent?.id ?? null,
+  });
+  const issueOf = (raw: RawIssue | null | undefined, what: string): RemoteIssue => {
     if (!raw) throw new TrackerError(`Linear did not return the issue it ${what}.`, 'unknown');
-    return raw;
+    return shape(raw);
   };
 
   return {
@@ -126,7 +131,7 @@ export function linearTracker(
     },
 
     async createIssue(input, signal) {
-      const data = await call<{ issueCreate: { issue: RemoteIssue | null } }>(
+      const data = await call<{ issueCreate: { issue: RawIssue | null } }>(
         `mutation ($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { ${ISSUE} } } }`,
         { input },
         signal,
@@ -135,7 +140,7 @@ export function linearTracker(
     },
 
     async setState(issueId, stateId, signal) {
-      const data = await call<{ issueUpdate: { issue: RemoteIssue | null } }>(
+      const data = await call<{ issueUpdate: { issue: RawIssue | null } }>(
         `mutation ($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success issue { ${ISSUE} } } }`,
         { id: issueId, input: { stateId } },
         signal,
@@ -144,12 +149,31 @@ export function linearTracker(
     },
 
     async updateIssue(issueId, input, signal) {
-      const data = await call<{ issueUpdate: { issue: RemoteIssue | null } }>(
+      const data = await call<{ issueUpdate: { issue: RawIssue | null } }>(
         `mutation ($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success issue { ${ISSUE} } } }`,
         { id: issueId, input },
         signal,
       );
       return issueOf(data.issueUpdate.issue, 'updated');
+    },
+
+    async getIssue(issueId, signal) {
+      const data = await call<{ issue: (RawIssue & { description: string | null }) | null }>(
+        `query ($id: String!) { issue(id: $id) { ${ISSUE} description } }`,
+        { id: issueId },
+        signal,
+      );
+      if (!data.issue) throw new TrackerError('Linear has no such issue.', 'not_found');
+      const { description, ...raw } = data.issue;
+      return { ...shape(raw), description: description ?? '' };
+    },
+
+    async relate(blockingId, blockedId, signal) {
+      await call(
+        'mutation ($input: IssueRelationCreateInput!) { issueRelationCreate(input: $input) { success } }',
+        { input: { issueId: blockingId, relatedIssueId: blockedId, type: 'blocks' } },
+        signal,
+      );
     },
 
     async comment(issueId, body, signal) {
@@ -166,7 +190,7 @@ export function linearTracker(
       for (let page = 0; page < 20; page++) {
         const data: {
           issues: {
-            nodes: RemoteIssue[];
+            nodes: RawIssue[];
             pageInfo: { hasNextPage: boolean; endCursor: string | null };
           };
         } = await call(
@@ -181,7 +205,7 @@ export function linearTracker(
           },
           signal,
         );
-        out.push(...data.issues.nodes);
+        out.push(...data.issues.nodes.map(shape));
         if (!data.issues.pageInfo.hasNextPage) break;
         after = data.issues.pageInfo.endCursor;
       }

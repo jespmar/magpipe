@@ -88,8 +88,26 @@ export const agent = z.object({
 /** The longest document a step may keep (D37): a spec, with room to spare. */
 export const DOCUMENT_CAP = 40_000;
 
+/**
+ * One goal split from a spec (D39): a piece of work that can be built and tested on its own.
+ * `criteria` are the spec's acceptance-criterion numbers it covers; `dependsOn` are other goals'
+ * keys. Recorded by the Goal Builder through the `record_goals` tool and checked by Magpipe.
+ */
+export const goal = z.object({
+  key: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9-]{0,31}$/, 'A goal key is lowercase letters, digits and hyphens.'),
+  title: z.string().trim().min(1).max(120),
+  summary: z.string().trim().min(1).max(2000),
+  criteria: z.array(z.number().int().positive()).min(1),
+  files: z.array(z.string().trim().min(1).max(300)).min(1).max(40),
+  dependsOn: z.array(z.string()).max(12),
+});
+export type Goal = z.infer<typeof goal>;
+export const MAX_GOALS = 12;
+
 /** What an action step does (D38); the engine runs it in `lib/engine/actions.ts`. */
-export const stepActions = ['file_issue'] as const;
+export const stepActions = ['file_issue', 'read_issue', 'file_goals'] as const;
 export type StepAction = (typeof stepActions)[number];
 
 export const stepStatus = z.enum(['todo', 'live', 'done', 'failed', 'skipped']);
@@ -143,6 +161,10 @@ export const step = z.object({
   document: z.string().max(DOCUMENT_CAP).optional(),
   /** The step judges the work before it (a review, D38): its result opens with a verdict. */
   judges: z.boolean().optional(),
+  /** The step splits a spec into goals with the `record_goals` tool (D39). */
+  recordsGoals: z.boolean().optional(),
+  /** The goals it recorded, checked by Magpipe; rendered as the step's document. */
+  goals: z.array(goal).max(MAX_GOALS).optional(),
   /** The verdict Magpipe read from a judging step's result (D38). */
   verdict: z.enum(['pass', 'fail']).optional(),
   /**
@@ -181,7 +203,7 @@ export const attachment = z.object({
 });
 
 /** The factory's templates (lib/factory.ts): a run from one starts with its preset plan. */
-export const runTemplates = ['spec'] as const;
+export const runTemplates = ['spec', 'goals'] as const;
 export type RunTemplate = (typeof runTemplates)[number];
 
 export const runInput = z.object({
@@ -189,6 +211,8 @@ export const runInput = z.object({
   attachments: z.array(attachment),
   /** Set when the run started from a factory template's plan (D37); a re-fly does the same. */
   template: z.enum(runTemplates).optional(),
+  /** The tracker issue a goals run splits (D39): its approved spec is the run's input. */
+  issueId: issueId.optional(),
 });
 /**
  * Something a run produced. An uploaded or hosted file has a `blobUrl`; a file a step created or
@@ -501,8 +525,11 @@ export const runCreateInput = z.object({
     .default([]),
   /** Continue the conversation of this run: its task and answer become context. */
   parentRunId: runId.optional(),
-  /** Run a factory template's preset plan instead of the orchestrator's (D37). */
-  template: z.enum(runTemplates).optional(),
+  /**
+   * Run a factory template's preset plan instead of the orchestrator's (D37). Only the spec
+   * template starts from a prompt; the goals template starts when a spec is approved (D39).
+   */
+  template: z.enum(['spec']).optional(),
 });
 
 /** POST /api/runs/[id]/approve: let a waiting run go on, with a note for the next steps. */
@@ -657,6 +684,14 @@ export const trackerIssue = z.object({
   stage: z.enum(issueStages),
   /** The team's own name for the status it is in. */
   stateName: z.string(),
+  /** The spec issue this goal belongs to (D39); null for a spec issue. */
+  parentId: issueId.nullable(),
+  /** Linear's id of the parent issue, even one Magpipe does not track: a sub-issue is no spec. */
+  externalParentId: z.string().nullable(),
+  /** The goal a sub-issue was filed for: its key, criteria, files and dependencies. */
+  goal: goal.nullable(),
+  /** The goals run started when the spec was approved; set once, so it starts once. */
+  goalsRunId: runId.nullable(),
   /** When gate G1 opened, and through which door. */
   approvedAt: z.date().nullable(),
   approvedVia: z.enum(['linear', 'magpipe']).nullable(),

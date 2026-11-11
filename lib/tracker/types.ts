@@ -16,6 +16,8 @@ export type RemoteIssue = {
   title: string;
   state: TrackerState;
   updatedAt: string;
+  /** The parent issue's id, for a sub-issue (a goal, D39). */
+  parentId: string | null;
 };
 
 export interface Tracker {
@@ -42,7 +44,11 @@ export interface Tracker {
     },
     signal?: AbortSignal,
   ): Promise<RemoteIssue>;
+  /** One issue with its description: the spec as the operator left it (D39). */
+  getIssue(issueId: string, signal?: AbortSignal): Promise<RemoteIssue & { description: string }>;
   setState(issueId: string, stateId: string, signal?: AbortSignal): Promise<RemoteIssue>;
+  /** Records that `blockingId` must land before `blockedId` (a goal's dependency, D39). */
+  relate(blockingId: string, blockedId: string, signal?: AbortSignal): Promise<void>;
   /** Replaces the title and description: a revised spec on the issue that holds it. */
   updateIssue(
     issueId: string,

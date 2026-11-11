@@ -108,7 +108,8 @@ engine and no sign-in on desktop.
   MCP server. Tests use `scriptedTracker` via `useTrackerFactory`, and the e2e server sets
   `MAGPIPE_TRACKER_STUB=scripted`. The key stays sealed; screens get `linearView`, never the
   row. Work Magpipe does itself is an `action` step, and a step whose result gates others sets
-  `judges` so its verdict line is read.
+  `judges` so its verdict line is read. Structured results come through a step tool that
+  Magpipe checks (`record_goals`, D39), never by parsing an agent's prose.
 - **Tests never need model credentials.** Unit tests script `ModelClient`; the Playwright
   server runs with `MAGPIPE_MODEL_STUB=scripted` (`lib/engine/stub-model.ts`), which the engine
   ignores in production builds.
