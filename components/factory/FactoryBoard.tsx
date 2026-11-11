@@ -53,6 +53,7 @@ function Card({ card }: { card: BoardCard }) {
         <External href={card.url}>{card.identifier}</External>
         <span className="text-caption text-mute">
           {card.kind === 'spec' ? 'spec' : card.parent ? `goal of ${card.parent}` : 'goal'}
+          {card.project ? ` · ${card.project}` : ''}
         </span>
       </div>
       <p className="text-body-sm text-ink">{card.title}</p>

@@ -13,7 +13,7 @@ import { env } from '../env';
 import { listMemory } from '../memory';
 import { loadThread } from '../runs';
 import { addUsage, ZERO_USAGE } from '../pricing';
-import type { Agent, Goal, MemoryEntry, Run, RunEventKind, Step } from '../schemas';
+import type { Agent, FactoryProject, Goal, MemoryEntry, Run, RunEventKind, Step } from '../schemas';
 import { apiBackend, type RunBackend } from './backend';
 import { claudeCodeBackend } from './claude-code';
 import { emitEvent } from './events';
@@ -215,7 +215,17 @@ export class Engine {
       stepId?: string | null,
     ) => emitEvent(db, { runId, stepId: stepId ?? null, agentId: null, kind, text, payload });
 
-    const agents = await db.select().from(t.agents);
+    // A factory project's run (D45) works in the project's repository, with its scripts, its
+    // context for the agents and the models it picks for them.
+    const [project] = run.input.projectId
+      ? await db
+          .select()
+          .from(t.factoryProjects)
+          .where(eq(t.factoryProjects.id, run.input.projectId))
+      : [];
+    const agents = (await db.select().from(t.agents)).map((a) =>
+      project?.models[a.slug] ? { ...a, model: project.models[a.slug]! } : a,
+    );
     // A finished step by an agent that pauses for approval holds back what depends on it (D30).
     const pausing = new Set(agents.filter((a) => a.pauseAfter).map((a) => a.id));
     const held = (s: Step) =>
@@ -233,13 +243,29 @@ export class Engine {
     const targetsOf = new Map<string, Promise<WriteTarget[]>>();
     // A build run works in its goal's worktree (D41): the repository tool's folder is the
     // worktree for this run, so its write lock is the worktree's and other goals go on.
+    // A project's run (D45) puts the project's folder and scripts in place of the factory's
+    // repository, the one the factory's agents hold; a goal's worktree stands in for the folder.
     const wt = run.input.worktree;
-    const repoPaths = wt ? { [wt.toolId]: wt.path } : undefined;
-    if (wt) {
+    const repoPaths: Record<string, { path: string; scripts?: string[] }> = {};
+    if (project) {
+      const granted = new Set(
+        agents.filter((a) => a.templateOnly).flatMap((a) => a.tools.map((g) => g.toolId)),
+      );
       for (const tool of tools) {
-        if (tool.id === wt.toolId && tool.repository) {
-          tool.repository = { ...tool.repository, path: wt.path };
+        if (granted.has(tool.id) && tool.repository) {
+          repoPaths[tool.id] = { path: project.repoPath, scripts: project.scripts };
         }
+      }
+    }
+    if (wt) repoPaths[wt.toolId] = { ...repoPaths[wt.toolId], path: wt.path };
+    for (const tool of tools) {
+      const o = repoPaths[tool.id];
+      if (o && tool.repository) {
+        tool.repository = {
+          ...tool.repository,
+          path: o.path,
+          scripts: o.scripts ?? tool.repository.scripts,
+        };
       }
     }
     const writeTargetsFor = (agent: (typeof agents)[number]) => {
@@ -260,7 +286,7 @@ export class Engine {
 
       // 1. plan (skipped on resume when a plan exists), unless today's spend is at the cap
       if (run.plan.length === 0) {
-        const stop = await this.spendCapStop(db, 'planning');
+        const stop = await this.spendCapStop(db, 'planning', project);
         if (stop) throw stop;
         const planned = await withRetries(
           () =>
@@ -383,7 +409,7 @@ export class Engine {
               },
             );
             // Checked as late as possible: after any wait, just before the step goes live.
-            const stop = capStop ?? (await this.spendCapStop(db, `“${step.title}”`));
+            const stop = capStop ?? (await this.spendCapStop(db, `“${step.title}”`, project));
             if (stop) {
               capStop ??= stop;
               release();
@@ -437,6 +463,7 @@ export class Engine {
                 sendBack,
                 recordGoals,
                 repoPaths,
+                projectContext: project?.context || undefined,
                 onWork: saveWork,
                 signal,
               });
@@ -569,7 +596,11 @@ export class Engine {
       // A plan that wrote a document answers with it, and needs no model to do so (D37).
       const document = documentAnswer(run.plan, names);
       if (!document) {
-        const mergeStop = await this.spendCapStop(db, `“${mergeStep?.title ?? 'Merge results'}”`);
+        const mergeStop = await this.spendCapStop(
+          db,
+          `“${mergeStep?.title ?? 'Merge results'}”`,
+          project,
+        );
         if (mergeStop) throw mergeStop;
       }
       const mergeStartedAt = new Date().toISOString();
@@ -659,10 +690,22 @@ export class Engine {
   /**
    * The daily spend cap (D32): null while today's spend is under the cap or there is none, else
    * the error the run stops with. Read fresh each time, so a cap raised mid-run counts at once.
+   * A factory project's run also stops at the project's own cap (D45).
    */
-  private async spendCapStop(db: Db, before: string): Promise<EngineError | null> {
+  private async spendCapStop(
+    db: Db,
+    before: string,
+    project?: Pick<FactoryProject, 'id' | 'name' | 'spendCapUsd'>,
+  ): Promise<EngineError | null> {
     const spend = await spendToday(db);
-    return capReached(spend) ? new EngineError('spend_cap', spendCapMessage(spend, before)) : null;
+    if (capReached(spend)) return new EngineError('spend_cap', spendCapMessage(spend, before));
+    if (project?.spendCapUsd) {
+      const own = await spendToday(db, new Date(), project);
+      if (capReached(own)) {
+        return new EngineError('spend_cap', spendCapMessage(own, before, project.name));
+      }
+    }
+    return null;
   }
 
   /** Runs an action step (D38) and records its outcome; a failure fails the step, not the run. */

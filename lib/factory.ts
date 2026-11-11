@@ -45,8 +45,9 @@ import {
 } from './tracker/issues';
 import { goalBranch } from './engine/actions';
 import { ensureWorktree, removeWorktree } from './worktrees';
-import { getLinearSettings, getTracker, linearReady } from './tracker';
-import { ForgeError, forgeReady, getForge, getForgeSettings, type PullRequest } from './forge';
+import { getTracker, linearReady } from './tracker';
+import { ForgeError, forgeReady, getForge, type PullRequest } from './forge';
+import { ensureDefaultProject, forgeOf, linearOf, listProjects, resolveProject } from './projects';
 
 export { parseScripts, RosterValidationError as FactoryValidationError } from './roster';
 
@@ -612,7 +613,7 @@ export async function missingAgents(db: Db, id: TemplateId): Promise<string[]> {
 export async function templatePlan(
   db: Db,
   id: TemplateId,
-  opts: { draft?: string; vars?: Record<string, string> } = {},
+  opts: { draft?: string; vars?: Record<string, string>; projectId?: string | null } = {},
 ): Promise<{ plan: Step[]; text: string }> {
   // `{branch}` and the like in a step's instructions, filled for this run.
   const fill = (text: string) =>
@@ -629,13 +630,14 @@ export async function templatePlan(
     );
   }
   // A step that needs Linear is left out while Linear is not set up; the run is what it was.
-  const linear = linearReady(await getLinearSettings(db));
+  // Each project has its own Linear and GitHub, or the workspace's (D45).
+  const linear = linearReady((await linearOf(db, opts.projectId)).settings);
   if (template.needsLinear && !linear) {
     throw new FactoryNotReadyError(
       `The ${template.name.toLowerCase()} template works on Linear issues. Finish Settings → Linear first.`,
     );
   }
-  const github = forgeReady(await getForgeSettings(db));
+  const github = forgeReady((await forgeOf(db, opts.projectId)).settings);
   const included = template.steps.filter(
     (s) => (s.when !== 'linear' || linear) && (s.when !== 'github' || github),
   );
@@ -705,7 +707,7 @@ export async function startGoalsRun(
     ) {
       return null;
     }
-    const preset = await templatePlan(db, 'goals');
+    const preset = await templatePlan(db, 'goals', { projectId: current.projectId });
     const run = await createRun(
       db,
       {
@@ -713,6 +715,7 @@ export async function startGoalsRun(
         attachments: [],
         template: 'goals',
         issueId: current.id,
+        ...(current.projectId ? { projectId: current.projectId } : {}),
       },
       current.runId,
       { ...preset, createdBy: 'factory' },
@@ -754,7 +757,10 @@ export async function startBuildRun(
       return null;
     }
     const branch = goalBranch(current);
-    const preset = await templatePlan(db, 'build', { vars: { branch } });
+    const preset = await templatePlan(db, 'build', {
+      vars: { branch },
+      projectId: current.projectId,
+    });
     // Sent back from the merge question (D42): the operator's note reaches the Code Agent.
     if (current.operatorNote) {
       const build = preset.plan.find((s) => s.id === 'build');
@@ -763,7 +769,7 @@ export async function startBuildRun(
       }
     }
     // Each goal builds in its own worktree (D41), so goals go side by side.
-    const repo = await factoryRepository(db);
+    const repo = await projectRepository(db, current.projectId);
     const wt = await ensureWorktree(repo.path, branch);
     const run = await createRun(
       db,
@@ -773,6 +779,7 @@ export async function startBuildRun(
         template: 'build',
         issueId: current.id,
         worktree: { toolId: repo.id, path: wt.path, branch },
+        ...(current.projectId ? { projectId: current.projectId } : {}),
       },
       current.runId,
       { ...preset, createdBy: 'factory' },
@@ -816,6 +823,19 @@ export async function factoryRepository(db: Db): Promise<{ id: string; path: str
 }
 
 /**
+ * The folder a project builds in (D45), through the factory's repository tool: the project's
+ * folder, or the tool's own when the issue has no project.
+ */
+export async function projectRepository(
+  db: Db,
+  projectId: string | null | undefined,
+): Promise<{ id: string; path: string }> {
+  const tool = await factoryRepository(db);
+  const project = await resolveProject(db, projectId);
+  return { id: tool.id, path: project?.repoPath ?? tool.path };
+}
+
+/**
  * The goals whose turn it is (D40, D41), oldest first: approved, not yet built, every goal they
  * depend on done. As many as the run limit leaves room for beside the builds already active.
  * Goals that share a file are ordered by their dependencies (D39), so goals built side by side
@@ -830,10 +850,24 @@ export async function readyGoals(db: Db, limit?: number): Promise<TrackerIssue[]
         .from(t.runs)
         .where(inArray(t.runs.id, runIds))
     : [];
-  const active = runs.filter((r) => ACTIVE.has(r.status)).length;
+  const activeRuns = new Set(runs.filter((r) => ACTIVE.has(r.status)).map((r) => r.id));
+  const building = goals.filter((g) => g.buildRunId && activeRuns.has(g.buildRunId));
   const [settings] = await db.select({ maxRuns: t.settings.maxRuns }).from(t.settings);
-  const room = Math.max(0, (limit ?? settings?.maxRuns ?? 2) - active);
+  const room = Math.max(0, (limit ?? settings?.maxRuns ?? 2) - building.length);
   if (room === 0) return [];
+  // A project may hold fewer builds at once than the workspace (D45).
+  const limits = new Map((await listProjects(db)).map((p) => [p.id, p.maxRuns]));
+  const busy = new Map<string, number>();
+  for (const g of building)
+    if (g.projectId) busy.set(g.projectId, (busy.get(g.projectId) ?? 0) + 1);
+  const fits = (g: TrackerIssue) => {
+    const cap = g.projectId ? limits.get(g.projectId) : null;
+    if (!g.projectId || !cap) return true;
+    const n = busy.get(g.projectId) ?? 0;
+    if (n >= cap) return false;
+    busy.set(g.projectId, n + 1);
+    return true;
+  };
   return goals
     .filter((g) => g.stage === 'approved' && !g.buildRunId)
     .filter((g) =>
@@ -849,6 +883,7 @@ export async function readyGoals(db: Db, limit?: number): Promise<TrackerIssue[]
       ),
     )
     .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+    .filter(fits)
     .slice(0, room);
 }
 
@@ -893,12 +928,12 @@ async function reconcileBuilds(db: Db): Promise<string[]> {
     .from(t.trackerIssues)
     .where(and(isNotNull(t.trackerIssues.buildRunId), eq(t.trackerIssues.stage, 'approved')));
   if (goals.length === 0) return [];
-  const settings = await getLinearSettings(db);
-  const tracker = await getTracker(db, settings);
   const out: string[] = [];
   for (const goal of goals) {
     const [run] = await db.select().from(t.runs).where(eq(t.runs.id, goal.buildRunId!));
     if (!run || ACTIVE.has(run.status)) continue;
+    const { settings } = await linearOf(db, goal.projectId);
+    const tracker = await getTracker(db, settings);
     const finish = run.plan.find((s) => s.action === 'finish_goal');
     if (finish?.status === 'done') continue;
     const failed = run.plan.find((s) => s.status === 'failed');
@@ -934,7 +969,7 @@ async function closeSpecs(db: Db): Promise<string[]> {
     ) {
       continue;
     }
-    const settings = await getLinearSettings(db);
+    const { settings } = await linearOf(db, spec.projectId);
     const tracker = await getTracker(db, settings);
     await tracker.comment(
       spec.externalId,
@@ -961,8 +996,11 @@ export async function startLandRun(
     if (!current?.goal || !current.prNumber || current.mergedAt || current.landRunId) return null;
     if (!current.mergeRequestedAt) return null;
     const branch = goalBranch(current);
-    const preset = await templatePlan(db, 'land', { vars: { branch } });
-    const repo = await factoryRepository(db);
+    const preset = await templatePlan(db, 'land', {
+      vars: { branch },
+      projectId: current.projectId,
+    });
+    const repo = await projectRepository(db, current.projectId);
     const wt = await ensureWorktree(repo.path, branch);
     const run = await createRun(
       db,
@@ -972,6 +1010,7 @@ export async function startLandRun(
         template: 'land',
         issueId: current.id,
         worktree: { toolId: repo.id, path: wt.path, branch },
+        ...(current.projectId ? { projectId: current.projectId } : {}),
       },
       current.buildRunId ?? current.runId,
       { ...preset, createdBy: 'factory' },
@@ -993,16 +1032,17 @@ export async function startLandRun(
  * closed there without merging needs the operator.
  */
 async function watchPulls(db: Db): Promise<void> {
-  if (!forgeReady(await getForgeSettings(db))) return;
   const open = await db
     .select()
     .from(t.trackerIssues)
     .where(and(isNotNull(t.trackerIssues.prNumber), isNull(t.trackerIssues.mergedAt)));
-  if (open.length === 0) return;
-  const { forge, repo } = await getForge(db);
-  const settings = await getLinearSettings(db);
-  const tracker = await getTracker(db, settings);
   for (const goal of open) {
+    // Each goal through its own project's repository and Linear (D45).
+    const { settings: forgeSettings } = await forgeOf(db, goal.projectId);
+    if (!forgeReady(forgeSettings)) continue;
+    const { forge, repo } = await getForge(db, forgeSettings);
+    const { settings } = await linearOf(db, goal.projectId);
+    const tracker = await getTracker(db, settings);
     // A land run in progress settles the pull request itself.
     if (goal.landRunId) {
       const [land] = await db
@@ -1100,8 +1140,6 @@ export function ruleVerdict(input: {
  * question waits for the operator, as it always has; nothing is said every check.
  */
 async function answerByRule(db: Db): Promise<void> {
-  const forgeSettings = await getForgeSettings(db);
-  if (!forgeSettings.autoMerge || !forgeReady(forgeSettings)) return;
   const asking = await db
     .select()
     .from(t.trackerIssues)
@@ -1113,11 +1151,13 @@ async function answerByRule(db: Db): Promise<void> {
         isNull(t.trackerIssues.mergedAt),
       ),
     );
-  if (asking.length === 0) return;
-  const settings = await getLinearSettings(db);
-  const tracker = await getTracker(db, settings);
-  const { forge, repo } = await getForge(db, forgeSettings);
   for (const goal of asking) {
+    // Each project holds its own rule (D45).
+    const { settings: forgeSettings } = await forgeOf(db, goal.projectId);
+    if (!forgeSettings.autoMerge || !forgeReady(forgeSettings)) continue;
+    const { settings } = await linearOf(db, goal.projectId);
+    const tracker = await getTracker(db, settings);
+    const { forge, repo } = await getForge(db, forgeSettings);
     const remote = await tracker.getIssue(goal.externalId);
     const spec = goal.parentId ? await getIssue(db, goal.parentId) : undefined;
     const specLabels = spec ? (await tracker.getIssue(spec.externalId)).labels : [];
@@ -1174,6 +1214,8 @@ export async function factoryTick(
 ): Promise<{ started: string[]; problems: string[] }> {
   const started: string[] = [];
   const problems: string[] = [];
+  // The factory as it was before projects is the Default project (D45).
+  await ensureDefaultProject(db).catch(() => undefined);
   const attempt = async (what: string, fn: () => Promise<void>) => {
     try {
       await fn();
@@ -1249,6 +1291,8 @@ export async function loadFactory(
   const app = await bindRepository(db, { name: folder, path: found.path, scripts: found.scripts });
   const namespaces = await ensureNamespaces(db, FACTORY_AGENTS);
   const agents = await upsertAgents(db, FACTORY_AGENTS, { app: app.tool });
+  // The folder it is loaded onto is the Default project, when there is no project yet (D45).
+  await ensureDefaultProject(db);
   return {
     path: found.path,
     tools: [{ name: app.tool.name, outcome: app.outcome }],

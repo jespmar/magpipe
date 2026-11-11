@@ -479,6 +479,29 @@ Code Agent with the operator's note.
 - **Text from Linear is data.** A spec the operator approved is an instruction; a comment from
   anyone else is not. Agents are told so, and only the two builders read comments at all.
 
+## Projects
+
+The factory works on more than one repository (D45). A project is one repository and where its
+work is tracked and lands, edited on Factory → Projects:
+
+- **Repository.** The folder the factory builds in (each goal in a worktree of it) and the
+  scripts the Test Agent may run. The factory's agents keep their one repository grant; a
+  project's run puts the project's folder and scripts in its place.
+- **Linear.** Its own team, label and six statuses, and optionally a Linear project: issues are
+  filed into it and the watcher reads only its issues. Without its own team it uses the
+  workspace's from Settings.
+- **GitHub.** Its own repository, merge method and unattended rule (D44), or the workspace's.
+- **Keys.** One Linear key and one GitHub token in Settings serve every project; a project in
+  another workspace or account carries its own, checked and sealed the same way.
+- **Context for the agents.** A brief every factory agent reads in its prompt on that project's
+  runs.
+- **Limits and models.** Builds at once and a daily spend cap of its own, inside the
+  workspace's; a model per factory agent for its runs.
+
+A spec sent from Home goes to the project picked beside Send to the factory (the only one, when
+there is one), and everything after it, goals, builds and lands, carries that project. The
+factory as it was before projects is the Default project, inheriting everything.
+
 ## When something goes wrong
 
 Every loop has a bound and every bound has an exit.

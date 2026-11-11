@@ -20,6 +20,7 @@ import {
   trackerMessage,
   type RemoteIssue,
 } from './index';
+import { linearOf, linearProjectOf, listProjects, projectLinear } from '../projects';
 
 /** Which pipeline state a status is, by the operator's mapping. */
 export function stageOf(settings: Pick<LinearSettings, 'states'>, stateId: string): IssueStage {
@@ -91,7 +92,13 @@ export async function listIssues(db: Db): Promise<TrackerIssue[]> {
 export async function recordFiledIssue(
   db: Db,
   remote: RemoteIssue,
-  opts: { runId: string; settings: LinearSettings; parentId?: string; goal?: Goal },
+  opts: {
+    runId: string;
+    settings: LinearSettings;
+    parentId?: string;
+    goal?: Goal;
+    projectId?: string | null;
+  },
 ): Promise<TrackerIssue> {
   const now = new Date();
   const row: TrackerIssue = {
@@ -101,6 +108,7 @@ export async function recordFiledIssue(
     url: remote.url,
     title: remote.title,
     runId: opts.runId,
+    projectId: opts.projectId ?? null,
     stage: stageOf(opts.settings, remote.state.id),
     stateName: remote.state.name,
     parentId: opts.parentId ?? null,
@@ -274,9 +282,9 @@ export async function approveIssue(db: Db, id: string): Promise<TrackerIssue | u
       `${issue.identifier} is in ${issue.stateName}, not waiting for approval. Refresh to see where it is.`,
     );
   }
-  const settings = await getLinearSettings(db);
+  const { settings } = await linearOf(db, issue.projectId);
   const approved = settings.states.approved;
-  if (!approved) throw new GateError('Map the approved status in Settings first.');
+  if (!approved) throw new GateError('Map the approved status for this project first.');
   const tracker = await getTracker(db, settings);
   const remote = await tracker.setState(issue.externalId, approved.id);
   const now = new Date();
@@ -339,7 +347,7 @@ export async function sendBackGoal(
       `${issue.identifier} is in ${issue.stateName}, not waiting for the question to merge. Refresh to see where it is.`,
     );
   }
-  const settings = await getLinearSettings(db);
+  const { settings } = await linearOf(db, issue.projectId);
   const tracker = await getTracker(db, settings);
   await tracker.comment(
     issue.externalId,
@@ -385,28 +393,53 @@ export async function checkLinear(
 ): Promise<CheckResult> {
   if (g.__magpipeCheck) return { status: 'skipped', reason: 'busy' };
   const run = (async (): Promise<CheckResult> => {
-    const settings = await getLinearSettings(db);
-    if (!linearReady(settings)) return { status: 'skipped', reason: 'not_ready' };
-    if (settings.paused && !opts.force) return { status: 'skipped', reason: 'paused' };
+    const ws = await getLinearSettings(db);
+    // Each project with its own mapping (D45); without projects, the workspace's alone. A
+    // project that names a Linear project goes first, so it claims its issues before a project
+    // on the same team and label without one.
+    const projects = await listProjects(db);
+    const targets = (
+      projects.length
+        ? await Promise.all(
+            projects.map(async (p) => ({
+              projectId: p.id as string | null,
+              linearProject: linearProjectOf(p),
+              settings: await projectLinear(db, p),
+            })),
+          )
+        : [{ projectId: null, linearProject: undefined, settings: ws }]
+    )
+      .filter((x) => linearReady(x.settings))
+      .sort((a, b) => Number(!a.linearProject) - Number(!b.linearProject));
+    if (!targets.length) return { status: 'skipped', reason: 'not_ready' };
+    if (ws.paused && !opts.force) return { status: 'skipped', reason: 'paused' };
     const at = new Date();
     try {
-      const tracker = await getTracker(db, settings);
-      const since = settings.lastCheckAt
-        ? new Date(settings.lastCheckAt.getTime() - OVERLAP_MS)
-        : undefined;
-      const remote = await tracker.issuesWithLabel({
-        teamId: settings.team!.id,
-        labelId: settings.label!.id,
-        since,
-      });
+      const since = ws.lastCheckAt ? new Date(ws.lastCheckAt.getTime() - OVERLAP_MS) : undefined;
+      let issues = 0;
       let changed = 0;
-      for (const r of remote) if (await applyRemote(db, settings, r)) changed++;
+      const seen = new Set<string>();
+      for (const target of targets) {
+        const tracker = await getTracker(db, target.settings);
+        const remote = await tracker.issuesWithLabel({
+          teamId: target.settings.team!.id,
+          labelId: target.settings.label!.id,
+          projectId: target.linearProject,
+          since,
+        });
+        for (const r of remote) {
+          if (seen.has(r.id)) continue;
+          seen.add(r.id);
+          issues++;
+          if (await applyRemote(db, target.settings, r, target.projectId)) changed++;
+        }
+      }
       const { started, problems } = opts.afterCheck
         ? await opts.afterCheck(db)
         : { started: [], problems: [] };
-      await recordCheck(db, { at, issues: remote.length, changed });
+      await recordCheck(db, { at, issues, changed });
       if (problems.length) await recordCheck(db, { error: problems.join(' ') });
-      return { status: 'done', issues: remote.length, changed, started };
+      return { status: 'done', issues, changed, started };
     } catch (err) {
       const message = trackerMessage(err);
       await recordCheck(db, { error: message });
@@ -421,14 +454,23 @@ export async function checkLinear(
   }
 }
 
-/** Stores what Linear says about one issue. True when its stage changed. */
-async function applyRemote(db: Db, settings: LinearSettings, r: RemoteIssue): Promise<boolean> {
+/**
+ * Stores what Linear says about one issue, as the project that found it reads it. An issue
+ * another project already holds is left to that project (D45). True when its stage changed.
+ */
+async function applyRemote(
+  db: Db,
+  settings: LinearSettings,
+  r: RemoteIssue,
+  projectId: string | null,
+): Promise<boolean> {
   const stage = stageOf(settings, r.state.id);
   const now = new Date();
   const [local] = await db
     .select()
     .from(t.trackerIssues)
     .where(eq(t.trackerIssues.externalId, r.id));
+  if (local && local.projectId && projectId && local.projectId !== projectId) return false;
   if (!local) {
     // A sub-issue labelled by hand belongs to its parent when Magpipe knows the parent.
     const [parent] = r.parentId
@@ -444,6 +486,7 @@ async function applyRemote(db: Db, settings: LinearSettings, r: RemoteIssue): Pr
       url: r.url,
       title: r.title,
       runId: null,
+      projectId,
       stage,
       stateName: r.state.name,
       parentId: parent?.id ?? null,
@@ -487,6 +530,7 @@ async function applyRemote(db: Db, settings: LinearSettings, r: RemoteIssue): Pr
       identifier: r.identifier,
       url: r.url,
       externalParentId: r.parentId,
+      projectId: local.projectId ?? projectId,
       updatedAt: now,
       ...(opensGate ? { approvedAt: now, approvedVia: 'linear' as const } : {}),
       ...(answersMerge ? { mergeRequestedAt: now, mergeRequestedVia: 'linear' as const } : {}),

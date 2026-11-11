@@ -3,6 +3,7 @@ import { apiError, dbError, parseBody, requireUser } from '@/lib/api';
 import { getDb } from '@/lib/db';
 import { getEngine } from '@/lib/engine';
 import { FactoryNotReadyError, runDocument, templatePlan } from '@/lib/factory';
+import { ensureDefaultProject, listProjects, resolveProject } from '@/lib/projects';
 import { createRun, getRun, listRuns } from '@/lib/runs';
 import { runCreateInput, runStatuses, type RunStatus } from '@/lib/schemas';
 import { attachmentsFor, UploadError } from '@/lib/uploads';
@@ -32,7 +33,7 @@ export async function GET(req: Request) {
 }
 
 /**
- * POST /api/runs { text, attachmentIds, parentRunId?, template? } — creates the run and hands it
+ * POST /api/runs { text, attachmentIds, parentRunId?, template?, projectId? } — creates the run and hands it
  * to the engine. With `parentRunId` the run is a follow-up: that run's task and answer (and its
  * own ancestors') become the conversation the new run continues. With `template` the run starts
  * from the factory template's plan (D37); a follow-up revises the document its parent handed over.
@@ -48,9 +49,23 @@ export async function POST(req: Request) {
     if (body.data.parentRunId && !parent) {
       return apiError('not_found', 'The run to follow up on no longer exists', 404);
     }
+    // A spec is for one factory project (D45): the one named, the one its conversation was for,
+    // or the only one there is.
+    let projectId: string | undefined;
+    if (body.data.template) {
+      await ensureDefaultProject(db);
+      const wanted = body.data.projectId ?? parent?.input.projectId;
+      const project = await resolveProject(db, wanted);
+      if (wanted && !project) return apiError('not_found', 'That project no longer exists', 404);
+      if (!project && (await listProjects(db)).length > 1) {
+        return apiError('validation', 'Pick the project this spec is for.');
+      }
+      projectId = project?.id;
+    }
     const preset = body.data.template
       ? await templatePlan(db, body.data.template, {
           draft: parent ? runDocument(parent.plan) : undefined,
+          projectId,
         })
       : undefined;
     const attachments = await attachmentsFor(body.data.attachmentIds);
@@ -60,6 +75,7 @@ export async function POST(req: Request) {
         text: body.data.text,
         attachments,
         ...(body.data.template ? { template: body.data.template } : {}),
+        ...(projectId ? { projectId } : {}),
       },
       body.data.parentRunId ?? null,
       preset,

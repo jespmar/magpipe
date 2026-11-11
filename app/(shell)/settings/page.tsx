@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { signOut } from '@/auth';
 import { PageHead } from '@/components/ui/PageHead';
@@ -238,6 +239,11 @@ export default async function SettingsPage() {
               rather than a plan. Send to the factory on Home has the Spec Builder write a spec and
               the Spec Review check it. With Linear set up, an approved spec is split into goals,
               and each goal is built on its own branch, tests first, until it is ready to merge.
+              The folder loaded here is the Default project; add more on{' '}
+              <Link href="/factory/projects" className="text-ink underline underline-offset-2">
+                Factory, Projects
+              </Link>
+              .
             </p>
             <FactoryForm
               defaultScripts={DEFAULT_FACTORY_SCRIPTS}
@@ -321,7 +327,8 @@ export default async function SettingsPage() {
           <p className="max-w-[31rem] text-body-sm text-body">
             Where the factory keeps its record. A spec that passes review is filed as an issue with
             the label, and you approve it there or from the spec&rsquo;s flight. Without Linear,
-            specs stay in Magpipe.
+            specs stay in Magpipe. The key, team and statuses here are the workspace&rsquo;s: every
+            project uses them unless it sets its own.
           </p>
           {linear ? (
             <LinearForm initial={linear} />
@@ -336,7 +343,8 @@ export default async function SettingsPage() {
           <p className="max-w-[31rem] text-body-sm text-body">
             Where goals land. With GitHub set up, a goal that passes its checks is pushed and opened
             as a pull request, and the merge question waits for you here, in Linear or on GitHub.
-            Without it, goals stop at a branch you merge by hand.
+            Without it, goals stop at a branch you merge by hand. A project with a repository of its
+            own uses that instead, and its own rule.
           </p>
           {forge ? (
             <GitHubForm initial={forge.view} suggestedRepo={forge.suggested} />

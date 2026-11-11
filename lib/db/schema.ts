@@ -30,6 +30,7 @@ import {
   runStatuses,
   toolStatuses,
   type Agent,
+  type FactoryProject,
   type LinearSettings,
   type MemoryEntry,
   type TrackerIssue,
@@ -249,6 +250,7 @@ export const trackerIssues = pgTable(
     identifier: text().notNull(),
     url: text().notNull(),
     title: text().notNull(),
+    projectId: text().references((): AnyPgColumn => factoryProjects.id, { onDelete: 'set null' }),
     runId: text().references(() => runs.id, { onDelete: 'set null' }),
     stage: text({ enum: issueStages }).notNull(),
     stateName: text().notNull(),
@@ -295,3 +297,24 @@ export const forgeSettings = pgTable(
   },
   (t) => [check('forge_settings_single_row', sql`${t.id} = 'github'`)],
 );
+
+// ─── factory projects (D45) ────────────────────────────────────────────────
+
+export const factoryProjects = pgTable('factory_projects', {
+  id: text().primaryKey(),
+  name: text().notNull(),
+  repoPath: text().notNull(),
+  scripts: jsonb().$type<string[]>().notNull(),
+  context: text().notNull().default(''),
+  linear: jsonb().$type<FactoryProject['linear']>().notNull(),
+  github: jsonb().$type<FactoryProject['github']>().notNull(),
+  linearKeyRef: text(),
+  linearKeyHint: text(),
+  githubKeyRef: text(),
+  githubKeyHint: text(),
+  maxRuns: integer(),
+  spendCapUsd: doublePrecision(),
+  models: jsonb().$type<FactoryProject['models']>().notNull(),
+  createdAt: timestamptz().notNull().defaultNow(),
+  updatedAt: timestamptz().notNull().defaultNow(),
+});

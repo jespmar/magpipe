@@ -97,6 +97,16 @@ export function linearTracker(
       return data.teams.nodes;
     },
 
+    async projects(teamId, signal) {
+      const data = await call<{ team: { projects: { nodes: TrackerRef[] } } | null }>(
+        'query ($id: String!) { team(id: $id) { projects(first: 100) { nodes { id name } } } }',
+        { id: teamId },
+        signal,
+      );
+      if (!data.team) throw new TrackerError('Linear has no such team.', 'not_found');
+      return data.team.projects.nodes;
+    },
+
     async states(teamId, signal) {
       const data = await call<{
         team: { states: { nodes: (TrackerState & { position: number })[] } } | null;
@@ -189,7 +199,7 @@ export function linearTracker(
       );
     },
 
-    async issuesWithLabel({ teamId, labelId, since }, signal) {
+    async issuesWithLabel({ teamId, labelId, projectId, since }, signal) {
       const out: RemoteIssue[] = [];
       let after: string | null = null;
       for (let page = 0; page < 20; page++) {
@@ -205,6 +215,7 @@ export function linearTracker(
             filter: {
               team: { id: { eq: teamId } },
               labels: { some: { id: { eq: labelId } } },
+              ...(projectId ? { project: { id: { eq: projectId } } } : {}),
               ...(since ? { updatedAt: { gte: since.toISOString() } } : {}),
             },
           },

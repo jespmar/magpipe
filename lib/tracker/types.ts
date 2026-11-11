@@ -27,6 +27,8 @@ export interface Tracker {
   /** Who the key belongs to: proves the key works. */
   viewer(signal?: AbortSignal): Promise<{ name: string }>;
   teams(signal?: AbortSignal): Promise<TrackerTeam[]>;
+  /** The team's Linear projects, so a factory project can file into one (D45). */
+  projects(teamId: string, signal?: AbortSignal): Promise<TrackerRef[]>;
   /** The team's statuses, in the team's own order. */
   states(teamId: string, signal?: AbortSignal): Promise<TrackerState[]>;
   /** The label with this name usable in the team (its own or the workspace's), made if missing. */
@@ -43,6 +45,8 @@ export interface Tracker {
       labelIds: string[];
       stateId: string;
       parentId?: string;
+      /** The Linear project the issue joins, when the factory project names one (D45). */
+      projectId?: string;
     },
     signal?: AbortSignal,
   ): Promise<RemoteIssue>;
@@ -58,9 +62,12 @@ export interface Tracker {
     signal?: AbortSignal,
   ): Promise<RemoteIssue>;
   comment(issueId: string, body: string, signal?: AbortSignal): Promise<void>;
-  /** Every issue of the team that carries the label, updated since `since` when given. */
+  /**
+   * Every issue of the team that carries the label, in the Linear project when given, updated
+   * since `since` when given.
+   */
   issuesWithLabel(
-    input: { teamId: string; labelId: string; since?: Date },
+    input: { teamId: string; labelId: string; projectId?: string; since?: Date },
     signal?: AbortSignal,
   ): Promise<RemoteIssue[]>;
 }

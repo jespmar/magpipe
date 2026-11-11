@@ -5,6 +5,7 @@ import { PageHead } from '@/components/ui/PageHead';
 import { getDb } from '@/lib/db';
 import { missingAgents } from '@/lib/factory';
 import { getHomeData, type HomeData } from '@/lib/home';
+import { listProjects } from '@/lib/projects';
 
 /**
  * Home (spec §3.2, D21, D23): the nest in the middle, the latest flights as small cards beside
@@ -15,10 +16,12 @@ import { getHomeData, type HomeData } from '@/lib/home';
 export default async function HomePage() {
   let data: HomeData;
   let factory = false;
+  let projects: { id: string; name: string }[] = [];
   try {
     const db = await getDb();
     data = await getHomeData(db);
     factory = (await missingAgents(db, 'spec')).length === 0;
+    if (factory) projects = (await listProjects(db)).map((p) => ({ id: p.id, name: p.name }));
   } catch (err) {
     console.error('[home] unavailable:', err);
     return (
@@ -38,6 +41,7 @@ export default async function HomePage() {
       initialEvents={data.selectedEvents}
       now={new Date()}
       factory={factory}
+      projects={projects}
       core={
         <OrchestratorCore
           stats={data.stats}
