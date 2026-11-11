@@ -828,3 +828,24 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
   approval and lets the Reviewer send work back once, so a loaded flock runs a whole change in
   one run. `lib/flock.ts` takes its prompts and entries from `docs/flock.md` as they stand after
   D30, D31 and D34, and the drift tests hold the two together.
+
+## D36 · A software factory on top of the flock
+
+- **Why.** The flock turns a task into a reviewed branch with the operator starting each run.
+  The next step is a pipeline that starts from an idea and ends at a merge with the operator
+  deciding twice: nine agents (Spec Builder, Spec Review, Goal Builder, Goal Review, Test
+  Agent, Code Agent, Code Review, Code Skeptic, Merge Agent) and Linear as the record.
+- **Decided.** The spec is approved by a person, in Linear or from Magpipe, where the button
+  sets Linear's status so there is one answer. The factory starts with pull requests and a
+  question to merge; merging without a person is a later, separate decision. Goals build in
+  parallel in a git worktree each.
+- **Shaped by the evidence in `flock.md`.** Judges give evidence, not opinions: the two
+  reviews of prose check fixed lists; the Test Agent writes the tests before the code and
+  proves afterwards they were not weakened; the Code Skeptic blocks only with a failing test.
+  Every loop is bounded and ends in a "needs you" status with the findings attached.
+- **Linear holds the state, runs stay short.** Each stage is a run from a fixed template,
+  started by a watcher when an issue's status says so, instead of one long run per idea. The
+  engine already skips planning for a run that has a plan and already locks per work tree, so
+  templates and parallel worktrees fit what is there.
+- **Not yet.** Nothing is built. `docs/factory.md` has the pipeline, the agents, the gates, the
+  engine needs and an eight-phase build order, with four points to confirm first.
