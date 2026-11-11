@@ -7,6 +7,8 @@ import { loadFlock, summarizeFlock } from '@/lib/flock';
 import { parseScripts, RosterValidationError, type RosterLine } from '@/lib/roster';
 import { plural } from '@/lib/format';
 import {
+  autoMergeInput,
+  type AutoMergeInput,
   forgeKeyInput,
   forgeRepoInput,
   type ForgeKeyInput,
@@ -44,6 +46,7 @@ import {
   ForgeNotReadyError,
   forgeView,
   removeForgeKey,
+  saveAutoMerge,
   saveForgeKey,
   saveForgeRepo,
   type ForgeView,
@@ -318,5 +321,18 @@ export async function saveForgeRepoAction(
     return { ok: true, view: forgeView(settings), defaultBranch };
   } catch (err) {
     return { ...(await forgeFailure(err, 'save the GitHub repository')), field: 'repo' };
+  }
+}
+
+/** Saves the unattended-merge rule (D44). */
+export async function saveAutoMergeAction(input: AutoMergeInput): Promise<ForgeResult> {
+  const parsed = autoMergeInput.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]!.message, field: 'autoMergeLabel' };
+  }
+  try {
+    return { ok: true, view: forgeView(await saveAutoMerge(await getDb(), parsed.data)) };
+  } catch (err) {
+    return forgeFailure(err, 'save the unattended-merge rule');
   }
 }

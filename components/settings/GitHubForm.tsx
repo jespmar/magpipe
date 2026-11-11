@@ -5,8 +5,10 @@ import { useId, useState, useTransition, type FormEvent } from 'react';
 import { Input } from '@/components/arc/input/input';
 import { Select } from '@/components/arc/select/select';
 import { Button } from '@/components/ui/Button';
+import { Checkbox } from '@/components/arc/checkbox/checkbox';
 import {
   removeForgeKeyAction,
+  saveAutoMergeAction,
   saveForgeKeyAction,
   saveForgeRepoAction,
 } from '@/app/(shell)/settings/actions';
@@ -48,6 +50,12 @@ export function GitHubForm({ initial, suggestedRepo, disabledReason }: Props) {
   const [repoError, setRepoError] = useState<string>();
   const [method, setMethod] = useState<ForgeRepoInput['mergeMethod']>(initial.mergeMethod);
   const [note, setNote] = useState<Note>(null);
+  const [auto, setAuto] = useState(initial.autoMerge);
+  const [autoLabel, setAutoLabel] = useState(initial.autoMergeLabel);
+  const [firstPass, setFirstPass] = useState(initial.autoMergeFirstPass);
+  const [checks, setChecks] = useState(initial.autoMergeChecks);
+  const [labelError, setLabelError] = useState<string>();
+  const [ruleNote, setRuleNote] = useState<Note>(null);
 
   const run = (what: string, fn: () => Promise<void>) => {
     setBusy(what);
@@ -98,6 +106,31 @@ export function GitHubForm({ initial, suggestedRepo, disabledReason }: Props) {
         text: `Read back from GitHub: ${res.view.repo}, default branch ${res.defaultBranch}.`,
       });
       router.refresh();
+    });
+  }
+
+  function saveRule(e: FormEvent) {
+    e.preventDefault();
+    run('rule', async () => {
+      const res = await saveAutoMergeAction({
+        autoMerge: auto,
+        autoMergeLabel: autoLabel,
+        autoMergeFirstPass: firstPass,
+        autoMergeChecks: checks,
+      });
+      if (!res.ok) {
+        if (res.field === 'autoMergeLabel') setLabelError(res.message);
+        else setRuleNote({ tone: 'error', text: res.message });
+        return;
+      }
+      setView(res.view);
+      setLabelError(undefined);
+      setRuleNote({
+        tone: 'done',
+        text: res.view.autoMerge
+          ? `Saved. Goals labelled ${res.view.autoMergeLabel} merge without asking when the rule holds.`
+          : 'Saved. Every merge waits for your answer.',
+      });
     });
   }
 
@@ -212,6 +245,72 @@ export function GitHubForm({ initial, suggestedRepo, disabledReason }: Props) {
             Save a token first: Magpipe checks the repository with it.
           </p>
         )}
+      </form>
+      <form onSubmit={saveRule} noValidate className="flex flex-col gap-3 md:col-span-2">
+        <h3 className="font-medium text-body text-ink">Unattended merges</h3>
+        <p className="max-w-[31rem] text-body-sm text-body">
+          Off unless you turn it on. When every condition below holds for a goal at the question to
+          merge, the question answers itself; the goal is still brought up to date, tested again and
+          checked before it merges, and anything that fails comes back to you.
+        </p>
+        <Checkbox
+          label="Merge without asking when the rule holds"
+          description={
+            view.ready
+              ? 'Applies at the next check to goals waiting at the question to merge.'
+              : 'Needs the token and the repository above.'
+          }
+          checked={auto}
+          disabled={!view.ready}
+          onCheckedChange={(on) => setAuto(on === true)}
+        />
+        <div className="max-w-[20rem]">
+          <Input
+            id={`${ids}-auto-label`}
+            label="Label it needs"
+            description="On the goal or its spec in Linear. Only labelled work merges by itself."
+            autoComplete="off"
+            spellCheck={false}
+            value={autoLabel}
+            readOnly={pending}
+            error={labelError}
+            onChange={(e) => {
+              setAutoLabel(e.target.value);
+              setLabelError(undefined);
+            }}
+          />
+        </div>
+        <Checkbox
+          label="Only when every judge passed on the first try"
+          description="A goal whose tests, review or skeptic sent the work back waits for you."
+          checked={firstPass}
+          onCheckedChange={(on) => setFirstPass(on === true)}
+        />
+        <Checkbox
+          label="Only when the pull request’s checks are green"
+          description="Checks still running mean wait; failed checks, or none at all, mean ask you."
+          checked={checks}
+          onCheckedChange={(on) => setChecks(on === true)}
+        />
+        <div>
+          <Button
+            type="submit"
+            size="sm"
+            loading={busy === 'rule'}
+            disabled={pending && busy !== 'rule'}
+          >
+            Save the rule
+          </Button>
+        </div>
+        <p
+          role="status"
+          aria-live="polite"
+          className={
+            ruleNote?.tone === 'error' ? 'text-body-sm text-danger' : 'text-body-sm text-emerald'
+          }
+        >
+          {ruleNote?.text ?? ''}
+        </p>
       </form>
       <p
         role="status"

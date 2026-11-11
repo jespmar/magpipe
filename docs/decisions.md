@@ -1052,3 +1052,30 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
   says what will appear and links Home and Settings, with the real facts (agents loaded, Linear,
   GitHub). The demo data has no factory, so this screen offers none. A database that cannot be
   opened shows the shell's unavailable state; a loading boundary sits beside the page.
+
+## D44 · Factory phase 8: unattended merges under the operator's rule
+
+- **Why.** Once goals build, pass three judges and land through a re-test, low-risk work can
+  merge without the operator answering every question. The design made this its own decision:
+  the factory may answer G2 itself only under a rule the operator sets, never on its own
+  judgment.
+- **Decided: off by default, narrow when on.** Settings → GitHub → Unattended merges holds the
+  switch (off) and the rule. Every condition must hold: the goal or its spec carries a Linear
+  label the operator names (default `auto-merge`), so only work they marked is eligible; every
+  judge of the latest build passed, on the first try unless the operator drops that condition
+  (nothing sent back); and the pull request's checks are green unless the operator drops that
+  one. Checks still running mean wait; failed checks, or none at all, leave the question to the
+  operator. Four columns on `forge_settings`, migration 0012.
+- **How it answers.** After each Linear check, the tick holds each goal at the question to merge
+  to the rule (`ruleVerdict`, a pure function, tested condition by condition). Where it holds,
+  the answer is recorded as `rule`, the issue gets a comment saying the rule answered and why,
+  and the goal lands exactly as an answer from a person would: brought up to date, tested again,
+  checked by the Merge Agent, merged, or sent to needs you when anything fails. Where it does
+  not hold, nothing is said; the question waits as before. The issue bar and the board say
+  "by your rule".
+- **Labels from Linear.** Issues now carry their label names on the tracker seam; the rule reads
+  the goal's and its spec's at decision time, so adding or removing the label in Linear takes
+  effect at the next check.
+- **Not done.** No rule on the size of a change or the paths it touches, and no per-repository
+  rules: the label is the operator's way to scope it. Re-read Anthropic's terms before letting
+  the factory run unattended on a subscription (D36).

@@ -27,7 +27,7 @@ import {
   type RosterLine,
   type RosterOutcome,
 } from './roster';
-import type { Run, RunTemplate, Step, StepAction, TrackerIssue } from './schemas';
+import type { ForgeSettings, Run, RunTemplate, Step, StepAction, TrackerIssue } from './schemas';
 import { createRun } from './runs';
 import { and, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import * as t from './db/schema';
@@ -46,7 +46,7 @@ import {
 import { goalBranch } from './engine/actions';
 import { ensureWorktree, removeWorktree } from './worktrees';
 import { getLinearSettings, getTracker, linearReady } from './tracker';
-import { ForgeError, forgeReady, getForge, getForgeSettings } from './forge';
+import { ForgeError, forgeReady, getForge, getForgeSettings, type PullRequest } from './forge';
 
 export { parseScripts, RosterValidationError as FactoryValidationError } from './roster';
 
@@ -1042,6 +1042,111 @@ async function watchPulls(db: Db): Promise<void> {
   }
 }
 
+/** What the unattended-merge rule makes of one goal (D44). */
+export type RuleVerdict =
+  { holds: true; reasons: string[] } | { holds: false; waiting: boolean; reasons: string[] };
+
+/**
+ * Whether the operator's rule answers a goal's merge question itself (D44). Every condition the
+ * rule names must hold: the label on the goal or its spec; every judge passed on the first try,
+ * nothing sent back; the pull request's checks green. Checks still running mean wait, not no.
+ */
+export function ruleVerdict(input: {
+  rule: Pick<
+    ForgeSettings,
+    'autoMerge' | 'autoMergeLabel' | 'autoMergeFirstPass' | 'autoMergeChecks'
+  >;
+  labels: readonly string[];
+  build: Pick<Run, 'plan'> | undefined;
+  checks: PullRequest['checks'];
+}): RuleVerdict {
+  const { rule } = input;
+  if (!rule.autoMerge) return { holds: false, waiting: false, reasons: ['the rule is off'] };
+  const reasons: string[] = [];
+  const missing: string[] = [];
+  const label = rule.autoMergeLabel.toLowerCase();
+  if (input.labels.some((l) => l.toLowerCase() === label))
+    reasons.push(`it carries ${rule.autoMergeLabel}`);
+  else missing.push(`neither the goal nor its spec carries ${rule.autoMergeLabel}`);
+  const judges = input.build?.plan.filter((s) => s.judges) ?? [];
+  const allPass =
+    judges.length > 0 && judges.every((s) => s.status === 'done' && s.verdict === 'pass');
+  if (!allPass) missing.push('its build’s judges did not all pass');
+  if (rule.autoMergeFirstPass) {
+    const sentBack = input.build?.plan.some((s) => (s.round ?? 1) > 1) ?? true;
+    if (sentBack) missing.push('a judge sent the work back');
+    else if (allPass) reasons.push('every judge passed on the first try');
+  } else if (allPass) {
+    reasons.push('every judge passed');
+  }
+  let waiting = false;
+  if (rule.autoMergeChecks) {
+    if (input.checks === 'success') reasons.push('its checks are green');
+    else if (input.checks === 'pending') {
+      waiting = true;
+      missing.push('its checks are still running');
+    } else if (input.checks === 'failure') missing.push('its checks failed');
+    else missing.push('its pull request has no checks to read');
+  }
+  return missing.length === 0
+    ? { holds: true, reasons }
+    : { holds: false, waiting: waiting && missing.length === 1, reasons: missing };
+}
+
+/**
+ * Unattended merges (D44): each goal at the merge question with its pull request is held to the
+ * operator's rule. Where it holds, the question answers itself, says why on the issue, and the
+ * goal lands the usual way: brought up to date, tested again, checked. Where it does not, the
+ * question waits for the operator, as it always has; nothing is said every check.
+ */
+async function answerByRule(db: Db): Promise<void> {
+  const forgeSettings = await getForgeSettings(db);
+  if (!forgeSettings.autoMerge || !forgeReady(forgeSettings)) return;
+  const asking = await db
+    .select()
+    .from(t.trackerIssues)
+    .where(
+      and(
+        eq(t.trackerIssues.stage, 'merge_question'),
+        isNotNull(t.trackerIssues.prNumber),
+        isNull(t.trackerIssues.mergeRequestedAt),
+        isNull(t.trackerIssues.mergedAt),
+      ),
+    );
+  if (asking.length === 0) return;
+  const settings = await getLinearSettings(db);
+  const tracker = await getTracker(db, settings);
+  const { forge, repo } = await getForge(db, forgeSettings);
+  for (const goal of asking) {
+    const remote = await tracker.getIssue(goal.externalId);
+    const spec = goal.parentId ? await getIssue(db, goal.parentId) : undefined;
+    const specLabels = spec ? (await tracker.getIssue(spec.externalId)).labels : [];
+    const [build] = goal.buildRunId
+      ? await db.select({ plan: t.runs.plan }).from(t.runs).where(eq(t.runs.id, goal.buildRunId))
+      : [];
+    const pr = await forge.pullRequest(repo, goal.prNumber!);
+    if (pr.state !== 'open') continue;
+    const verdict = ruleVerdict({
+      rule: forgeSettings,
+      labels: [...remote.labels, ...specLabels],
+      build,
+      checks: pr.checks,
+    });
+    if (!verdict.holds) continue;
+    const now = new Date();
+    const [row] = await db
+      .update(t.trackerIssues)
+      .set({ mergeRequestedAt: now, mergeRequestedVia: 'rule', updatedAt: now })
+      .where(and(eq(t.trackerIssues.id, goal.id), isNull(t.trackerIssues.mergeRequestedAt)))
+      .returning();
+    if (!row) continue;
+    await tracker.comment(
+      goal.externalId,
+      `The question to merge answered itself under your rule: ${verdict.reasons.join(', ')}. Magpipe brings the branch up to date, runs the tests again and has the Merge Agent check it before merging; anything that fails comes back to you.`,
+    );
+  }
+}
+
 /** Goals whose merge question was answered yes and have not started landing (D42). */
 async function answeredGoals(db: Db): Promise<TrackerIssue[]> {
   return db
@@ -1090,6 +1195,9 @@ export async function factoryTick(
   });
   await attempt('Pull requests not checked', async () => {
     await watchPulls(db);
+  });
+  await attempt('Unattended merges not checked', async () => {
+    await answerByRule(db);
   });
   for (const goal of await answeredGoals(db)) {
     await attempt(`Merge not started for ${goal.identifier}`, async () => {

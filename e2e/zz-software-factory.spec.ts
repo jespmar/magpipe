@@ -191,6 +191,15 @@ test('settings connects Linear, a passing spec is filed, Home approves it, its g
     github.getByText('Read back from GitHub: magpipe-e2e/app, default branch main.'),
   ).toBeVisible({ timeout: 15_000 });
 
+  // Unattended merges (D44) are off until turned on; saving them off says every merge waits.
+  await expect(
+    github.getByRole('checkbox', { name: 'Merge without asking when the rule holds' }),
+  ).not.toBeChecked();
+  await github.getByRole('button', { name: 'Save the rule' }).click();
+  await expect(github.getByText('Saved. Every merge waits for your answer.')).toBeVisible({
+    timeout: 15_000,
+  });
+
   // The goal's turn (D40): Check now in Settings starts its build, which writes the tests, builds,
   // runs, reviews and tries to break it, then pushes, opens the pull request and asks to merge.
   const linear = page.getByRole('region', { name: 'Linear' });
@@ -227,8 +236,8 @@ test('settings connects Linear, a passing spec is filed, Home approves it, its g
     /Merged MAG-\d+'s pull request #1/,
   );
 
-  // The factory screen (D43): the goal sits in Done with its merged pull request, its spec in
-  // Building with the goal counted.
+  // The factory screen (D43): the goal sits in Done with its merged pull request, and its spec
+  // counts it.
   await page
     .getByRole('navigation', { name: 'Main' })
     .getByRole('link', { name: 'Factory' })
@@ -240,7 +249,8 @@ test('settings connects Linear, a passing spec is filed, Home approves it, its g
   await expect(doneColumn).toContainText('Meet criterion 1');
   await expect(doneColumn).toContainText('merged');
   await expect(doneColumn.getByRole('list', { name: /MAG-\d+ checks/ })).toContainText('pass');
-  await expect(page.getByRole('region', { name: 'Building' })).toContainText('1 of 1 goals done');
+  // Its spec counts the goal; the watcher may already have moved the spec to Done.
+  await expect(page.getByText('1 of 1 goals done')).toBeVisible();
 
   // Leave no tool card behind for a folder that is about to be deleted.
   const { tools } = (await (await request.get('/api/tools')).json()) as {
