@@ -167,7 +167,8 @@ export async function planRun(opts: {
   conversation?: string;
   signal: AbortSignal;
 }): Promise<PlanResult> {
-  const available = opts.agents.filter((a) => a.status !== 'paused');
+  // A template's agents run only from their template (D37): the orchestrator never plans them.
+  const available = opts.agents.filter((a) => a.status !== 'paused' && !a.templateOnly);
   const system = `${ORCHESTRATOR_SYSTEM}\n\nAgents available:\n${registryText(available, opts.tools) || '(none)'}\n\nShared memory worth knowing:\n${memoryText(opts.memory)}${
     opts.conversation
       ? `\n\nThe operator is continuing a conversation. Earlier turns, oldest first:\n${opts.conversation}\n\nThe task below is the next turn; read it in that light.`

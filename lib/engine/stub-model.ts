@@ -1,8 +1,9 @@
 /**
  * A scripted stand-in for the model, for development and end-to-end tests without credentials
  * (`MAGPIPE_MODEL_STUB=scripted`, never in production). It plans one step for the first agent in
- * the registry, answers the step with a line of text and merges a short markdown result, so a
- * run goes queued → running → done through the real engine, events and screens.
+ * the registry, answers the step with a line of text (a short spec when the step writes a
+ * document) and merges a short markdown result, so a run goes queued → running → done through
+ * the real engine, events and screens.
  */
 import type { ModelClient, ModelMessage, ModelParams } from './model';
 
@@ -103,6 +104,38 @@ export function scriptedModelClient(): ModelClient {
             'Merged by the scripted model: the one step answered the task in a line.',
             '',
             '- No tools were called and nothing was written to memory.',
+          ].join('\n'),
+        );
+      }
+      // A step whose result is a document (a factory spec, D37) hands one over.
+      if (system.includes('Your result is a document')) {
+        return message(
+          [
+            '# Scripted spec',
+            '',
+            '## Problem',
+            '',
+            'Written by the scripted model from the task. It stands in for the spec a Spec Builder writes: the problem as the operator described it, who has it, and what it costs them today, with the paths in the repository where it shows.',
+            '',
+            '## Outcome',
+            '',
+            'The task is done, and a person who reads only this section knows what changed for them. The outcome names the screen, the command or the file where the change can be seen, and nothing about how it was built.',
+            '',
+            '## Acceptance criteria',
+            '',
+            '1. A test checks it.',
+            '',
+            '## Not in scope',
+            '',
+            'Anything else.',
+            '',
+            '## Constraints',
+            '',
+            'None found.',
+            '',
+            '## Assumptions and open questions',
+            '',
+            'None.',
           ].join('\n'),
         );
       }

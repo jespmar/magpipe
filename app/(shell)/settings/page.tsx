@@ -7,6 +7,7 @@ import { Kbd } from '@/components/ui/Kbd';
 import { DemoDataForm } from '@/components/settings/DemoDataForm';
 import { StandingInstructions } from '@/components/settings/StandingInstructions';
 import { SpendCapForm } from '@/components/settings/SpendCapForm';
+import { FactoryForm } from '@/components/settings/FactoryForm';
 import { FlockForm } from '@/components/settings/FlockForm';
 import { ScrollToHash } from '@/components/ui/ScrollToHash';
 import { TextBlock } from '@/components/ui/TextBlock';
@@ -18,6 +19,7 @@ import { buildSeed } from '@/lib/db/seed-data';
 import { env } from '@/lib/env';
 import { listMemory } from '@/lib/memory';
 import { STANDING_NS } from '@/lib/memory-util';
+import { DEFAULT_FACTORY_SCRIPTS } from '@/lib/factory';
 import { DEFAULT_FLOCK_SCRIPTS, FLOCK_DECISIONS } from '@/lib/flock';
 import { accessMode } from '@/lib/auth-mode';
 import { currentUser } from '@/lib/session';
@@ -161,6 +163,21 @@ export default async function SettingsPage() {
                 </Button>
               </form>
             ) : null}
+          </Section>
+          <Section id="factory" title="Software factory">
+            <p className="max-w-[31rem] text-body-sm text-body">
+              Nine birds that turn an idea into a reviewed change, each stage run from a template
+              rather than a plan. For now the factory writes specs: Send to the factory on Home has
+              the Spec Builder write one and the Spec Review check it. The building stages follow.
+            </p>
+            <FactoryForm
+              defaultScripts={DEFAULT_FACTORY_SCRIPTS}
+              disabledReason={
+                shell.dbError
+                  ? 'Needs the database. See the notice at the top of the page.'
+                  : undefined
+              }
+            />
           </Section>
         </div>
         <div className="flex min-w-0 flex-col gap-6">

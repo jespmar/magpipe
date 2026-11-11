@@ -45,7 +45,14 @@ const ALL_NS = NAMESPACES.map((n) => n.key);
 
 const AGENTS: Omit<
   Agent,
-  'id' | 'tools' | 'pauseAfter' | 'sendBackRounds' | 'status' | 'createdAt' | 'updatedAt'
+  | 'id'
+  | 'tools'
+  | 'pauseAfter'
+  | 'sendBackRounds'
+  | 'templateOnly'
+  | 'status'
+  | 'createdAt'
+  | 'updatedAt'
 >[] = [
   {
     slug: 'researcher',
@@ -576,6 +583,7 @@ export function buildSeed(now = new Date()): SeedData {
     }),
     pauseAfter: false,
     sendBackRounds: 0,
+    templateOnly: false,
     status: 'idle',
     createdAt: at(30 * DAY),
     updatedAt: at(30 * DAY),

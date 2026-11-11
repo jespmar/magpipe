@@ -129,6 +129,7 @@ export async function createAgent(db: Db, input: AgentInput): Promise<Agent> {
     limits: input.limits,
     pauseAfter: input.pauseAfter,
     sendBackRounds: input.sendBackRounds,
+    templateOnly: input.templateOnly,
     status: 'idle',
     createdAt: now,
     updatedAt: now,

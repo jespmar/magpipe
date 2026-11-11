@@ -21,6 +21,8 @@ type Props = {
   now: Date;
   /** The nest, rendered by the server. */
   core: ReactNode;
+  /** The software factory's spec template can run (D37). */
+  factory?: boolean;
 };
 
 /**
@@ -35,6 +37,7 @@ export function HomeScreen({
   initialEvents,
   now,
   core,
+  factory = false,
 }: Props) {
   const router = useRouter();
   const [selectedId, setSelectedId] = useState(initialSelectedId);
@@ -127,6 +130,7 @@ export function HomeScreen({
           target={following ? selected : null}
           onClearTarget={() => setFollowing(false)}
           onStarted={onStarted}
+          factory={factory}
         />
       </div>
     </div>

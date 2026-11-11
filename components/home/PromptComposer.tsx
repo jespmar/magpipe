@@ -3,13 +3,13 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useId, useRef, useState, type DragEvent } from 'react';
 import { clsx } from 'clsx';
-import { ArrowRight, FileText, Paperclip, X } from 'lucide-react';
+import { ArrowRight, Factory, FileText, Paperclip, X } from 'lucide-react';
 import { Textarea } from '@/components/arc/textarea/textarea';
 import { Button } from '@/components/ui/Button';
 import { Kbd } from '@/components/ui/Kbd';
 import { api, ApiError } from '@/lib/client-api';
 import { formatBytes } from '@/lib/home-util';
-import type { Run, Upload } from '@/lib/schemas';
+import type { Run, RunTemplate, Upload } from '@/lib/schemas';
 
 const MAX_BYTES = 25 * 1024 * 1024;
 const MAX_FILES = 10;
@@ -31,21 +31,29 @@ type Props = {
   onClearTarget?: () => void;
   /** Given, the new run is handed over and the prompt clears; otherwise the run's page opens. */
   onStarted?: (run: Run) => void;
+  /** The software factory's spec template can run (D37): shows "Send to the factory". */
+  factory?: boolean;
 };
 
 /**
  * The prompt window (spec §5.6): describe the task, attach files (picker or drop), run with the
  * button or ⌘/Ctrl + Enter. Files upload as soon as they are chosen so Run only has to send ids.
- * With a target the message is a follow-up to that flight (D23).
+ * With a target the message is a follow-up to that flight (D23). "Send to the factory" runs the
+ * spec template instead of the orchestrator's plan (D37); as a follow-up it revises the spec.
  */
-export function PromptComposer({ target = null, onClearTarget, onStarted }: Props) {
+export function PromptComposer({
+  target = null,
+  onClearTarget,
+  onStarted,
+  factory = false,
+}: Props) {
   const router = useRouter();
   const id = useId();
   const textarea = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const [chips, setChips] = useState<Chip[]>([]);
   const [dragging, setDragging] = useState(false);
-  const [sending, setSending] = useState(false);
+  const [sending, setSending] = useState<'run' | RunTemplate | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [mac, setMac] = useState(true);
   useEffect(() => {
@@ -106,7 +114,7 @@ export function PromptComposer({ target = null, onClearTarget, onStarted }: Prop
     setChips((prev) => prev.filter((c) => c.key !== key));
   }
 
-  async function submit() {
+  async function submit(template?: RunTemplate) {
     if (sending) return;
     const text = textarea.current?.value.trim() ?? '';
     if (!text) {
@@ -124,7 +132,7 @@ export function PromptComposer({ target = null, onClearTarget, onStarted }: Prop
       return;
     }
     setProblem(null);
-    setSending(true);
+    setSending(template ?? 'run');
     try {
       const { run } = await api<{ run: Run }>('/api/runs', {
         method: 'POST',
@@ -132,18 +140,19 @@ export function PromptComposer({ target = null, onClearTarget, onStarted }: Prop
           text,
           attachmentIds: chips.map((c) => c.uploadId).filter((x): x is string => !!x),
           ...(target ? { parentRunId: target.id } : {}),
+          ...(template ? { template } : {}),
         }),
       });
       if (onStarted) {
         if (textarea.current) textarea.current.value = '';
         setChips([]);
-        setSending(false);
+        setSending(null);
         onStarted(run);
       } else {
         router.push(`/runs/${run.displayId}`);
       }
     } catch (err) {
-      setSending(false);
+      setSending(null);
       setProblem(
         err instanceof ApiError ? err.message : 'The run could not be started. Try again.',
       );
@@ -276,7 +285,23 @@ export function PromptComposer({ target = null, onClearTarget, onStarted }: Prop
               <span>+</span>
               <Kbd>Enter</Kbd>
             </span>
-            <Button type="submit" variant="primary" loading={sending}>
+            {factory ? (
+              <Button
+                variant="secondary"
+                loading={sending === 'spec'}
+                disabled={sending === 'run'}
+                onClick={() => void submit('spec')}
+              >
+                <Factory size={16} strokeWidth={1.75} aria-hidden />
+                Send to the factory
+              </Button>
+            ) : null}
+            <Button
+              type="submit"
+              variant="primary"
+              loading={sending === 'run'}
+              disabled={sending === 'spec'}
+            >
               Run
               <ArrowRight size={16} strokeWidth={1.75} aria-hidden />
             </Button>

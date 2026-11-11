@@ -6,19 +6,25 @@ import * as t from './db/schema';
 import { newId } from './ids';
 import { ZERO_USAGE } from './pricing';
 import { computeRunsStats, threadTurn, type RunsStats, type ThreadTurn } from './runs-util';
-import { runStatuses, type Attachment, type Run, type RunStatus } from './schemas';
+import { emitEvent } from './engine/events';
+import { runStatuses, type Run, type RunStatus, type Step } from './schemas';
 
+/**
+ * A new queued run. With `plan` (a template's, D37) the run starts from it and the engine skips
+ * planning; the trail says where the plan came from.
+ */
 export async function createRun(
   db: Db,
-  input: { text: string; attachments: Attachment[] },
+  input: Run['input'],
   parentRunId: string | null = null,
+  preset?: { plan: Step[]; text: string },
 ): Promise<Run> {
   const run: Run = {
     id: newId('run'),
     displayId: await nextRunDisplayId(db),
     input,
     status: 'queued',
-    plan: [],
+    plan: preset?.plan ?? [],
     startedAt: null,
     finishedAt: null,
     durationMs: null,
@@ -30,6 +36,23 @@ export async function createRun(
     createdAt: new Date(),
   };
   await db.insert(t.runs).values(run);
+  if (preset) {
+    await emitEvent(db, {
+      runId: run.id,
+      stepId: null,
+      agentId: null,
+      kind: 'plan',
+      text: preset.text,
+      payload: {
+        steps: preset.plan.map((s) => ({
+          id: s.id,
+          agentId: s.agentId,
+          title: s.title,
+          dependsOn: s.dependsOn,
+        })),
+      },
+    });
+  }
   return run;
 }
 

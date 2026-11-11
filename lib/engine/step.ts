@@ -7,7 +7,15 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Db } from '../db';
 import * as t from '../db/schema';
-import type { Agent, Attachment, MemoryEntry, Run, Step, Usage } from '../schemas';
+import {
+  DOCUMENT_CAP,
+  type Agent,
+  type Attachment,
+  type MemoryEntry,
+  type Run,
+  type Step,
+  type Usage,
+} from '../schemas';
 import type { RunBackend } from './backend';
 import { emitEvent } from './events';
 import { EngineError, withRetries } from './model';
@@ -16,7 +24,23 @@ import { setupTools, type StepConventions, type Trail } from './tools';
 import { CONVENTIONS_CAP } from '../repo';
 import { resumeNote, workFacts, type WorkItem } from '../work';
 
-export type StepOutcome = { summary: string; usage: Usage };
+/** `document` is set when the step writes one (D37): its whole result, up to DOCUMENT_CAP. */
+export type StepOutcome = { summary: string; usage: Usage; document?: string };
+
+/** The 1000-character summary of a document: its opening, cut at a line where one fits. */
+export function documentSummary(text: string, cap = 1000): string {
+  if (text.length <= cap) return text;
+  const head = text.slice(0, cap - 1);
+  const cut = head.lastIndexOf('\n');
+  return `${(cut > cap / 2 ? head.slice(0, cut) : head).trimEnd()}…`;
+}
+
+/** What the step must finish with: a short result, or the whole document (D37). */
+function resultRule(step: Step): string {
+  return step.writesDocument
+    ? `You are one agent in a run orchestrated by Magpipe. Do the step you are given and use your tools when they help. Your result is a document: finish with the whole document in Markdown and nothing after it. The steps after yours read all of it, and the operator receives it.`
+    : `You are one agent in a run orchestrated by Magpipe. Do the step you are given, use your tools when they help, and finish with a clear written result: what you found or did, and anything the next step must know. Keep it under 1000 characters.`;
+}
 
 export async function runStep(opts: {
   db: Db;
@@ -78,7 +102,7 @@ export async function runStep(opts: {
     const system = [
       agent.systemPrompt || `You are ${agent.name}, ${agent.role}.`,
       '',
-      `You are one agent in a run orchestrated by Magpipe. Do the step you are given, use your tools when they help, and finish with a clear written result: what you found or did, and anything the next step must know. Keep it under 1000 characters.`,
+      resultRule(step),
       readable.length ? `\nShared memory you may rely on:\n${memoryText(readable)}` : '',
       runtime.conventions.length ? `\n${conventionsText(runtime.conventions)}` : '',
     ].join('\n');
@@ -87,6 +111,8 @@ export async function runStep(opts: {
     const context = opts.upstream
       .filter((s) => s.result?.summary)
       .map((s) => {
+        // A document is handed on whole (D37); the summary is only its opening.
+        if (s.document) return `Document written by "${s.title}", in full:\n${s.document}`;
         const facts = workFacts(s.work);
         // The operator approved this result before your step could start (D30).
         const approval = s.approvedAt
@@ -103,6 +129,10 @@ export async function runStep(opts: {
       `Your step: ${step.title}\n${step.instructions ?? ''}`,
       // A step that was sent back runs again with what it must address (D31).
       step.feedback ? `Round ${step.round ?? 2}. ${step.feedback}` : '',
+      // The draft this step revises: its own from the last round, or the run it follows up.
+      step.writesDocument && step.document
+        ? `The document so far. Revise it; your result replaces it:\n${step.document}`
+        : '',
       resumeNote(step) ?? '',
       context ? `Earlier results:\n${context}` : '',
       opts.attachments.length
@@ -116,11 +146,12 @@ export async function runStep(opts: {
       { agent, system, user, runtime, sandboxDir: opts.sandboxDir, trail },
       signal,
     );
-    const summary = (outcome.summary || `${agent.name} finished without a written result.`).slice(
-      0,
-      1000,
-    );
-    return { summary, usage: outcome.usage };
+    const text = outcome.summary || `${agent.name} finished without a written result.`;
+    if (step.writesDocument && outcome.summary.trim()) {
+      const document = outcome.summary.trim().slice(0, DOCUMENT_CAP);
+      return { summary: documentSummary(document), usage: outcome.usage, document };
+    }
+    return { summary: text.slice(0, 1000), usage: outcome.usage };
   } catch (err) {
     if (timeout.aborted && !opts.signal.aborted) {
       throw new EngineError(
