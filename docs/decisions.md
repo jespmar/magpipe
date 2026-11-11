@@ -974,3 +974,25 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
   report and the reason, and the goal is released so moving it back to approved builds it
   again. Until phase 6 the operator merges the branch and moves the goal to done, which lets
   the goals that wait for it start.
+
+## D41 · Factory phase 5: worktrees and parallel goals
+
+- **Why.** One checkout allows one writer (D28), and goals that do not depend on each other
+  should build at the same time.
+- **A worktree per goal.** Starting a goal's build makes (or reuses) a git worktree for its
+  branch under `<data folder>/worktrees/<repository>-<hash>/`, from the remote's default branch,
+  else `main` or `master`, else whatever the bound folder has checked out; the operator's own
+  checkout is never switched. `node_modules` is linked from the bound folder, so scripts run
+  without an install, and kept out of git through the repository's shared exclude file. A done
+  goal's worktree is removed after the next check; one with uncommitted changes is kept, and
+  branches are never deleted. This is Magpipe's own git work (`lib/worktrees.ts`), not a new
+  agent operation.
+- **Tools follow the run.** A build run records its worktree on its input (the repository tool it
+  stands in for, the folder and the branch). The engine points that tool's folder at the
+  worktree for the run's steps, so the typed operations of D27 and their guards act there, and
+  the write lock of D28 is keyed by the worktree: goals in different worktrees never wait on
+  each other, and the repository the factory builds in is the one the Code Agent holds.
+- **The run limit is a setting.** `settings.maxRuns` (1 to 8, default 2; migration 0010),
+  edited beside the spend cap, which stays the governor. The engine takes a new limit at once
+  and reads it at start. The factory starts as many ready goals as the limit leaves room for
+  beside the builds already running, oldest first, dependencies done.

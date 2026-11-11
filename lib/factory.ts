@@ -41,6 +41,7 @@ import {
   releaseBuildRun,
 } from './tracker/issues';
 import { goalBranch } from './engine/actions';
+import { ensureWorktree, removeWorktree } from './worktrees';
 import { getLinearSettings, getTracker, linearReady } from './tracker';
 
 export { parseScripts, RosterValidationError as FactoryValidationError } from './roster';
@@ -665,8 +666,9 @@ function serialised<T>(start: () => Promise<T>): Promise<T> {
 }
 
 /**
- * Starts the build run for one goal (D40), once: on its branch `magpipe/<key>`, as a follow-up of
- * the goals run that filed it. The caller has checked that it is the goal's turn.
+ * Starts the build run for one goal (D40), once: on its branch `magpipe/<key>` in its own worktree
+ * (D41), as a follow-up of the goals run that filed it. The caller has checked that it is the
+ * goal's turn.
  */
 export async function startBuildRun(
   db: Db,
@@ -678,7 +680,11 @@ export async function startBuildRun(
     if (!current || !current.goal || current.buildRunId || current.stage !== 'approved') {
       return null;
     }
-    const preset = await templatePlan(db, 'build', { vars: { branch: goalBranch(current) } });
+    const branch = goalBranch(current);
+    const preset = await templatePlan(db, 'build', { vars: { branch } });
+    // Each goal builds in its own worktree (D41), so goals go side by side.
+    const repo = await factoryRepository(db);
+    const wt = await ensureWorktree(repo.path, branch);
     const run = await createRun(
       db,
       {
@@ -686,6 +692,7 @@ export async function startBuildRun(
         attachments: [],
         template: 'build',
         issueId: current.id,
+        worktree: { toolId: repo.id, path: wt.path, branch },
       },
       current.runId,
       { ...preset, createdBy: 'factory' },
@@ -705,10 +712,35 @@ export async function startBuildRun(
 const ACTIVE: ReadonlySet<string> = new Set(['queued', 'running', 'waiting']);
 
 /**
- * The goal whose turn it is (D40): one build at a time in phase 4, so none while a build run is
- * active; otherwise the oldest approved goal not yet built whose dependencies are all done.
+ * The repository the factory builds in (D41): the one the Code Agent holds a grant on, as the
+ * loader bound it.
  */
-export async function nextGoal(db: Db): Promise<TrackerIssue | null> {
+export async function factoryRepository(db: Db): Promise<{ id: string; path: string }> {
+  const agents = await listAgents(db);
+  const coder = agents.find((a) => a.slug === 'code-agent');
+  const ids = coder?.tools.map((g) => g.toolId) ?? [];
+  const rows = ids.length
+    ? await db
+        .select({ id: t.tools.id, repository: t.tools.repository })
+        .from(t.tools)
+        .where(inArray(t.tools.id, ids))
+    : [];
+  const repo = rows.find((r) => r.repository);
+  if (!repo?.repository) {
+    throw new FactoryNotReadyError(
+      'The Code Agent holds no repository. Load the software factory in Settings onto the folder to build in.',
+    );
+  }
+  return { id: repo.id, path: repo.repository.path };
+}
+
+/**
+ * The goals whose turn it is (D40, D41), oldest first: approved, not yet built, every goal they
+ * depend on done. As many as the run limit leaves room for beside the builds already active.
+ * Goals that share a file are ordered by their dependencies (D39), so goals built side by side
+ * touch different files.
+ */
+export async function readyGoals(db: Db, limit?: number): Promise<TrackerIssue[]> {
   const goals = await db.select().from(t.trackerIssues).where(isNotNull(t.trackerIssues.goal));
   const runIds = goals.flatMap((g) => (g.buildRunId ? [g.buildRunId] : []));
   const runs = runIds.length
@@ -717,16 +749,39 @@ export async function nextGoal(db: Db): Promise<TrackerIssue | null> {
         .from(t.runs)
         .where(inArray(t.runs.id, runIds))
     : [];
-  if (runs.some((r) => ACTIVE.has(r.status))) return null;
-  const ready = goals
+  const active = runs.filter((r) => ACTIVE.has(r.status)).length;
+  const [settings] = await db.select({ maxRuns: t.settings.maxRuns }).from(t.settings);
+  const room = Math.max(0, (limit ?? settings?.maxRuns ?? 2) - active);
+  if (room === 0) return [];
+  return goals
     .filter((g) => g.stage === 'approved' && !g.buildRunId)
     .filter((g) =>
       g.goal!.dependsOn.every((key) =>
         goals.some((o) => o.parentId === g.parentId && o.goal?.key === key && o.stage === 'done'),
       ),
     )
-    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
-  return ready[0] ?? null;
+    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+    .slice(0, room);
+}
+
+/** The next goal whose turn it is, or null. */
+export async function nextGoal(db: Db, limit?: number): Promise<TrackerIssue | null> {
+  return (await readyGoals(db, limit))[0] ?? null;
+}
+
+/** A done goal's worktree is removed (D41); one with uncommitted changes is kept. */
+async function clearWorktrees(db: Db): Promise<void> {
+  const done = await db
+    .select({ buildRunId: t.trackerIssues.buildRunId })
+    .from(t.trackerIssues)
+    .where(and(eq(t.trackerIssues.stage, 'done'), isNotNull(t.trackerIssues.buildRunId)));
+  for (const goal of done) {
+    const [run] = await db
+      .select({ input: t.runs.input })
+      .from(t.runs)
+      .where(eq(t.runs.id, goal.buildRunId!));
+    if (run?.input.worktree) await removeWorktree(run.input.worktree.path);
+  }
 }
 
 /**
@@ -818,8 +873,10 @@ export async function factoryTick(
   await attempt('Specs not closed', async () => {
     await closeSpecs(db);
   });
-  const goal = await nextGoal(db);
-  if (goal) {
+  await attempt('Worktrees not cleared', async () => {
+    await clearWorktrees(db);
+  });
+  for (const goal of await readyGoals(db)) {
     await attempt(`Build not started for ${goal.identifier}`, async () => {
       const run = await startBuildRun(db, goal, enqueue);
       if (run) started.push(`${goal.identifier} → ${run.displayId}`);
@@ -876,7 +933,7 @@ export function summarizeFactory(result: FactoryResult): RosterLine[] {
     { label: 'Memory', text: memoryText(result.namespaces) },
     {
       label: 'Templates',
-      text: 'Send to the factory on Home runs the spec template: the Spec Builder writes the spec and the Spec Review checks it. The other seven agents wait for the templates that follow.',
+      text: 'Send to the factory on Home runs the spec template. With Linear set up, an approved spec runs the goals template, and each goal the build template, one goal per worktree.',
     },
   ];
 }

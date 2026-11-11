@@ -12,6 +12,8 @@ import { expect, test } from '@playwright/test';
 // shell smoke tests expect a fresh workspace.
 
 let dir: string;
+/** The repository the factory is loaded onto; its tool is removed after the last test. */
+let factoryRepo = '';
 
 test.beforeAll(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'magpipe-e2e-factory-'));
@@ -23,7 +25,6 @@ test.afterAll(() => {
 
 test('settings loads the software factory, and Home sends a task to its spec template', async ({
   page,
-  request,
 }) => {
   const repo = path.join(dir, `mill-${Date.now().toString(36)}`);
   fs.mkdirSync(repo);
@@ -32,7 +33,24 @@ test('settings loads the software factory, and Home sends a task to its spec tem
     JSON.stringify({ scripts: { typecheck: 'node -e 0', lint: 'node -e 0', test: 'node -e 0' } }),
   );
   execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: repo });
-  const name = path.basename(repo);
+  // A first commit: goal worktrees branch from it (D41).
+  execFileSync(
+    'git',
+    [
+      '-c',
+      'user.email=e2e@example.com',
+      '-c',
+      'user.name=E2E',
+      'commit',
+      '-q',
+      '--allow-empty',
+      '-m',
+      'init',
+    ],
+    { cwd: repo },
+  );
+  factoryRepo = path.basename(repo);
+  const name = factoryRepo;
 
   await page.goto('/settings');
   const section = page.getByRole('region', { name: 'Software factory' });
@@ -70,14 +88,6 @@ test('settings loads the software factory, and Home sends a task to its spec tem
   await expect(result).toContainText('Scripted spec');
   await expect(result).toContainText('Acceptance criteria');
   await expect(result).toContainText('Review the spec');
-
-  // Leave no tool card behind for a folder that is about to be deleted.
-  const { tools } = (await (await request.get('/api/tools')).json()) as {
-    tools: { id: string; name: string }[];
-  };
-  for (const tool of tools.filter((x) => x.name === name)) {
-    expect((await request.delete(`/api/tools/${tool.id}`)).ok()).toBe(true);
-  }
 });
 
 // Linear (D38), against the scripted tracker the e2e server runs with: a refused key is named on
@@ -85,7 +95,10 @@ test('settings loads the software factory, and Home sends a task to its spec tem
 // review is filed as an issue that Home approves.
 test('settings connects Linear, a passing spec is filed, Home approves it, its goals are filed and the first is built', async ({
   page,
+  request,
 }) => {
+  // Spec, goals and a build, end to end: longer than the default 30 s.
+  test.setTimeout(120_000);
   await page.goto('/settings');
   const section = page.getByRole('region', { name: 'Linear' });
   const key = section.getByLabel('Personal API key');
@@ -174,4 +187,12 @@ test('settings connects Linear, a passing spec is filed, Home approves it, its g
   await expect(page.getByRole('region', { name: 'Result' })).toContainText(
     'is ready to merge on magpipe/goal-1',
   );
+
+  // Leave no tool card behind for a folder that is about to be deleted.
+  const { tools } = (await (await request.get('/api/tools')).json()) as {
+    tools: { id: string; name: string }[];
+  };
+  for (const tool of tools.filter((x) => x.name === factoryRepo)) {
+    expect((await request.delete(`/api/tools/${tool.id}`)).ok()).toBe(true);
+  }
 });

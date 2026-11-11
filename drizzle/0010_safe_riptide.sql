@@ -1,0 +1,1 @@
+ALTER TABLE "settings" ADD COLUMN "max_runs" integer DEFAULT 2 NOT NULL;

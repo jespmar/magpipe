@@ -3,6 +3,7 @@
  * runs, and keep the job and the Linear watcher (D38) on timers while the app is open. Called from `instrumentation.ts`.
  */
 import { DbLockedError, getDb } from '../db';
+import * as t from '../db/schema';
 import { env } from '../env';
 import { findClaudeCli } from './claude-code';
 import { getEngine } from './index';
@@ -25,6 +26,9 @@ export async function bootEngine(): Promise<void> {
     const { staleMarked } = await runHousekeeping(db);
     if (staleMarked) console.log(`[housekeeping] marked ${staleMarked} memories stale`);
     scheduleHousekeeping(getDb);
+    // The run limit is a setting (D41).
+    const [settings] = await db.select({ maxRuns: t.settings.maxRuns }).from(t.settings);
+    if (settings) getEngine().setConcurrency(settings.maxRuns);
     // The factory's watcher (D38): checks Linear while the app is open, catching up first.
     // After each check the factory starts what the issues call for (D39, D40).
     scheduleWatcher(getDb, (db) => factoryTick(db, (id) => getEngine().enqueue(id)));

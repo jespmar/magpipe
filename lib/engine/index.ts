@@ -71,7 +71,7 @@ export class Engine {
   private readonly active = new Map<string, AbortController>();
   private readonly waiters: (() => void)[] = [];
   private backendInstance: RunBackend | null;
-  private readonly concurrency: number;
+  private concurrency: number;
   private readonly db: () => Promise<Db>;
 
   constructor(opts: EngineOptions = {}) {
@@ -83,6 +83,16 @@ export class Engine {
   private backend(): RunBackend {
     this.backendInstance ??= selectBackend();
     return this.backendInstance;
+  }
+
+  /** How many runs may work at once (D41, a setting). Raising it starts queued runs now. */
+  setConcurrency(n: number): void {
+    this.concurrency = Math.max(1, Math.floor(n));
+    this.pump();
+  }
+
+  get runLimit(): number {
+    return this.concurrency;
   }
 
   /** Queues a run; returns at once. */
@@ -221,6 +231,17 @@ export class Engine {
     // Which work trees each agent's steps would change, worked out once per run (D28).
     const workTrees = new Map<string, string | null>();
     const targetsOf = new Map<string, Promise<WriteTarget[]>>();
+    // A build run works in its goal's worktree (D41): the repository tool's folder is the
+    // worktree for this run, so its write lock is the worktree's and other goals go on.
+    const wt = run.input.worktree;
+    const repoPaths = wt ? { [wt.toolId]: wt.path } : undefined;
+    if (wt) {
+      for (const tool of tools) {
+        if (tool.id === wt.toolId && tool.repository) {
+          tool.repository = { ...tool.repository, path: wt.path };
+        }
+      }
+    }
     const writeTargetsFor = (agent: (typeof agents)[number]) => {
       if (!targetsOf.has(agent.id)) targetsOf.set(agent.id, writeTargets(agent, tools, workTrees));
       return targetsOf.get(agent.id)!;
@@ -413,6 +434,7 @@ export class Engine {
                 work,
                 sendBack,
                 recordGoals,
+                repoPaths,
                 onWork: saveWork,
                 signal,
               });

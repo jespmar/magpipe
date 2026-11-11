@@ -71,6 +71,13 @@
       "when": 1794395144883,
       "tag": "0009_red_korvac",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794397700400,
+      "tag": "0010_safe_riptide",
+      "breakpoints": true
     }
   ]
 }

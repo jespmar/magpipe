@@ -1,14 +1,15 @@
 # The software factory
 
-Status: phases 1 to 4 are built (D37 to D40 in `decisions.md`): the nine agents load from
+Status: phases 1 to 5 are built (D37 to D41 in `decisions.md`): the nine agents load from
 Settings, "Send to the factory" on Home runs the spec template, a spec that passes review is
 filed in Linear, gate G1 opens from Linear or from Magpipe, approval splits the spec into goals
-filed as sub-issues, and each goal is built in turn on its own branch, tests first, until it
-reaches the merge question. The rest is design (D36). This document says what the factory is,
-what each agent produces, where the operator decides, what the engine must gain, and the order
-to build it in. It builds on the development flock (`flock.md`) and the engine work recorded in
-D25 to D35. `lib/factory.ts` mirrors [the roster](#the-roster-in-magpipe) and
-[the templates](#templates) below, and `tests/factory.test.ts` fails when they drift.
+filed as sub-issues, and goals build side by side, each in its own worktree on its own branch,
+tests first, until they reach the merge question. The rest is design (D36). This document says
+what the factory is, what each agent produces, where the operator decides, what the engine must
+gain, and the order to build it in. It builds on the development flock (`flock.md`) and the
+engine work recorded in D25 to D35. `lib/factory.ts` mirrors
+[the roster](#the-roster-in-magpipe) and [the templates](#templates) below, and
+`tests/factory.test.ts` fails when they drift.
 
 ## Goal
 
@@ -389,10 +390,14 @@ The hand-over step is titled "Hand over the goals".
 
 ### Build
 
-Started by Magpipe for one goal at a time: after each Linear check, when no build run is
-active, the oldest goal in the approved status whose dependencies are all done gets a build run,
-as a follow-up of the goals run that filed it. Every step works on the goal's branch,
-`magpipe/<goal key>`, filled into the instructions. The Test Agent writes the tests first and
+Started by Magpipe after each Linear check: the oldest goals in the approved status whose
+dependencies are all done get a build run each, as many as the run limit leaves room for beside
+the builds already running, as follow-ups of the goals run that filed them. Every step works on
+the goal's branch, `magpipe/<goal key>`, filled into the instructions, in the goal's own git
+worktree under the data folder, so goals build side by side without waiting on each other's
+write lock; goals that share a file are ordered by their dependencies, so the ones that run
+together touch different files. The worktree has the bound folder's `node_modules` linked in,
+and is removed once the goal is done (kept when it holds uncommitted work). The Test Agent writes the tests first and
 commits them alone, so the Code Agent builds against tests it did not write; the Test Agent then
 runs the scripts and checks the tests were not changed. Code Review reads the diff and the Code
 Skeptic tries to break it with one test. Each of the three gives a verdict line, and each sends
@@ -477,18 +482,17 @@ sub-issues with their dependencies as Linear relations, and approval starting th
 (D39). Phase 4 added the build template, steps that run however the steps before them ended
 (`always`), judges that name where they send work back (`sendBackTo`), agent work skipped after
 a judge says fail, and the factory's tick after each check that starts the next goal, catches
-build runs that ended without reporting and closes finished specs (D40).
+build runs that ended without reporting and closes finished specs (D40). Phase 5 added a git worktree per goal under the data folder, repository tools and write
+locks that follow a run's worktree, and the run limit as a setting (D41).
 
 Needed, smallest first:
 
 | Need                       | Why                                                                 | Shape                                                                                                                                                                                      |
 | -------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| A worktree per goal        | One checkout allows one writer, and goals should build in parallel  | `git worktree add` per goal under the data folder; repository operations resolve against the run's worktree. The write lock is keyed by work tree, so parallel goals already fit.          |
 | Push, as a typed operation | No agent can push today                                             | `git_push`: only the run's own `magpipe/…` branch, to `origin`, never forced, never the default branch. Granted to the Merge Agent alone.                                                  |
 | Pull requests and merging  | The Merge Agent must open, watch and merge                          | GitHub's MCP server with a token that can write pull requests, and only the pull request tools ticked for the Merge Agent.                                                                 |
 | A protected-paths check    | The Code Agent must not weaken the tests                            | First as evidence (the diff check in stage 7); later as a guard on `write` for a step.                                                                                                     |
 | The factory screen         | The operator needs the pipeline at a glance and both gates in reach | A board of issues by stage, each goal with its branch, results and verdicts from the recorded work, and the two buttons. Home's prompt has "Send to the factory" beside Run since phase 1. |
-| More than two runs at once | Parallel goals are parallel runs                                    | The engine's run limit becomes a setting, with the spend cap as the governor.                                                                                                              |
 
 ## Build order
 
@@ -505,8 +509,8 @@ Each phase is one pull request, useful on its own, and testable with the scripte
 4. **Building one goal.** Built (D40). The build template on the bound repository as it is
    today: tests first, build, run, review, skeptic, with send-backs and "needs you". One goal
    at a time.
-5. **Worktrees and parallel goals.** A worktree per goal, the run limit as a setting, goals in
-   dependency order.
+5. **Worktrees and parallel goals.** Built (D41). A worktree per goal, the run limit as a
+   setting, goals in dependency order.
 6. **Pull requests and the merge question.** `git_push`, the Merge Agent, gate G2 from all
    three doors, rebase and re-test before each merge.
 7. **The factory screen.** The board, replacing the lists phases 1 to 6 get by with.

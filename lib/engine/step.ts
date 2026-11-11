@@ -65,6 +65,8 @@ export async function runStep(opts: {
   sendBack?: { remaining: number; findings?: string };
   /** Offers the record_goals tool (D39); the caller reads `goals`. */
   recordGoals?: { criteria: number[] | null; goals?: Goal[] };
+  /** Repository folders this run works in instead of the bound ones (D41). */
+  repoPaths?: Record<string, string>;
   /** Saves the record onto the step as it grows, so a restart keeps it (D33). */
   onWork?: (work: readonly WorkItem[]) => Promise<void>;
   signal: AbortSignal;
@@ -100,6 +102,7 @@ export async function runStep(opts: {
         work: opts.work,
         sendBack: opts.sendBack,
         recordGoals: opts.recordGoals,
+        repoPaths: opts.repoPaths,
         onWork: opts.onWork,
       }),
     { signal, onRetry: (f, n) => trail.emit('error', `Retry ${n}: ${f.message}`) },

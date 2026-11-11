@@ -15,7 +15,7 @@ import { openDb, type Db } from '@/lib/db';
 import * as t from '@/lib/db/schema';
 import { Engine } from '@/lib/engine';
 import type { ModelClient, ModelMessage, ModelParams } from '@/lib/engine/model';
-import { factoryTick, loadFactory, nextGoal, startBuildRun } from '@/lib/factory';
+import { factoryTick, loadFactory, nextGoal, readyGoals, startBuildRun } from '@/lib/factory';
 import { createRun, getRun } from '@/lib/runs';
 import { sendBackSet } from '@/lib/runs-util';
 import type { Goal, Step, TrackerIssue } from '@/lib/schemas';
@@ -67,6 +67,7 @@ function buildModel(opts: {
   reviewSendsBack?: boolean;
   skeptic?: string;
   buildThrows?: boolean;
+  writeFile?: string;
   calls: Calls;
 }): ModelClient {
   return {
@@ -84,6 +85,21 @@ function buildModel(opts: {
       if (system.startsWith('You build one goal')) {
         opts.calls.build.push(user);
         if (opts.buildThrows) throw new Error('The code agent fell over.');
+        // Writes through the repository tool when asked to (D41: it lands in the worktree).
+        const write = (p.tools ?? []).find((x) => /__write$/.test((x as { name: string }).name));
+        if (opts.writeFile && write && !sawResult(p)) {
+          return message(
+            [
+              {
+                type: 'tool_use',
+                id: 'tu_write',
+                name: (write as { name: string }).name,
+                input: { path: opts.writeFile, contents: 'export const built = true;\n' },
+              },
+            ],
+            'tool_use',
+          );
+        }
         return text('Built it; the tests pass.');
       }
       if (system.startsWith('You review the code built for one goal')) {
@@ -138,6 +154,7 @@ describe('building one goal', () => {
   let dir: string;
   const store = scriptedStore(true);
   const previous = process.env.MAGPIPE_SECRET_KEY;
+  const previousData = process.env.MAGPIPE_DATA_DIR;
   let spec: TrackerIssue;
   const goals: Record<string, TrackerIssue> = {};
 
@@ -195,6 +212,23 @@ describe('building one goal', () => {
       JSON.stringify({ scripts: { test: 'node -e 0' } }),
     );
     execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
+    // A first commit: goal worktrees branch from it (D41).
+    execFileSync(
+      'git',
+      [
+        '-c',
+        'user.email=t@example.com',
+        '-c',
+        'user.name=T',
+        'commit',
+        '-q',
+        '--allow-empty',
+        '-m',
+        'init',
+      ],
+      { cwd: dir },
+    );
+    process.env.MAGPIPE_DATA_DIR = path.join(dir, '.data');
     await loadFactory(db, { path: dir, scripts: ['test'] });
     await saveLinearKey(db, 'lin_api_build');
     await saveLinearMapping(db, {
@@ -221,18 +255,34 @@ describe('building one goal', () => {
     fs.rmSync(dir, { recursive: true, force: true });
     if (previous === undefined) delete process.env.MAGPIPE_SECRET_KEY;
     else process.env.MAGPIPE_SECRET_KEY = previous;
+    if (previousData === undefined) delete process.env.MAGPIPE_DATA_DIR;
+    else process.env.MAGPIPE_DATA_DIR = previousData;
   });
 
-  it('picks the oldest goal with its dependencies done, one build at a time', async () => {
+  it('picks the oldest goal with its dependencies done, as many as the run limit allows', async () => {
+    await db.update(t.settings).set({ maxRuns: 1 });
     expect((await nextGoal(db))!.id).toBe(goals.header!.id);
     const run = (await startBuildRun(db, goals.header!, () => undefined))!;
     expect(run.input).toMatchObject({ template: 'build', issueId: goals.header!.id });
     expect(run.plan.find((s) => s.id === 'tests')!.instructions).toContain(
       "The goal's branch is magpipe/header",
     );
-    // While that build is queued, nothing else starts.
+    // Its own worktree, on its branch, under the data folder (D41).
+    const wt = run.input.worktree!;
+    expect(wt.branch).toBe('magpipe/header');
+    expect(wt.path.startsWith(path.join(dir, '.data', 'worktrees'))).toBe(true);
+    expect(
+      execFileSync('git', ['symbolic-ref', '--short', 'HEAD'], {
+        cwd: wt.path,
+        encoding: 'utf8',
+      }).trim(),
+    ).toBe('magpipe/header');
+    // At a limit of one, nothing else starts while that build is queued.
     expect(await nextGoal(db)).toBeNull();
     expect(await startBuildRun(db, goals.header!, () => undefined)).toBeNull();
+    // At two, the independent goal may go beside it; the dependent one waits for header.
+    await db.update(t.settings).set({ maxRuns: 2 });
+    expect((await readyGoals(db)).map((g) => g.id)).toEqual([goals.button!.id]);
     // Hand it back for the next test: cancelled and released, as a reconcile would.
     await db.update(t.runs).set({ status: 'cancelled' }).where(eq(t.runs.id, run.id));
     await db
@@ -280,6 +330,30 @@ describe('building one goal', () => {
       stage: 'merge_question',
       buildRunId: run.id,
     });
+  }, 30_000);
+
+  it('writes in the goal’s worktree, never in the bound folder', async () => {
+    const calls = freshCalls();
+    const engine = new Engine({
+      client: buildModel({ calls, writeFile: 'src/built.ts' }),
+      getDb: async () => db,
+    });
+    const run = (await startBuildRun(db, goals.button!, (id) => engine.enqueue(id)))!;
+    await engine.whenIdle();
+    const done = (await getRun(db, run.id))!;
+    expect(done.status).toBe('done');
+    const wt = run.input.worktree!.path;
+    expect(fs.readFileSync(path.join(wt, 'src', 'built.ts'), 'utf8')).toContain('built = true');
+    expect(fs.existsSync(path.join(dir, 'src', 'built.ts'))).toBe(false);
+    expect(done.plan.find((s) => s.id === 'build')!.work!.files).toEqual([
+      expect.objectContaining({ path: 'src/built.ts', change: 'created' }),
+    ]);
+    // Put the goal back for the tests after this one.
+    await db
+      .update(t.trackerIssues)
+      .set({ buildRunId: null, stage: 'approved' })
+      .where(eq(t.trackerIssues.id, goals.button!.id));
+    scriptedTracker('k', store).move(goals.button!.identifier, 'Approved');
   }, 30_000);
 
   it('waits for a dependency to be done; an independent goal goes first', async () => {
