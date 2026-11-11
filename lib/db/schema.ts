@@ -254,6 +254,7 @@ export const trackerIssues = pgTable(
     externalParentId: text(),
     goal: jsonb().$type<TrackerIssue['goal']>(),
     goalsRunId: text().references(() => runs.id, { onDelete: 'set null' }),
+    buildRunId: text().references(() => runs.id, { onDelete: 'set null' }),
     approvedAt: timestamptz(),
     approvedVia: text({ enum: ['linear', 'magpipe'] }),
     createdAt: timestamptz().notNull().defaultNow(),

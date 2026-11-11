@@ -946,3 +946,31 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
   splits it again. A filing resumed after a restart files only the goals not yet filed.
 - **The issue bar** shows a goals run's spec issue and its goals, and links a spec run to the
   goals run its approval started. The goals template cannot be sent from Home.
+
+## D40 · Factory phase 4: building one goal
+
+- **Why.** Filed goals must be built: tests first, then code, then three judges, ending in a
+  branch ready to merge or a goal that needs the operator.
+- **Whose turn.** After each Linear check the factory's tick (`factoryTick`, replacing D39's
+  approval hook) starts the build for the oldest approved goal whose dependencies are all done,
+  and only while no build run is active: one goal at a time on the bound repository as it is.
+  Starts are serialised and recorded on the issue (`buildRunId`, migration 0009), so a goal
+  builds once until it is released. The tick also starts goals runs for approved specs,
+  reconciles build runs that ended without reporting (cancelled, or stopped before their last
+  step: the goal moves to needs you), and closes a spec whose goals are all done.
+- **The build template.** Read the goal from Linear; the Test Agent writes the tests and commits
+  them alone; the Code Agent builds against them; the Test Agent runs the scripts and checks the
+  tests were not changed; Code Review reads the diff; the Code Skeptic tries to break it with one
+  test. All work on `magpipe/<goal key>`, filled into the instructions (`{branch}`). The three
+  judges end with an exact verdict line, now asked for in their prompts.
+- **Engine rules, general but first needed here.** A step may name where it sends work back
+  (`sendBackTo`): the build judges reopen the build and what lies between it and them, never
+  the tests, which the old rule would have reopened through the shared read step. In a template
+  only a judging step is offered `send_back`. A judge that says fail with nothing sent back
+  skips the agent steps after it; actions still run, since they report. A step marked `always`
+  runs once everything before it settled, failures included.
+- **The finish.** Every judge passed: the goal moves to the merge question with a comment naming
+  its branch, the verdicts and what Magpipe recorded. Anything else: needs you, with the same
+  report and the reason, and the goal is released so moving it back to approved builds it
+  again. Until phase 6 the operator merges the branch and moves the goal to done, which lets
+  the goals that wait for it start.

@@ -64,6 +64,13 @@
       "when": 1794394063152,
       "tag": "0008_dazzling_eternals",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794395144883,
+      "tag": "0009_red_korvac",
+      "breakpoints": true
     }
   ]
 }

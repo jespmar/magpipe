@@ -2,8 +2,7 @@
 
 import { DbLockedError, getDb } from '@/lib/db';
 import { loadDemo } from '@/lib/db/seed';
-import { getEngine } from '@/lib/engine';
-import { loadFactory, startGoalsRun, summarizeFactory } from '@/lib/factory';
+import { loadFactory, summarizeFactory } from '@/lib/factory';
 import { loadFlock, summarizeFlock } from '@/lib/flock';
 import { parseScripts, RosterValidationError, type RosterLine } from '@/lib/roster';
 import { plural } from '@/lib/format';
@@ -243,9 +242,15 @@ export async function saveWatcherAction(input: WatcherInput): Promise<LinearResu
 export async function checkLinearAction(): Promise<LinearResult<{ check: CheckResult }>> {
   try {
     const db = await getDb();
+    // Loaded here, not at the top: the engine is large, and every other Settings action would
+    // otherwise wait for it to compile on a cold development server.
+    const [{ getEngine }, { factoryTick }] = await Promise.all([
+      import('@/lib/engine'),
+      import('@/lib/factory'),
+    ]);
     const check = await checkLinear(db, {
       force: true,
-      onApproved: (d, issue) => startGoalsRun(d, issue, (id) => getEngine().enqueue(id)),
+      afterCheck: (d) => factoryTick(d, (id) => getEngine().enqueue(id)),
     });
     return { ok: true, view: linearView(await getLinearSettings(db)), check };
   } catch (err) {

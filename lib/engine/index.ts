@@ -273,21 +273,39 @@ export class Engine {
         signal.throwIfAborted();
         const plan: Step[] = run.plan;
         const byId = new Map(plan.map((s) => [s.id, s]));
+        // A judge that said fail with nothing sent back stops the agent work after it (D40);
+        // actions still run, since they report the verdict.
+        const judgedFail = (dep: Step | undefined) =>
+          dep?.status === 'done' && dep.judges === true && dep.verdict === 'fail';
+        const settled = (dep: Step | undefined) =>
+          !!dep &&
+          (dep.status === 'failed' ||
+            dep.status === 'skipped' ||
+            (dep.status === 'done' && !held(dep)));
         const ready = plan.filter(
           (s) =>
             s.status === 'todo' &&
             s.id !== MERGE_STEP_ID &&
-            s.dependsOn.every((d) => {
-              const dep = byId.get(d);
-              return dep?.status === 'done' && !held(dep);
-            }),
+            (s.always
+              ? // A finishing step runs once everything before it has settled, however it went.
+                s.dependsOn.every((d) => settled(byId.get(d)))
+              : s.dependsOn.every((d) => {
+                  const dep = byId.get(d);
+                  return dep?.status === 'done' && !held(dep) && (s.action || !judgedFail(dep));
+                })),
         );
         // steps whose dependencies failed or were skipped cannot run
         const blocked = plan.filter(
           (s) =>
             s.status === 'todo' &&
             s.id !== MERGE_STEP_ID &&
-            s.dependsOn.some((d) => ['failed', 'skipped'].includes(byId.get(d)?.status ?? '')),
+            !s.always &&
+            s.dependsOn.some((d) => {
+              const dep = byId.get(d);
+              return (
+                ['failed', 'skipped'].includes(dep?.status ?? '') || (!s.action && judgedFail(dep))
+              );
+            }),
         );
         if (blocked.length) {
           await save({
@@ -368,8 +386,11 @@ export class Engine {
               });
             // A reviewing agent may send the work back while rounds remain (D31).
             const remaining = agent.sendBackRounds - ((step.round ?? 1) - 1);
+            // In a template only a judging step sends back (D40): the Test Agent writing tests
+            // never returns them to the goal it was given.
+            const mayJudge = step.judges === true || !run!.input.template;
             const sendBack: { remaining: number; findings?: string } | undefined =
-              remaining > 0 ? { remaining } : undefined;
+              remaining > 0 && mayJudge ? { remaining } : undefined;
             // A step that splits a spec records goals against the spec's numbered criteria (D39).
             const upstream = step.dependsOn.map((d) => byId.get(d)!).filter(Boolean);
             const spec = upstream.find((s) => s.document && !s.recordsGoals)?.document;

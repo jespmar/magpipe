@@ -13,7 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { openDb, type Db } from '@/lib/db';
 import { Engine } from '@/lib/engine';
 import type { ModelClient, ModelMessage, ModelParams } from '@/lib/engine/model';
-import { loadFactory, startGoalsRun, templatePlan } from '@/lib/factory';
+import { factoryTick, loadFactory, startGoalsRun, templatePlan } from '@/lib/factory';
 import { acceptanceCriteria, checkGoals, parallelGroups, renderGoals } from '@/lib/goals';
 import { createRun, getRun } from '@/lib/runs';
 import type { Goal, TrackerIssue } from '@/lib/schemas';
@@ -362,10 +362,13 @@ describe('the goals template', () => {
       stateId: 'st_todo',
       parentId: 'iss_remote_untracked',
     });
-    const onApproved = (d: Db, i: TrackerIssue) => startGoalsRun(d, i, (id) => engine.enqueue(id));
-    const first = await checkLinear(db, { force: true, onApproved });
+    const afterCheck = (d: Db) => factoryTick(d, (id) => engine.enqueue(id));
+    const first = await checkLinear(db, { force: true, afterCheck });
     expect(first).toMatchObject({ status: 'done' });
-    expect((first as { started: string[] }).started).toEqual([
+    // Only this spec's goals run; the tick may also start a goal filed earlier in this file.
+    const mine = (r: unknown) =>
+      (r as { started: string[] }).started.filter((x) => x.startsWith(`${issue.identifier} `));
+    expect(mine(first)).toEqual([
       expect.stringMatching(new RegExp(`^${issue.identifier} → flight_`)),
     ]);
     const strayRow = (await listIssues(db)).find((i) => i.externalId === stray.id)!;
@@ -374,8 +377,8 @@ describe('the goals template', () => {
       externalParentId: 'iss_remote_untracked',
       goalsRunId: null,
     });
-    const second = await checkLinear(db, { force: true, onApproved });
-    expect((second as { started: string[] }).started).toEqual([]);
+    const second = await checkLinear(db, { force: true, afterCheck });
+    expect(mine(second)).toEqual([]);
     await engine.whenIdle();
     expect(await getIssue(db, issue.id)).toMatchObject({ stage: 'building' });
   }, 30_000);
@@ -408,14 +411,14 @@ describe('the goals template', () => {
     const started: string[] = [];
     const result = await checkLinear(db, {
       force: true,
-      onApproved: async (d, i) => {
-        const r = await startGoalsRun(d, i, () => undefined);
-        if (r) started.push(r.displayId);
+      afterCheck: async (d) => {
+        const r = await factoryTick(d, () => undefined);
+        started.push(...r.started);
         return r;
       },
     });
     expect(result).toMatchObject({ status: 'done' });
-    expect(started).toHaveLength(1);
+    expect(started.filter((x) => x.startsWith(`${issue.identifier} `))).toHaveLength(1);
   }, 30_000);
 
   it('a Goal Builder that records nothing fails its step, and the run says why', async () => {

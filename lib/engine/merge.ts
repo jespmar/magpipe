@@ -52,7 +52,10 @@ export function documentAnswer(steps: Step[], agentNames: Map<string, string>): 
   );
   if (!source) return null;
   const after = new Set<string>([source.id]);
-  const parts = [source.document!.trim()];
+  // A document read in from the tracker (a goal, D40) is the run's input, not its answer: the
+  // answer leads with how the run ended, then the steps, then the document for reference.
+  const fromInput = source.action === 'read_issue';
+  const parts = fromInput ? [] : [source.document!.trim()];
   for (const s of steps) {
     if ((!s.agentId && !s.action) || !s.dependsOn.some((d) => after.has(d))) continue;
     after.add(s.id);
@@ -69,6 +72,12 @@ export function documentAnswer(steps: Step[], agentNames: Map<string, string>): 
         facts.length ? `\n\nRecorded by Magpipe:\n${facts.map((f) => `- ${f}`).join('\n')}` : ''
       }`,
     );
+  }
+  if (fromInput) {
+    const last = parts.pop();
+    return [last, ...parts, `## ${source.title}\n\n${source.document!.trim()}`]
+      .filter(Boolean)
+      .join('\n\n');
   }
   return parts.join('\n\n');
 }

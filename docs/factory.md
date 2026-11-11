@@ -1,9 +1,10 @@
 # The software factory
 
-Status: phases 1 to 3 are built (D37 to D39 in `decisions.md`): the nine agents load from
+Status: phases 1 to 4 are built (D37 to D40 in `decisions.md`): the nine agents load from
 Settings, "Send to the factory" on Home runs the spec template, a spec that passes review is
-filed in Linear, gate G1 opens from Linear or from Magpipe, and approval splits the spec into
-goals filed as sub-issues. The rest is design (D36). This document says what the factory is,
+filed in Linear, gate G1 opens from Linear or from Magpipe, approval splits the spec into goals
+filed as sub-issues, and each goal is built in turn on its own branch, tests first, until it
+reaches the merge question. The rest is design (D36). This document says what the factory is,
 what each agent produces, where the operator decides, what the engine must gain, and the order
 to build it in. It builds on the development flock (`flock.md`) and the engine work recorded in
 D25 to D35. `lib/factory.ts` mirrors [the roster](#the-roster-in-magpipe) and
@@ -242,7 +243,7 @@ When your step is to run the tests after the build:
 2. Compare the test files with your own commit using git_diff, and say whether any were changed, deleted or skipped since.
 3. If a script fails or a test file was changed, and the send_back tool is offered, call it with the failures: the code is built again and you run the tests once more.
 
-Finish with: Branch, Tests (each file and the criteria it pins), Runs (each script and its exit), Test files changed since my commit (yes or no, and which).
+Finish with: Branch, Tests (each file and the criteria it pins), Runs (each script and its exit), Test files changed since my commit (yes or no, and which). When your step is to run the tests, start your result with a line that reads exactly "Verdict: pass" (every script exits 0 and no test file changed) or "Verdict: fail". Magpipe reads that line: only a pass lets the goal go on.
 ```
 
 ### Code Agent
@@ -283,7 +284,7 @@ You review the code built for one goal. You read; you never edit.
 6. If there are blocking findings and the send_back tool is offered, call it with them: the code is built again and you review once more.
 7. Finish your step even when the verdict is changes requested. The verdict is your result, not a failure.
 
-Finish with: Verdict (approve or changes requested), Blocking, Should fix, Notes, Criteria not met.
+Finish with a line that reads exactly "Verdict: pass" (approve) or "Verdict: fail" (changes requested), then Blocking, Should fix, Notes, Criteria not met. Magpipe reads that line: only a pass lets the goal go on.
 ```
 
 ### Code Skeptic
@@ -303,7 +304,7 @@ You try to break the code built for one goal. Your only way to object is a test 
 5. If no case fails, you have no objection: commit nothing, and name the file you wrote so it can be removed.
 6. Never edit the code or the other tests. Never push, never merge.
 
-Finish with: Objection (yes or no), Test file, Failing cases, What I tried.
+Finish with a line that reads exactly "Verdict: pass" (no objection) or "Verdict: fail" (a test you committed fails on the branch), then Test file, Failing cases, What I tried. Magpipe reads that line: only a pass lets the goal go on.
 ```
 
 ### Merge Agent
@@ -386,6 +387,37 @@ run's answer is the goals, then the review, then what was filed.
 
 The hand-over step is titled "Hand over the goals".
 
+### Build
+
+Started by Magpipe for one goal at a time: after each Linear check, when no build run is
+active, the oldest goal in the approved status whose dependencies are all done gets a build run,
+as a follow-up of the goals run that filed it. Every step works on the goal's branch,
+`magpipe/<goal key>`, filled into the instructions. The Test Agent writes the tests first and
+commits them alone, so the Code Agent builds against tests it did not write; the Test Agent then
+runs the scripts and checks the tests were not changed. Code Review reads the diff and the Code
+Skeptic tries to break it with one test. Each of the three gives a verdict line, and each sends
+the work back to the build only, never to the tests. A fail with nothing left to send back
+skips the agent steps after it.
+
+The last step runs however the steps before it ended. When every verdict passed, the goal moves
+to the merge question with its branch named, and the operator merges it and moves the goal to
+done; phase 6 replaces that with a pull request. Otherwise the goal moves to needs you with the
+findings, and moving it back to approved builds it again. A build run that ends without
+reporting (cancelled, or stopped before its last step) is caught at the next check the same
+way. When every goal of a spec is done, the spec is done.
+
+| Step      | Agent        | Title                   | Depends on                       | Writes the document | Judges | When   | Instructions                                                                                                                                                                                                                                               |
+| --------- | ------------ | ----------------------- | -------------------------------- | ------------------- | ------ | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `read`    | Magpipe      | Read the goal           | none                             | yes                 | no     | always | Read the goal issue from Linear as it stands: what to build, the acceptance criteria it owns and the files it expects to touch.                                                                                                                            |
+| `tests`   | Test Agent   | Write the failing tests | `read`                           | no                  | no     | always | Your step is to write the tests. The goal's branch is {branch}: create it from the default branch if it does not exist. Write tests that pin each acceptance criterion of the goal, run them to see them fail for the right reason, and commit them alone. |
+| `build`   | Code Agent   | Build the goal          | `read`, `tests`                  | no                  | no     | always | Build the goal on {branch} until the tests the Test Agent committed pass, without changing them. When findings are given, fix what they name.                                                                                                              |
+| `run`     | Test Agent   | Run the tests           | `build`                          | no                  | yes    | always | Your step is to run the tests after the build, on {branch}. Run the scripts the operator allowed, check with git_diff against your own commit that no test file changed, and give the verdict. Send it back with the failures if it does not pass.         |
+| `review`  | Code Review  | Review the code         | `read`, `build`, `run`           | no                  | yes    | always | Review the diff of {branch} against the default branch, with the test results, against the goal. Give the verdict, and send it back with the blocking findings if it does not pass.                                                                        |
+| `skeptic` | Code Skeptic | Try to break it         | `read`, `build`, `run`, `review` | no                  | yes    | always | Try to break the code on {branch} with one test file. Commit a test only when it fails on the branch, send it back with it, and give the verdict.                                                                                                          |
+| `finish`  | Magpipe      | Report on the goal      | `run`, `review`, `skeptic`       | no                  | no     | always | When every judge passed, move the goal to the merge question with its branch named; otherwise move it to needs you with the findings. Runs however the steps before it ended.                                                                              |
+
+The hand-over step is titled "Hand over the goal".
+
 ## The two gates
 
 **G1, approve the spec.** The spec lands in Linear in a "spec ready" status. The operator
@@ -442,7 +474,10 @@ added Settings → Linear, the tracker seam (`lib/tracker`), action steps that M
 itself, verdicts read from judging steps, the watcher, and gate G1 from both doors (D38).
 Phase 3 added the goals template, goals recorded as data through a tool and checked by Magpipe,
 sub-issues with their dependencies as Linear relations, and approval starting the goals run
-(D39).
+(D39). Phase 4 added the build template, steps that run however the steps before them ended
+(`always`), judges that name where they send work back (`sendBackTo`), agent work skipped after
+a judge says fail, and the factory's tick after each check that starts the next goal, catches
+build runs that ended without reporting and closes finished specs (D40).
 
 Needed, smallest first:
 
@@ -467,8 +502,9 @@ Each phase is one pull request, useful on its own, and testable with the scripte
    doors.
 3. **Goals.** Built (D39). The goal template: sub-issues, their checklist review, dependencies
    between them.
-4. **Building one goal.** The build template on the bound repository as it is today: tests
-   first, build, run, review, skeptic, with send-backs and "needs you". One goal at a time.
+4. **Building one goal.** Built (D40). The build template on the bound repository as it is
+   today: tests first, build, run, review, skeptic, with send-backs and "needs you". One goal
+   at a time.
 5. **Worktrees and parallel goals.** A worktree per goal, the run limit as a setting, goals in
    dependency order.
 6. **Pull requests and the merge question.** `git_push`, the Merge Agent, gate G2 from all

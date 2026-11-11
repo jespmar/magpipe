@@ -107,7 +107,7 @@ export type Goal = z.infer<typeof goal>;
 export const MAX_GOALS = 12;
 
 /** What an action step does (D38); the engine runs it in `lib/engine/actions.ts`. */
-export const stepActions = ['file_issue', 'read_issue', 'file_goals'] as const;
+export const stepActions = ['file_issue', 'read_issue', 'file_goals', 'finish_goal'] as const;
 export type StepAction = (typeof stepActions)[number];
 
 export const stepStatus = z.enum(['todo', 'live', 'done', 'failed', 'skipped']);
@@ -159,6 +159,13 @@ export const step = z.object({
    * or the run it follows up). Kept when the step is sent back, so the next round revises it.
    */
   document: z.string().max(DOCUMENT_CAP).optional(),
+  /**
+   * The step runs once everything it depends on has settled, failed or skipped included, so it
+   * can report how a run ended (a goal's finish, D40).
+   */
+  always: z.boolean().optional(),
+  /** The steps a judging step sends work back to (D40); unset, it sends back to all it reviews. */
+  sendBackTo: z.array(stepId).optional(),
   /** The step judges the work before it (a review, D38): its result opens with a verdict. */
   judges: z.boolean().optional(),
   /** The step splits a spec into goals with the `record_goals` tool (D39). */
@@ -203,7 +210,7 @@ export const attachment = z.object({
 });
 
 /** The factory's templates (lib/factory.ts): a run from one starts with its preset plan. */
-export const runTemplates = ['spec', 'goals'] as const;
+export const runTemplates = ['spec', 'goals', 'build'] as const;
 export type RunTemplate = (typeof runTemplates)[number];
 
 export const runInput = z.object({
@@ -211,7 +218,7 @@ export const runInput = z.object({
   attachments: z.array(attachment),
   /** Set when the run started from a factory template's plan (D37); a re-fly does the same. */
   template: z.enum(runTemplates).optional(),
-  /** The tracker issue a goals run splits (D39): its approved spec is the run's input. */
+  /** The tracker issue a goals or build run works on (D39, D40): the spec, or the goal. */
   issueId: issueId.optional(),
 });
 /**
@@ -692,6 +699,8 @@ export const trackerIssue = z.object({
   goal: goal.nullable(),
   /** The goals run started when the spec was approved; set once, so it starts once. */
   goalsRunId: runId.nullable(),
+  /** A goal's build run (D40); released when the goal goes to needs you, so it can build again. */
+  buildRunId: runId.nullable(),
   /** When gate G1 opened, and through which door. */
   approvedAt: z.date().nullable(),
   approvedVia: z.enum(['linear', 'magpipe']).nullable(),
