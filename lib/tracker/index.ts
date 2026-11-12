@@ -5,7 +5,7 @@
  * is saved, so a wrong team or status is named then, not at the first spec.
  */
 import 'server-only';
-import { eq } from 'drizzle-orm';
+import { eq, isNotNull } from 'drizzle-orm';
 import type { Db } from '../db';
 import * as t from '../db/schema';
 import { env } from '../env';
@@ -110,6 +110,19 @@ async function writeLinear(
     .onConflictDoUpdate({ target: t.linearSettings.id, set: { ...patch, updatedAt: now } })
     .returning();
   return row!;
+}
+
+/**
+ * Whether any factory project carries a Linear key of its own: Settings shows Check now then too
+ * (D46). Read here, not through lib/projects, so Settings stays light to compile.
+ */
+export async function anyProjectLinearKey(db: Db): Promise<boolean> {
+  const [row] = await db
+    .select({ id: t.factoryProjects.id })
+    .from(t.factoryProjects)
+    .where(isNotNull(t.factoryProjects.linearKeyRef))
+    .limit(1);
+  return row !== undefined;
 }
 
 /** What Settings shows: everything but the key. `ready` means a check can run: there is a key. */

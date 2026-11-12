@@ -662,8 +662,3 @@ export async function projectRuns(
     .orderBy(desc(t.runs.createdAt))
     .limit(limit);
 }
-
-/** Whether any project carries a Linear key of its own (Settings shows Check now then, D46). */
-export async function anyProjectLinearKey(db: Db): Promise<boolean> {
-  return (await listProjects(db)).some((p) => p.linearKeyRef !== null);
-}

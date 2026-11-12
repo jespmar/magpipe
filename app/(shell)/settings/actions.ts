@@ -19,6 +19,7 @@ import {
   type WatcherInput,
 } from '@/lib/schemas';
 import {
+  anyProjectLinearKey,
   getLinearSettings,
   LinearMappingError,
   LinearNotReadyError,
@@ -31,7 +32,6 @@ import {
   type LinearView,
 } from '@/lib/tracker';
 import { checkLinear, type CheckResult } from '@/lib/tracker/issues';
-import { anyProjectLinearKey } from '@/lib/projects';
 import {
   ForgeError,
   forgeMessage,

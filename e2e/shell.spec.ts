@@ -6,6 +6,8 @@ import { expect, test } from '@playwright/test';
 test('fresh workspace: nav reaches every screen, marks the active link, offers the demo data', async ({
   page,
 }) => {
+  // Every screen's first visit compiles it on the development server.
+  test.setTimeout(60_000);
   await page.goto('/');
   await expect(
     page.getByRole('heading', { level: 1, name: 'No agents flying right now' }),
@@ -42,7 +44,7 @@ test('fresh workspace: nav reaches every screen, marks the active link, offers t
   await page.getByRole('link', { name: 'Load demo data' }).click();
   // First visit of Settings in this file: a cold compile on the dev server.
   await expect(page.getByRole('heading', { level: 2, name: 'Demo data' })).toBeFocused({
-    timeout: 15_000,
+    timeout: 30_000,
   });
   await expect(page.getByRole('heading', { level: 2, name: 'Demo data' })).toBeInViewport();
 });

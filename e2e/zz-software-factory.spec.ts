@@ -197,8 +197,12 @@ test('settings connects Linear, a passing spec is filed, Home approves it, its g
     'href',
     /linear\.app\/scripted\/issue\/MAG-\d+/,
   );
-  await issue.getByRole('button', { name: 'Approve the spec' }).click();
-  await expect(issue).toContainText('approved');
+  // The run page was just opened: a click before it hydrates is lost, so try until it lands.
+  await expect(async () => {
+    const approve = issue.getByRole('button', { name: 'Approve the spec' });
+    if (await approve.isVisible()) await approve.click();
+    await expect(issue).toContainText('approved', { timeout: 3_000 });
+  }).toPass({ timeout: 30_000 });
   await expect(issue).toContainText(/Approved in Magpipe at \d\d:\d\d/);
   await expect(issue.getByRole('button', { name: 'Approve the spec' })).toBeHidden();
 
@@ -294,6 +298,8 @@ test('settings connects Linear, a passing spec is filed, Home approves it, its g
 test('factory projects: the Default project, a second one on its own Linear project and repository, and the Home picker', async ({
   page,
 }) => {
+  // New project pages compile on their first visit.
+  test.setTimeout(90_000);
   const repo = path.join(dir, `second-${Date.now().toString(36)}`);
   fs.mkdirSync(repo);
   fs.writeFileSync(
