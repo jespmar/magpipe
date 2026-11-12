@@ -141,7 +141,7 @@ test('settings connects Linear, a passing spec is filed, Home approves it, its g
   await expect(page.getByRole('region', { name: 'What this project needs' })).toContainText(
     'No Linear project yet',
   );
-  await page.getByRole('link', { name: 'Settings', exact: true }).click();
+  await page.getByRole('main').getByRole('link', { name: 'Settings', exact: true }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'Default settings' })).toBeVisible({
     timeout: 15_000,
   });
@@ -363,7 +363,7 @@ test('factory projects: the Default project, a second one on its own Linear proj
   // Leave one project, as the workspace had before.
   await page.goto('/factory');
   await page.getByRole('link', { name: 'API service' }).click();
-  await page.getByRole('link', { name: 'Settings', exact: true }).click();
+  await page.getByRole('main').getByRole('link', { name: 'Settings', exact: true }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'API service settings' })).toBeVisible({
     timeout: 15_000,
   });
