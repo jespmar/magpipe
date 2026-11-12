@@ -1,7 +1,15 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useId, useState, useTransition, type FormEvent, type ReactNode } from 'react';
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  useTransition,
+  type FormEvent,
+  type ReactNode,
+} from 'react';
 import { Checkbox } from '@/components/arc/checkbox/checkbox';
 import { Input } from '@/components/arc/input/input';
 import { Select } from '@/components/arc/select/select';
@@ -12,7 +20,7 @@ import {
   projectLinearOptionsAction,
   saveProjectAction,
   setProjectKeyAction,
-} from '@/app/(shell)/factory/projects/actions';
+} from '@/app/(shell)/factory/actions';
 import type { ProjectView } from '@/lib/projects';
 import {
   mergeMethods,
@@ -35,18 +43,11 @@ type Props = {
   initial: ProjectView | null;
   agents: ProjectAgent[];
   models: string[];
-  /** What the workspace gives a project that sets nothing of its own. */
-  workspace: {
-    linear: string;
-    github: string;
-    maxRuns: number;
-    hasLinearKey: boolean;
-    hasGithubKey: boolean;
-  };
+  /** The shared keys and the workspace limit (D46). */
+  workspace: { maxRuns: number; hasLinearKey: boolean; hasGithubKey: boolean };
 };
 
 const MONO = { fontFamily: 'var(--font-mono)' } as const;
-const NONE = '__none';
 const OWN = '__own';
 
 const METHOD_LABELS: Record<(typeof mergeMethods)[number], string> = {
@@ -94,9 +95,9 @@ function Section({
 }
 
 /**
- * Factory → Projects → one project (D45): the repository and its scripts, a brief for the agents,
- * its own Linear team and project and its own GitHub repository (or the workspace's), limits, and
- * a model per factory agent. Saving reads back everything it names; the keys save on their own.
+ * A project's settings (D45, D46): the repository and its scripts, a brief for the agents, its
+ * own Linear team, Linear project and statuses, its own GitHub repository and rule, limits, and a
+ * model per factory agent. Saving reads back everything it names; the keys save on their own.
  */
 export function ProjectForm({ initial, agents, models, workspace }: Props) {
   const router = useRouter();
@@ -112,14 +113,13 @@ export function ProjectForm({ initial, agents, models, workspace }: Props) {
   const [scripts, setScripts] = useState((initial?.scripts ?? ['test']).join(', '));
   const [context, setContext] = useState(initial?.context ?? '');
 
-  // Linear: the project's own team, or the workspace's.
-  const [ownLinear, setOwnLinear] = useState(initial?.linear.team != null);
+  // Linear: the project's own team, Linear project and statuses.
   const [teams, setTeams] = useState<TrackerTeam[]>([]);
   const [states, setStates] = useState<TrackerState[]>([]);
   const [linearProjects, setLinearProjects] = useState<TrackerRef[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [teamId, setTeamId] = useState(initial?.linear.team?.id ?? '');
-  const [linearProject, setLinearProject] = useState(initial?.linear.project?.id ?? NONE);
+  const [linearProject, setLinearProject] = useState(initial?.linear.project?.id ?? '');
   const [label, setLabel] = useState(initial?.linear.label?.name ?? 'magpipe');
   const [map, setMap] = useState<Record<PipelineState, string>>(
     () =>
@@ -128,9 +128,8 @@ export function ProjectForm({ initial, agents, models, workspace }: Props) {
       ) as Record<PipelineState, string>,
   );
 
-  // GitHub: the project's own repository, or the workspace's.
+  // GitHub: the project's own repository and rule.
   const gh = initial?.github;
-  const [ownGithub, setOwnGithub] = useState(gh?.repo != null);
   const [repo, setRepo] = useState(gh?.repo ?? '');
   const [method, setMethod] = useState<ProjectInput['github']['mergeMethod']>(
     gh?.mergeMethod ?? 'squash',
@@ -174,15 +173,26 @@ export function ProjectForm({ initial, agents, models, workspace }: Props) {
     setLoaded(true);
     if (res.suggested && id !== view?.linear.team?.id) {
       setMap(res.suggested);
-      setLinearProject(NONE);
+      setLinearProject('');
     }
     return true;
   }
 
-  function toggleOwnLinear(on: boolean) {
-    setOwnLinear(on);
-    if (on && !loaded) run('teams', async () => void (await loadTeam(teamId)));
-  }
+  // A new project starts with the teams the shared key sees, once.
+  const opened = useRef(false);
+  useEffect(() => {
+    if (opened.current || initial || !workspace.hasLinearKey) return;
+    opened.current = true;
+    setBusy('teams');
+    start(async () => {
+      try {
+        await loadTeam('');
+      } finally {
+        setBusy(null);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on the first render
+  }, []);
 
   function chooseTeam(id: string) {
     setTeamId(id);
@@ -200,16 +210,9 @@ export function ProjectForm({ initial, agents, models, workspace }: Props) {
       repoPath,
       scripts,
       context,
-      linear: ownLinear
-        ? {
-            teamId,
-            projectId: linearProject === NONE ? '' : linearProject,
-            label,
-            states: map,
-          }
-        : { teamId: '', projectId: '', label: '', states: {} },
+      linear: { teamId, projectId: linearProject, label, states: map },
       github: {
-        repo: ownGithub ? repo : '',
+        repo,
         mergeMethod: method,
         autoMerge: auto,
         autoMergeLabel: autoLabel,
@@ -230,7 +233,7 @@ export function ProjectForm({ initial, agents, models, workspace }: Props) {
       setField(undefined);
       setNote({ tone: 'done', text: ['Saved.', ...res.notes].join(' ') });
       if (!view) {
-        router.replace(`/factory/projects/${res.project.id}`, { scroll: false });
+        router.replace(`/factory/${res.project.id}`, { scroll: false });
         return;
       }
       setView(res.project);
@@ -250,7 +253,7 @@ export function ProjectForm({ initial, agents, models, workspace }: Props) {
         tone: 'done',
         text: key
           ? `Saved. ${kind === 'linear' ? 'Linear' : 'GitHub'} knows it as ${res.who}.`
-          : `Removed. The project uses the workspace’s ${kind === 'linear' ? 'Linear key' : 'GitHub token'} again.`,
+          : `Removed. The project uses the shared ${kind === 'linear' ? 'Linear key' : 'GitHub token'} from Settings again.`,
       });
       setLoaded(false);
       router.refresh();
@@ -262,7 +265,7 @@ export function ProjectForm({ initial, agents, models, workspace }: Props) {
     run('delete', async () => {
       const res = await deleteProjectAction(view.id);
       if (!res.ok) return setNote({ tone: 'error', text: res.message });
-      router.replace('/factory/projects');
+      router.replace('/factory');
     });
   }
 
@@ -329,155 +332,150 @@ export function ProjectForm({ initial, agents, models, workspace }: Props) {
 
       <Section
         title="Linear"
-        description="Where this project’s specs and goals are filed and watched. Without its own team it uses the workspace’s from Settings."
+        description="This project’s own Linear project: specs and goals are filed in it, and the watcher reads only its issues. The team’s statuses map onto the pipeline."
       >
-        <Checkbox
-          label="Use a Linear team of its own"
-          description={`Off: ${workspace.linear}.`}
-          checked={ownLinear}
-          onCheckedChange={(on) => toggleOwnLinear(on === true)}
-        />
-        {ownLinear ? (
-          loaded ? (
-            <>
-              <Select
-                label="Team"
-                placeholder="Pick a team"
-                options={teams.map((x) => ({ value: x.id, label: `${x.name} (${x.key})` }))}
-                value={teamId}
-                onValueChange={chooseTeam}
-                disabled={pending}
-              />
-              {teamId ? (
-                <>
-                  <Select
-                    label="Linear project"
-                    description="Issues are filed in it, and the watcher reads only its issues. None: the whole team."
-                    options={[
-                      { value: NONE, label: 'None, the whole team' },
-                      ...linearProjects.map((p) => ({ value: p.id, label: p.name })),
-                    ]}
-                    value={linearProject}
-                    onValueChange={setLinearProject}
-                    disabled={pending}
-                  />
-                  <Input
-                    id={`${ids}-label`}
-                    label="Label"
-                    description="Marks the issues the factory owns. Made in Linear if the team has none by this name."
-                    value={label}
-                    readOnly={pending}
-                    onChange={(e) => setLabel(e.target.value)}
-                  />
-                  <div className="grid gap-4 wide:grid-cols-2 wide:items-start">
-                    {pipelineStates.map((p) => (
-                      <Select
-                        key={p}
-                        label={PIPELINE_LABELS[p]}
-                        description={PIPELINE_HINTS[p]}
-                        placeholder="Pick a status"
-                        options={stateOptions}
-                        value={map[p]}
-                        onValueChange={(v) => setMap((m) => ({ ...m, [p]: v }))}
-                        disabled={pending}
-                      />
-                    ))}
-                  </div>
-                </>
-              ) : null}
-            </>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {view?.linear.team ? (
-                <p className="text-body-sm text-body">
-                  {view.linear.team.name}
-                  {view.linear.project ? `, project ${view.linear.project.name}` : ''}, label{' '}
-                  {view.linear.label?.name}. Statuses:{' '}
-                  {pipelineStates
-                    .map(
-                      (p) =>
-                        `${PIPELINE_LABELS[p]}: ${view.linear.states[p]?.name ?? 'not mapped'}`,
-                    )
-                    .join('; ')}
-                  .
-                </p>
-              ) : null}
-              <div>
-                <Button
-                  size="sm"
-                  onClick={() => run('teams', async () => void (await loadTeam(teamId)))}
-                  loading={busy === 'teams'}
-                  disabled={pending && busy !== 'teams'}
-                >
-                  {view?.linear.team ? 'Change the team or statuses' : 'Read the teams from Linear'}
-                </Button>
-              </div>
+        {loaded ? (
+          <>
+            <Select
+              label="Team"
+              placeholder="Pick a team"
+              options={teams.map((x) => ({ value: x.id, label: `${x.name} (${x.key})` }))}
+              value={teamId}
+              onValueChange={chooseTeam}
+              disabled={pending}
+            />
+            {teamId ? (
+              <>
+                <Select
+                  label="Linear project"
+                  placeholder="Pick a Linear project"
+                  description={
+                    linearProjects.length
+                      ? 'Each factory project files into a Linear project of its own.'
+                      : 'This team has no Linear projects. Make one in Linear, then pick the team again.'
+                  }
+                  options={linearProjects.map((p) => ({ value: p.id, label: p.name }))}
+                  value={linearProject}
+                  onValueChange={setLinearProject}
+                  disabled={pending}
+                />
+                <Input
+                  id={`${ids}-label`}
+                  label="Label"
+                  description="Marks the issues the factory owns. Made in Linear if the team has none by this name."
+                  value={label}
+                  readOnly={pending}
+                  onChange={(e) => setLabel(e.target.value)}
+                />
+                <div className="grid gap-4 wide:grid-cols-2 wide:items-start">
+                  {pipelineStates.map((p) => (
+                    <Select
+                      key={p}
+                      label={PIPELINE_LABELS[p]}
+                      description={PIPELINE_HINTS[p]}
+                      placeholder="Pick a status"
+                      options={stateOptions}
+                      value={map[p]}
+                      onValueChange={(v) => setMap((m) => ({ ...m, [p]: v }))}
+                      disabled={pending}
+                    />
+                  ))}
+                </div>
+              </>
+            ) : null}
+          </>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {view?.linear.team ? (
+              <p className="text-body-sm text-body">
+                {view.linear.team.name}
+                {view.linear.project
+                  ? `, project ${view.linear.project.name}`
+                  : ', no Linear project yet'}
+                , label {view.linear.label?.name}. Statuses:{' '}
+                {pipelineStates
+                  .map(
+                    (p) => `${PIPELINE_LABELS[p]}: ${view.linear.states[p]?.name ?? 'not mapped'}`,
+                  )
+                  .join('; ')}
+                .
+              </p>
+            ) : workspace.hasLinearKey || view?.hasLinearKey ? null : (
+              <p className="max-w-[31rem] text-body-sm text-body">
+                Save the shared Linear key in Settings first: the teams and their Linear projects
+                come from Linear.
+              </p>
+            )}
+            <div>
+              <Button
+                size="sm"
+                onClick={() => run('teams', async () => void (await loadTeam(teamId)))}
+                loading={busy === 'teams'}
+                disabled={pending && busy !== 'teams'}
+              >
+                {view?.linear.team
+                  ? 'Change the Linear project or statuses'
+                  : 'Read the teams from Linear'}
+              </Button>
             </div>
-          )
-        ) : null}
+          </div>
+        )}
         {err('linear') ? <p className="text-body-sm text-danger">{err('linear')}</p> : null}
       </Section>
 
       <Section
         title="GitHub"
-        description="Where this project’s pull requests open and merge, and whether they may merge without asking. Without its own repository it uses the workspace’s."
+        description="This project’s own GitHub repository: goals are pushed to it and their pull requests open and merge there. The folder’s origin must be this repository."
       >
-        <Checkbox
-          label="Use a repository of its own"
-          description={`Off: ${workspace.github}.`}
-          checked={ownGithub}
-          onCheckedChange={(on) => setOwnGithub(on === true)}
-        />
-        {ownGithub ? (
-          <>
+        <>
+          <Input
+            id={`${ids}-repo`}
+            label="Repository"
+            description="As owner/name. Read back from GitHub when you save."
+            error={err('github')}
+            autoComplete="off"
+            spellCheck={false}
+            style={MONO}
+            value={repo}
+            readOnly={pending}
+            onChange={(e) => setRepo(e.target.value)}
+          />
+          <Select
+            label="How pull requests merge"
+            options={mergeMethods.map((m) => ({ value: m, label: METHOD_LABELS[m] }))}
+            value={method}
+            onValueChange={(v) => setMethod(v as ProjectInput['github']['mergeMethod'])}
+            disabled={pending}
+          />
+          <Checkbox
+            label="Merge without asking when the rule holds"
+            description="Off unless you turn it on. The goal is still brought up to date, tested again and checked before it merges."
+            checked={auto}
+            onCheckedChange={(on) => setAuto(on === true)}
+          />
+          <div className="max-w-[20rem]">
             <Input
-              id={`${ids}-repo`}
-              label="Repository"
-              description="As owner/name. Read back from GitHub when you save."
+              id={`${ids}-auto-label`}
+              label="Label it needs"
+              description="On the goal or its spec in Linear."
               autoComplete="off"
               spellCheck={false}
-              style={MONO}
-              value={repo}
+              value={autoLabel}
               readOnly={pending}
-              onChange={(e) => setRepo(e.target.value)}
+              onChange={(e) => setAutoLabel(e.target.value)}
             />
-            <Select
-              label="How pull requests merge"
-              options={mergeMethods.map((m) => ({ value: m, label: METHOD_LABELS[m] }))}
-              value={method}
-              onValueChange={(v) => setMethod(v as ProjectInput['github']['mergeMethod'])}
-              disabled={pending}
-            />
-            <Checkbox
-              label="Merge without asking when the rule holds"
-              description="Off unless you turn it on. The goal is still brought up to date, tested again and checked before it merges."
-              checked={auto}
-              onCheckedChange={(on) => setAuto(on === true)}
-            />
-            <div className="max-w-[20rem]">
-              <Input
-                id={`${ids}-auto-label`}
-                label="Label it needs"
-                description="On the goal or its spec in Linear."
-                autoComplete="off"
-                spellCheck={false}
-                value={autoLabel}
-                readOnly={pending}
-                onChange={(e) => setAutoLabel(e.target.value)}
-              />
-            </div>
-            <Checkbox
-              label="Only when every judge passed on the first try"
-              checked={firstPass}
-              onCheckedChange={(on) => setFirstPass(on === true)}
-            />
-            <Checkbox
-              label="Only when the pull request’s checks are green"
-              checked={checks}
-              onCheckedChange={(on) => setChecks(on === true)}
-            />
-          </>
-        ) : null}
+          </div>
+          <Checkbox
+            label="Only when every judge passed on the first try"
+            checked={firstPass}
+            onCheckedChange={(on) => setFirstPass(on === true)}
+          />
+          <Checkbox
+            label="Only when the pull request’s checks are green"
+            checked={checks}
+            onCheckedChange={(on) => setChecks(on === true)}
+          />
+        </>
         {err('github') ? <p className="text-body-sm text-danger">{err('github')}</p> : null}
       </Section>
 

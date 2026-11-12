@@ -17,7 +17,7 @@ import { factoryTick, loadFactory, startGoalsRun, templatePlan } from '@/lib/fac
 import { acceptanceCriteria, checkGoals, parallelGroups, renderGoals } from '@/lib/goals';
 import { createRun, getRun } from '@/lib/runs';
 import type { Goal, TrackerIssue } from '@/lib/schemas';
-import { saveLinearKey, saveLinearMapping, useTrackerFactory } from '@/lib/tracker';
+import { saveLinearKey, useTrackerFactory } from '@/lib/tracker';
 import {
   approveIssue,
   checkLinear,
@@ -27,6 +27,7 @@ import {
   listIssues,
 } from '@/lib/tracker/issues';
 import { SCRIPTED_TEAM, scriptedStore, scriptedTracker } from '@/lib/tracker/scripted';
+import { setUpProject, TEST_LINEAR_PROJECT } from '@/tests/stubs/project';
 
 const goal = (
   key: string,
@@ -247,18 +248,7 @@ describe('the goals template', () => {
     execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
     await loadFactory(db, { path: dir, scripts: ['test'] });
     await saveLinearKey(db, 'lin_api_goals');
-    await saveLinearMapping(db, {
-      teamId: SCRIPTED_TEAM.id,
-      label: 'magpipe',
-      states: {
-        spec_ready: 'st_spec',
-        approved: 'st_todo',
-        building: 'st_progress',
-        merge_question: 'st_review',
-        done: 'st_done',
-        needs_you: 'st_blocked',
-      },
-    });
+    await setUpProject(db, { label: 'magpipe' });
   }, 30_000);
   afterAll(async () => {
     useTrackerFactory(undefined);
@@ -360,6 +350,7 @@ describe('the goals template', () => {
     // A sub-issue labelled by hand under a parent Magpipe does not track is no spec.
     const stray = await scriptedTracker('k', store).createIssue({
       teamId: SCRIPTED_TEAM.id,
+      projectId: TEST_LINEAR_PROJECT.id,
       title: 'A goal made by hand',
       description: '1. Something.',
       labelIds: [store.labels[0]!.id],

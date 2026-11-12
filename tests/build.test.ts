@@ -19,14 +19,11 @@ import { factoryTick, loadFactory, nextGoal, readyGoals, startBuildRun } from '@
 import { createRun, getRun } from '@/lib/runs';
 import { sendBackSet } from '@/lib/runs-util';
 import type { Goal, Step, TrackerIssue } from '@/lib/schemas';
-import {
-  getLinearSettings,
-  saveLinearKey,
-  saveLinearMapping,
-  useTrackerFactory,
-} from '@/lib/tracker';
+import { linearOf } from '@/lib/projects';
+import { saveLinearKey, useTrackerFactory } from '@/lib/tracker';
 import { checkLinear, getIssue, recordFiledIssue } from '@/lib/tracker/issues';
 import { SCRIPTED_TEAM, scriptedStore, scriptedTracker } from '@/lib/tracker/scripted';
+import { setUpProject, TEST_LINEAR_PROJECT } from '@/tests/stubs/project';
 
 const SECRET = Buffer.from('unit-test-key-unit-test-key-0123').toString('base64url');
 
@@ -169,7 +166,8 @@ describe('building one goal', () => {
 
   /** A spec in building and its goals in approved, as the goals run leaves them. */
   async function fileGoals(keys: [string, string[]][]) {
-    const settings = await getLinearSettings(db);
+    const { project, settings } = await linearOf(db);
+    const projectId = project!.id;
     const tracker = scriptedTracker('k', store);
     const run = await createRun(db, { text: 'Goals', attachments: [] });
     const remoteSpec = await tracker.createIssue({
@@ -178,8 +176,9 @@ describe('building one goal', () => {
       description: '# Export',
       labelIds: [store.labels[0]!.id],
       stateId: 'st_progress',
+      projectId: TEST_LINEAR_PROJECT.id,
     });
-    spec = await recordFiledIssue(db, remoteSpec, { runId: run.id, settings });
+    spec = await recordFiledIssue(db, remoteSpec, { runId: run.id, settings, projectId });
     for (const [key, deps] of keys) {
       const remote = await tracker.createIssue({
         teamId: SCRIPTED_TEAM.id,
@@ -188,10 +187,12 @@ describe('building one goal', () => {
         labelIds: [store.labels[0]!.id],
         stateId: 'st_todo',
         parentId: remoteSpec.id,
+        projectId: TEST_LINEAR_PROJECT.id,
       });
       goals[key] = await recordFiledIssue(db, remote, {
         runId: run.id,
         settings,
+        projectId,
         parentId: spec.id,
         goal: goal(key, deps),
       });
@@ -231,8 +232,7 @@ describe('building one goal', () => {
     process.env.MAGPIPE_DATA_DIR = path.join(dir, '.data');
     await loadFactory(db, { path: dir, scripts: ['test'] });
     await saveLinearKey(db, 'lin_api_build');
-    await saveLinearMapping(db, {
-      teamId: SCRIPTED_TEAM.id,
+    await setUpProject(db, {
       label: 'magpipe',
       states: {
         spec_ready: 'st_spec',

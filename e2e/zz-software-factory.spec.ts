@@ -120,26 +120,73 @@ test('settings connects Linear, a passing spec is filed, Home approves it, its g
   await expect(section.getByText('ends in 7f3a')).toBeVisible();
   await expect(key).toBeHidden();
 
-  await section.getByRole('button', { name: 'Map the statuses' }).click();
-  await section.getByRole('combobox', { name: 'Team' }).click();
-  await page.getByRole('option', { name: 'Magpipe (MAG)' }).click();
-  // The first guess fills every state from the team's own status names.
-  await expect(section.getByRole('combobox', { name: 'Spec ready' })).toContainText('Spec ready');
-  await expect(section.getByRole('combobox', { name: 'Needs you' })).toContainText('Blocked');
-  await section.getByRole('button', { name: 'Save and read back' }).click();
-  await expect(section.getByText(/Read back from Linear: 7 statuses in Magpipe/)).toBeVisible({
+  // GitHub (D42): a refused token is named, a good one saved. The token is shared by every
+  // project (D46); the repository is the project's own.
+  await page.goto('/settings');
+  const github = page.getByRole('region', { name: 'GitHub' });
+  const token = github.getByLabel('Token');
+  await token.fill('ghp_bad_e2e');
+  await github.getByRole('button', { name: 'Save token' }).click();
+  await expect(token).toHaveAccessibleDescription(/did not accept the token/, { timeout: 15_000 });
+  await token.fill('ghp_e2e_9d1f');
+  await github.getByRole('button', { name: 'Save token' }).click();
+  await expect(github.getByText('ends in 9d1f')).toBeVisible({ timeout: 15_000 });
+
+  // The Default project (D46) owns its Linear project and repository: map them in its settings.
+  await page.goto('/factory');
+  await page.getByRole('link', { name: 'Default' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Default' })).toBeVisible({
     timeout: 15_000,
   });
-  await expect(section.getByText('made just now', { exact: false })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'What this project needs' })).toContainText(
+    'No Linear project yet',
+  );
+  await page.getByRole('link', { name: 'Settings', exact: true }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Default settings' })).toBeVisible({
+    timeout: 15_000,
+  });
+  const linearPart = page.getByRole('region', { name: 'Linear' });
+  await linearPart.getByRole('button', { name: 'Read the teams from Linear' }).click();
+  await linearPart.getByRole('combobox', { name: 'Team' }).click();
+  await page.getByRole('option', { name: 'Magpipe (MAG)' }).click();
+  // The first guess fills every state from the team's own status names.
+  await expect(linearPart.getByRole('combobox', { name: 'Spec ready' })).toContainText(
+    'Spec ready',
+  );
+  await expect(linearPart.getByRole('combobox', { name: 'Needs you' })).toContainText('Blocked');
+  await linearPart.getByRole('combobox', { name: 'Linear project' }).click();
+  await page.getByRole('option', { name: 'Web app' }).click();
+  const githubPart = page.getByRole('region', { name: 'GitHub' });
+  await githubPart.getByLabel('Repository').fill('magpipe-e2e/app');
+  // Unattended merges (D44) are off until turned on.
+  await expect(
+    githubPart.getByRole('checkbox', { name: 'Merge without asking when the rule holds' }),
+  ).not.toBeChecked();
+  await page.getByRole('button', { name: 'Save and read back' }).click();
+  const saved = page.getByRole('status').filter({ hasText: 'Saved.' });
+  await expect(saved).toContainText(
+    /Read back from Linear: 7 statuses in Magpipe, project Web app, and the label magpipe, made just now\./,
+    { timeout: 15_000 },
+  );
+  await expect(saved).toContainText('Read back from GitHub: magpipe-e2e/app, default branch main.');
 
-  await page.goto('/');
-  const composer = page.getByRole('region', { name: 'Ask Magpipe' });
-  const fresh = composer.getByRole('button', { name: 'New question' });
-  if (await fresh.isVisible()) await fresh.click();
-  await composer.getByLabel('Ask Magpipe').fill(`Filed spec ${Date.now().toString(36)}`);
-  await composer.getByRole('button', { name: 'Send to the factory' }).click();
+  // The project's own Specification Agent (D46): a spec written on its page.
+  await page.getByRole('link', { name: 'Back to Default' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Default' })).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.getByRole('region', { name: 'What this project needs' })).toBeHidden();
+  const specBox = page.getByRole('form', { name: 'Write a spec' });
+  await specBox.getByLabel('An idea for Default').fill(`Filed spec ${Date.now().toString(36)}`);
+  await specBox.getByRole('button', { name: 'Write the spec' }).click();
+  const specRun = specBox.getByRole('link', { name: /^flight_[0-9a-z]+$/ });
+  await expect(specRun).toBeVisible({ timeout: 15_000 });
+  await specRun.click();
+  await expect(page.getByRole('heading', { level: 1, name: /^Filed spec/ })).toBeVisible({
+    timeout: 15_000,
+  });
 
-  const panel = page.getByRole('region', { name: /^flight_[0-9a-z]+$/ });
+  const panel = page.getByRole('main');
   await expect(panel.getByText('done', { exact: true }).first()).toBeVisible({ timeout: 30_000 });
   await expect(panel.getByRole('region', { name: 'Result' })).toContainText(
     /Filed MAG-\d+ in Spec ready/,
@@ -175,31 +222,7 @@ test('settings connects Linear, a passing spec is filed, Home approves it, its g
     /Filed 1 goal under MAG-\d+/,
   );
 
-  // GitHub (D42): a refused token is named, a good one saved, the repository read back.
   await page.goto('/settings');
-  const github = page.getByRole('region', { name: 'GitHub' });
-  const token = github.getByLabel('Token');
-  await token.fill('ghp_bad_e2e');
-  await github.getByRole('button', { name: 'Save token' }).click();
-  await expect(token).toHaveAccessibleDescription(/did not accept the token/, { timeout: 15_000 });
-  await token.fill('ghp_e2e_9d1f');
-  await github.getByRole('button', { name: 'Save token' }).click();
-  await expect(github.getByText('ends in 9d1f')).toBeVisible({ timeout: 15_000 });
-  await github.getByLabel('Repository').fill('magpipe-e2e/app');
-  await github.getByRole('button', { name: 'Save and read back' }).click();
-  await expect(
-    github.getByText('Read back from GitHub: magpipe-e2e/app, default branch main.'),
-  ).toBeVisible({ timeout: 15_000 });
-
-  // Unattended merges (D44) are off until turned on; saving them off says every merge waits.
-  await expect(
-    github.getByRole('checkbox', { name: 'Merge without asking when the rule holds' }),
-  ).not.toBeChecked();
-  await github.getByRole('button', { name: 'Save the rule' }).click();
-  await expect(github.getByText('Saved. Every merge waits for your answer.')).toBeVisible({
-    timeout: 15_000,
-  });
-
   // The goal's turn (D40): Check now in Settings starts its build, which writes the tests, builds,
   // runs, reviews and tries to break it, then pushes, opens the pull request and asks to merge.
   const linear = page.getByRole('region', { name: 'Linear' });
@@ -242,10 +265,16 @@ test('settings connects Linear, a passing spec is filed, Home approves it, its g
     .getByRole('navigation', { name: 'Main' })
     .getByRole('link', { name: 'Factory' })
     .click();
-  // The board's first visit compiles it on the development server.
+  // The list's first visit compiles it on the development server.
   await expect(page.getByRole('heading', { level: 1, name: 'Factory' })).toBeVisible({
     timeout: 30_000,
   });
+  // Each project's board is on its page (D46).
+  await page.getByRole('link', { name: 'Default' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Default' })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(page.getByRole('region', { name: 'Runs' })).toContainText(/Land MAG-\d+/);
   const doneColumn = page.getByRole('region', { name: 'Done' });
   await expect(doneColumn).toContainText('Meet criterion 1');
   await expect(doneColumn).toContainText('merged');
@@ -262,7 +291,7 @@ test('settings connects Linear, a passing spec is filed, Home approves it, its g
   }
 });
 
-test('factory projects: the Default project, a second one with its own Linear project, and the Home picker', async ({
+test('factory projects: the Default project, a second one on its own Linear project and repository, and the Home picker', async ({
   page,
 }) => {
   const repo = path.join(dir, `second-${Date.now().toString(36)}`);
@@ -273,11 +302,11 @@ test('factory projects: the Default project, a second one with its own Linear pr
   );
   execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: repo });
 
-  await page.goto('/factory/projects');
-  await expect(page.getByRole('heading', { level: 1, name: 'Projects' })).toBeVisible();
-  // The factory as it was is the Default project, on the workspace's Linear.
+  await page.goto('/factory');
+  await expect(page.getByRole('heading', { level: 1, name: 'Factory' })).toBeVisible();
+  // The factory as it was is the Default project, on its own Linear project (D46).
   await expect(page.getByRole('link', { name: 'Default' })).toBeVisible();
-  await expect(page.getByText('Magpipe (workspace)')).toBeVisible();
+  await expect(page.getByText('Web app (MAG)')).toBeVisible();
 
   await page.getByRole('link', { name: 'New project' }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'New project' })).toBeVisible({
@@ -290,21 +319,36 @@ test('factory projects: the Default project, a second one with its own Linear pr
     .getByRole('region', { name: 'Context for the agents' })
     .getByLabel('Brief')
     .fill('The public API. Every endpoint is versioned.');
+  // A new project starts with the teams the shared key sees.
   const linear = page.getByRole('region', { name: 'Linear' });
-  await linear.getByLabel('Use a Linear team of its own').check();
   await linear.getByRole('combobox', { name: 'Team' }).click();
   await page.getByRole('option', { name: 'Magpipe (MAG)' }).click();
+  await expect(linear.getByRole('combobox', { name: 'Needs you' })).toContainText('Blocked');
+  // Web app belongs to Default: a second project on it is refused.
+  await linear.getByRole('combobox', { name: 'Linear project' }).click();
+  await page.getByRole('option', { name: 'Web app' }).click();
+  const github = page.getByRole('region', { name: 'GitHub' });
+  await github.getByLabel('Repository').fill('magpipe-e2e/api');
+  await page.getByRole('button', { name: 'Create project' }).click();
+  await expect(linear.getByText('Default already files into that Linear project.')).toBeVisible({
+    timeout: 15_000,
+  });
   await linear.getByRole('combobox', { name: 'Linear project' }).click();
   await page.getByRole('option', { name: 'API' }).click();
-  await expect(linear.getByRole('combobox', { name: 'Needs you' })).toContainText('Blocked');
   await page.getByRole('button', { name: 'Create project' }).click();
+  // Created, it opens on its own page with its spec box and board.
   await expect(page.getByRole('heading', { level: 1, name: 'API service' })).toBeVisible({
     timeout: 15_000,
   });
+  await expect(page.getByText('The public API. Every endpoint is versioned.')).toBeVisible();
+  await expect(page.getByText('files into API')).toBeVisible();
+  await expect(page.getByText('lands in magpipe-e2e/api')).toBeVisible();
+  await expect(page.getByRole('form', { name: 'Write a spec' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: 'Factory' })).toBeVisible();
 
-  await page.goto('/factory/projects');
+  await page.goto('/factory');
   await expect(page.getByText('2 projects')).toBeVisible();
-  await expect(page.getByText('Magpipe, API', { exact: true })).toBeVisible();
+  await expect(page.getByText('API (MAG)', { exact: true })).toBeVisible();
 
   // Home asks which project a spec is for, now that there are two.
   await page.goto('/');
@@ -316,16 +360,16 @@ test('factory projects: the Default project, a second one with its own Linear pr
     'Default',
   );
 
-  // The board filters by project.
-  await page.goto('/factory');
-  await expect(page.getByRole('group', { name: 'Project' })).toBeVisible({ timeout: 15_000 });
-
   // Leave one project, as the workspace had before.
-  await page.goto('/factory/projects');
+  await page.goto('/factory');
   await page.getByRole('link', { name: 'API service' }).click();
+  await page.getByRole('link', { name: 'Settings', exact: true }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'API service settings' })).toBeVisible({
+    timeout: 15_000,
+  });
   await page.getByRole('button', { name: 'Delete project' }).click();
   await page.getByRole('button', { name: 'Delete, keeping its issues' }).click();
-  await expect(page.getByRole('heading', { level: 1, name: 'Projects' })).toBeVisible({
+  await expect(page.getByRole('heading', { level: 1, name: 'Factory' })).toBeVisible({
     timeout: 15_000,
   });
   await expect(page.getByText('one project')).toBeVisible();

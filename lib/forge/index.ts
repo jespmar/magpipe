@@ -9,7 +9,7 @@ import type { Db } from '../db';
 import * as t from '../db/schema';
 import { env } from '../env';
 import { deleteSecret, readSecret, storeSecret } from '../secrets';
-import type { AutoMergeInput, ForgeRepoInput, ForgeSettings } from '../schemas';
+import type { ForgeSettings } from '../schemas';
 import { githubForge } from './github';
 import { scriptedForge } from './scripted';
 import { ForgeError, type Forge } from './types';
@@ -72,7 +72,7 @@ export async function getForge(
   const token = s.keyRef ? await readSecret(db, s.keyRef) : null;
   if (!token || !s.repo) {
     throw new ForgeNotReadyError(
-      'GitHub is not set up. Add a token and the repository in Settings.',
+      'GitHub is not set up for this project. Save a token in Settings and give the project its repository.',
     );
   }
   return { forge: forgeFor(token), repo: s.repo, settings: s };
@@ -117,19 +117,6 @@ export async function removeForgeKey(db: Db): Promise<ForgeSettings> {
   return settings;
 }
 
-/** Saves the repository and merge method once the token can reach the repository. */
-export async function saveForgeRepo(
-  db: Db,
-  input: ForgeRepoInput,
-): Promise<{ settings: ForgeSettings; defaultBranch: string }> {
-  const s = await getForgeSettings(db);
-  const token = s.keyRef ? await readSecret(db, s.keyRef) : null;
-  if (!token) throw new ForgeNotReadyError('Save a GitHub token first.');
-  const { defaultBranch } = await forgeFor(token).repository(input.repo);
-  const settings = await writeForge(db, { repo: input.repo, mergeMethod: input.mergeMethod });
-  return { settings, defaultBranch };
-}
-
 /** `owner/name` from a remote URL: https, ssh or scp-style GitHub remotes. */
 export function repoFromRemote(url: string): string | null {
   const m = /github\.com[/:]([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?\/?$/.exec(url.trim());
@@ -140,9 +127,4 @@ export function repoFromRemote(url: string): string | null {
 export function forgeMessage(err: unknown): string {
   if (err instanceof ForgeError || err instanceof ForgeNotReadyError) return err.message;
   return `GitHub could not be reached: ${err instanceof Error ? err.message : String(err)}`;
-}
-
-/** Saves the unattended-merge rule (D44). */
-export async function saveAutoMerge(db: Db, input: AutoMergeInput): Promise<ForgeSettings> {
-  return writeForge(db, input);
 }

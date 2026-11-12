@@ -7,20 +7,13 @@ import { loadFlock, summarizeFlock } from '@/lib/flock';
 import { parseScripts, RosterValidationError, type RosterLine } from '@/lib/roster';
 import { plural } from '@/lib/format';
 import {
-  autoMergeInput,
-  type AutoMergeInput,
   forgeKeyInput,
-  forgeRepoInput,
   type ForgeKeyInput,
-  type ForgeRepoInput,
   flockLoadInput,
   linearKeyInput,
-  linearMappingInput,
   watcherInput,
   type FlockLoadInput,
   type LinearKeyInput,
-  type LinearMappingInput,
-  type PipelineState,
   type TrackerTeam,
   type WatcherInput,
 } from '@/lib/schemas';
@@ -28,16 +21,13 @@ import {
   getLinearSettings,
   LinearMappingError,
   LinearNotReadyError,
-  linearOptions,
   linearView,
   removeLinearKey,
   saveLinearKey,
-  saveLinearMapping,
   saveWatcher,
   TrackerError,
   trackerMessage,
   type LinearView,
-  type TrackerState,
 } from '@/lib/tracker';
 import { checkLinear, type CheckResult } from '@/lib/tracker/issues';
 import {
@@ -46,9 +36,7 @@ import {
   ForgeNotReadyError,
   forgeView,
   removeForgeKey,
-  saveAutoMerge,
   saveForgeKey,
-  saveForgeRepo,
   type ForgeView,
 } from '@/lib/forge';
 
@@ -209,40 +197,6 @@ export async function removeLinearKeyAction(): Promise<LinearResult> {
   }
 }
 
-/** The teams the key can see and, for one team, its statuses with a first guess at the mapping. */
-export async function linearOptionsAction(teamId?: string): Promise<
-  LinearResult<{
-    teams: TrackerTeam[];
-    states: TrackerState[];
-    suggested: Record<PipelineState, string> | null;
-  }>
-> {
-  try {
-    const db = await getDb();
-    const options = await linearOptions(db, teamId);
-    return { ok: true, view: linearView(await getLinearSettings(db)), ...options };
-  } catch (err) {
-    return linearFailure(err, 'read the Linear teams');
-  }
-}
-
-/** Saves the team, label and statuses after reading them back from Linear. */
-export async function saveLinearMappingAction(
-  input: LinearMappingInput,
-): Promise<LinearResult<{ labelCreated: boolean; statuses: number }>> {
-  const parsed = linearMappingInput.safeParse(input);
-  if (!parsed.success) return { ok: false, message: parsed.error.issues[0]!.message };
-  try {
-    const { settings, labelCreated, statuses } = await saveLinearMapping(
-      await getDb(),
-      parsed.data,
-    );
-    return { ok: true, view: linearView(settings), labelCreated, statuses };
-  } catch (err) {
-    return linearFailure(err, 'save the Linear mapping');
-  }
-}
-
 export async function saveWatcherAction(input: WatcherInput): Promise<LinearResult> {
   const parsed = watcherInput.safeParse(input);
   if (!parsed.success) {
@@ -305,34 +259,5 @@ export async function removeForgeKeyAction(): Promise<ForgeResult> {
     return { ok: true, view: forgeView(await removeForgeKey(await getDb())) };
   } catch (err) {
     return forgeFailure(err, 'remove the GitHub token');
-  }
-}
-
-/** Saves the repository and merge method once the token can reach the repository. */
-export async function saveForgeRepoAction(
-  input: ForgeRepoInput,
-): Promise<ForgeResult<{ defaultBranch: string }>> {
-  const parsed = forgeRepoInput.safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, message: parsed.error.issues[0]!.message, field: 'repo' };
-  }
-  try {
-    const { settings, defaultBranch } = await saveForgeRepo(await getDb(), parsed.data);
-    return { ok: true, view: forgeView(settings), defaultBranch };
-  } catch (err) {
-    return { ...(await forgeFailure(err, 'save the GitHub repository')), field: 'repo' };
-  }
-}
-
-/** Saves the unattended-merge rule (D44). */
-export async function saveAutoMergeAction(input: AutoMergeInput): Promise<ForgeResult> {
-  const parsed = autoMergeInput.safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, message: parsed.error.issues[0]!.message, field: 'autoMergeLabel' };
-  }
-  try {
-    return { ok: true, view: forgeView(await saveAutoMerge(await getDb(), parsed.data)) };
-  } catch (err) {
-    return forgeFailure(err, 'save the unattended-merge rule');
   }
 }

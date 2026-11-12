@@ -1,23 +1,19 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useId, useState, useTransition, type FormEvent } from 'react';
 import { Checkbox } from '@/components/arc/checkbox/checkbox';
 import { Input } from '@/components/arc/input/input';
-import { Select } from '@/components/arc/select/select';
 import { Button } from '@/components/ui/Button';
 import {
   checkLinearAction,
-  linearOptionsAction,
   removeLinearKeyAction,
   saveLinearKeyAction,
-  saveLinearMappingAction,
   saveWatcherAction,
 } from '@/app/(shell)/settings/actions';
 import { clockTime } from '@/lib/home-util';
-import { pipelineStates, type PipelineState, type TrackerTeam } from '@/lib/schemas';
-import type { LinearView, TrackerState } from '@/lib/tracker';
-import { PIPELINE_HINTS, PIPELINE_LABELS } from '@/lib/tracker/labels';
+import type { LinearView } from '@/lib/tracker';
 
 type Props = {
   initial: LinearView;
@@ -52,9 +48,9 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 }
 
 /**
- * Settings → Linear (D38): the API key, pasted once and never shown again; the team, the label
- * and the six pipeline states mapped onto the team's statuses and read back from Linear when
- * saved; and the watcher's pace, with the last check and Check now. Each part saves on its own.
+ * Settings → Linear (D38, D46): the key every project shares, pasted once and never shown again,
+ * and the watcher's pace, with the last check and Check now. Each project maps its own team,
+ * Linear project and statuses on its page.
  */
 export function LinearForm({ initial, disabledReason }: Props) {
   const router = useRouter();
@@ -68,21 +64,6 @@ export function LinearForm({ initial, disabledReason }: Props) {
   const [keyError, setKeyError] = useState<string>();
   const [replacing, setReplacing] = useState(false);
   const [keyNote, setKeyNote] = useState<Note>(null);
-
-  // the mapping
-  const [editing, setEditing] = useState(false);
-  const [teams, setTeams] = useState<TrackerTeam[]>([]);
-  const [states, setStates] = useState<TrackerState[]>([]);
-  const [teamId, setTeamId] = useState(initial.team?.id ?? '');
-  const [label, setLabel] = useState(initial.label?.name ?? 'magpipe');
-  const [map, setMap] = useState<Record<PipelineState, string>>(
-    () =>
-      Object.fromEntries(pipelineStates.map((p) => [p, initial.states[p]?.id ?? ''])) as Record<
-        PipelineState,
-        string
-      >,
-  );
-  const [mapNote, setMapNote] = useState<Note>(null);
 
   // the watcher
   const [seconds, setSeconds] = useState(String(initial.pollSeconds));
@@ -121,10 +102,9 @@ export function LinearForm({ initial, disabledReason }: Props) {
       setKey('');
       setReplacing(false);
       setKeyError(undefined);
-      setTeams(res.teams);
       setKeyNote({
         tone: 'done',
-        text: `Saved. Linear knows this key as ${res.view.viewer}; it sees ${res.teams.length === 1 ? 'one team' : `${res.teams.length} teams`}.`,
+        text: `Saved. Linear knows this key as ${res.view.viewer}; it sees ${res.teams.length === 1 ? 'one team' : `${res.teams.length} teams`} for your projects.`,
       });
       router.refresh();
     });
@@ -135,53 +115,9 @@ export function LinearForm({ initial, disabledReason }: Props) {
       const res = await removeLinearKeyAction();
       if (!res.ok) return setKeyNote({ tone: 'error', text: res.message });
       setView(res.view);
-      setEditing(false);
-      setKeyNote({ tone: 'done', text: 'Removed. The mapping stays for the next key.' });
-      router.refresh();
-    });
-  }
-
-  async function loadTeam(id: string) {
-    const res = await linearOptionsAction(id || undefined);
-    if (!res.ok) {
-      setMapNote({ tone: 'error', text: res.message });
-      return false;
-    }
-    setTeams(res.teams);
-    setStates(res.states);
-    // A team chosen now gets the first guess; the saved team keeps its mapping.
-    if (res.suggested && id !== view.team?.id) setMap(res.suggested);
-    return true;
-  }
-
-  function openMapping() {
-    run('open', async () => {
-      setMapNote(null);
-      const first = teamId || '';
-      if (await loadTeam(first)) setEditing(true);
-    });
-  }
-
-  function chooseTeam(id: string) {
-    setTeamId(id);
-    run('team', async () => {
-      await loadTeam(id);
-    });
-  }
-
-  function saveMapping(e: FormEvent) {
-    e.preventDefault();
-    run('map', async () => {
-      const res = await saveLinearMappingAction({ teamId, label, states: map });
-      if (!res.ok) {
-        setMapNote({ tone: 'error', text: res.message });
-        return;
-      }
-      setView(res.view);
-      setEditing(false);
-      setMapNote({
+      setKeyNote({
         tone: 'done',
-        text: `Read back from Linear: ${res.statuses} statuses in ${res.view.team?.name}, and the label ${res.view.label?.name}${res.labelCreated ? ', made just now' : ''}.`,
+        text: 'Removed. Projects without a key of their own stop filing until a new one is saved.',
       });
       router.refresh();
     });
@@ -227,14 +163,13 @@ export function LinearForm({ initial, disabledReason }: Props) {
                 text:
                   c.reason === 'busy'
                     ? 'A check is already running.'
-                    : 'Save a key and the mapping first.',
+                    : 'Save a key, and give a project its Linear project, first.',
               },
       );
       router.refresh();
     });
   }
 
-  const stateOptions = states.map((s) => ({ value: s.id, label: s.name }));
   // The last check that worked; a failure since then shows as the last error beneath it.
   const lastCheck = view.lastCheckAt
     ? `${clockTime(new Date(view.lastCheckAt))}${
@@ -317,100 +252,17 @@ export function LinearForm({ initial, disabledReason }: Props) {
         <NoteLine note={keyNote} />
       </div>
 
-      {/* The mapping */}
+      {/* Where the mapping lives now (D46) */}
       <div className="flex flex-col gap-3">
-        <h3 className="font-medium text-body text-ink">Team, label and statuses</h3>
-        {!view.hasKey ? (
-          <p className="max-w-[31rem] text-body-sm text-body">
-            Save a key first: the teams and their statuses come from Linear.
-          </p>
-        ) : editing ? (
-          <form onSubmit={saveMapping} noValidate className="flex flex-col gap-4">
-            <Select
-              label="Team"
-              placeholder="Pick a team"
-              options={teams.map((x) => ({ value: x.id, label: `${x.name} (${x.key})` }))}
-              value={teamId}
-              onValueChange={chooseTeam}
-              disabled={pending}
-            />
-            <Input
-              id={`${ids}-label`}
-              label="Label"
-              description="Marks the issues the factory owns; Magpipe touches no other issue. Made in Linear if the team has none by this name."
-              value={label}
-              readOnly={pending}
-              onChange={(e) => setLabel(e.target.value)}
-            />
-            {teamId ? (
-              <div className="grid gap-4 wide:grid-cols-2 wide:items-start">
-                {pipelineStates.map((p) => (
-                  <Select
-                    key={p}
-                    label={PIPELINE_LABELS[p]}
-                    description={PIPELINE_HINTS[p]}
-                    placeholder="Pick a status"
-                    options={stateOptions}
-                    value={map[p]}
-                    onValueChange={(v) => setMap((m) => ({ ...m, [p]: v }))}
-                    disabled={pending}
-                  />
-                ))}
-              </div>
-            ) : null}
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="submit"
-                size="sm"
-                variant="primary"
-                loading={busy === 'map'}
-                disabled={!teamId || (pending && busy !== 'map')}
-              >
-                Save and read back
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setEditing(false)}
-                disabled={pending}
-              >
-                Cancel
-              </Button>
-            </div>
-          </form>
-        ) : (
-          <>
-            {view.team ? (
-              <dl className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-[8rem_minmax(0,1fr)]">
-                <Fact label="Team">
-                  {view.team.name} <span className="text-mute">({view.team.key})</span>
-                </Fact>
-                <Fact label="Label">{view.label?.name ?? 'none'}</Fact>
-                {pipelineStates.map((p) => (
-                  <Fact key={p} label={PIPELINE_LABELS[p]}>
-                    {view.states[p]?.name ?? <span className="text-mute">not mapped</span>}
-                  </Fact>
-                ))}
-              </dl>
-            ) : (
-              <p className="max-w-[31rem] text-body-sm text-body">
-                Pick the team, the label and which of its statuses each stage is. Until then, specs
-                stay in Magpipe.
-              </p>
-            )}
-            <div>
-              <Button
-                size="sm"
-                onClick={openMapping}
-                loading={busy === 'open'}
-                disabled={pending && busy !== 'open'}
-              >
-                {view.team ? 'Change the mapping' : 'Map the statuses'}
-              </Button>
-            </div>
-          </>
-        )}
-        <NoteLine note={mapNote} />
+        <h3 className="font-medium text-body text-ink">Teams and projects</h3>
+        <p className="max-w-[31rem] text-body-sm text-body">
+          Each project picks its own team, Linear project, label and statuses on its page in{' '}
+          <Link href="/factory" className="text-ink underline underline-offset-2">
+            Factory
+          </Link>
+          . This key serves every project; one in another workspace can carry a key of its own
+          there.
+        </p>
       </div>
 
       {/* The watcher */}

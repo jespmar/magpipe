@@ -1,8 +1,10 @@
 /**
- * Factory projects (D45) against the scripted tracker: the factory as it was is the Default
- * project, inheriting the workspace's Linear; a project with its own team and Linear project
- * files there and claims its issues; a spec run carries its project's folder, context, models
- * and spend cap; builds keep to a project's own limit.
+ * Factory projects (D45, D46) against the scripted tracker and forge: the factory as it was is
+ * the Default project, which takes the workspace's old team, statuses and repository once and
+ * then owns them; nothing is inherited, so a project files and watches only once it names its
+ * own Linear project. A project with its own Linear project and repository files there and
+ * claims its issues; a spec run carries its project's folder, context, models and spend cap;
+ * builds keep to a project's own limit.
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -15,12 +17,16 @@ import * as t from '@/lib/db/schema';
 import { Engine } from '@/lib/engine';
 import type { ModelClient, ModelMessage } from '@/lib/engine/model';
 import { loadFactory, readyGoals, templatePlan } from '@/lib/factory';
+import { saveForgeKey, useForgeFactory } from '@/lib/forge';
+import { scriptedForge, scriptedForgeStore } from '@/lib/forge/scripted';
 import {
   deleteProject,
   ensureDefaultProject,
   getProject,
   linearOf,
   listProjects,
+  projectForge,
+  projectLinear,
   projectLinearOptions,
   projectView,
   ProjectError,
@@ -29,21 +35,37 @@ import {
 } from '@/lib/projects';
 import { listEvents } from '@/lib/engine/events';
 import { createRun, getRun } from '@/lib/runs';
-import type { FactoryProject, ProjectInput } from '@/lib/schemas';
+import { projectInput, type FactoryProject, type ProjectInput } from '@/lib/schemas';
 import { spendToday } from '@/lib/spend';
-import { saveLinearKey, saveLinearMapping, useTrackerFactory } from '@/lib/tracker';
+import {
+  getLinearSettings,
+  getTracker,
+  readBackMapping,
+  saveLinearKey,
+  useTrackerFactory,
+} from '@/lib/tracker';
 import { checkLinear, getIssue, issueForRun, recordFiledIssue } from '@/lib/tracker/issues';
-import { SCRIPTED_TEAM, scriptedStore, scriptedTracker } from '@/lib/tracker/scripted';
+import {
+  SCRIPTED_PROJECTS,
+  SCRIPTED_TEAM,
+  scriptedStore,
+  scriptedTracker,
+} from '@/lib/tracker/scripted';
+import { setUpProject, SCRIPTED_MAPPING as STATES } from './stubs/project';
 
 const SECRET = Buffer.from('unit-test-key-unit-test-key-0123').toString('base64url');
 
-const STATES = {
-  spec_ready: 'st_spec',
-  approved: 'st_todo',
-  building: 'st_progress',
-  merge_question: 'st_review',
-  done: 'st_done',
-  needs_you: 'st_blocked',
+/** The Default project files into API; the project the tests add files into Web app. */
+const API = SCRIPTED_PROJECTS[1]!;
+
+/** The rule and repository Settings held before projects owned their GitHub (D46). */
+const WORKSPACE_GITHUB = {
+  repo: 'o/default',
+  mergeMethod: 'rebase' as const,
+  autoMerge: true,
+  autoMergeLabel: 'ship-it',
+  autoMergeFirstPass: false,
+  autoMergeChecks: true,
 };
 
 function text(s: string): ModelMessage {
@@ -66,24 +88,26 @@ function text(s: string): ModelMessage {
 
 const SPEC = '# Export runs as CSV\n\n## Problem\n\nCopying by hand.\n\n## Outcome\n\nA CSV.';
 
-function repo(prefix: string): string {
+function repo(prefix: string, origin?: string): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   fs.writeFileSync(
     path.join(dir, 'package.json'),
     JSON.stringify({ scripts: { test: 'node -e 0', lint: 'node -e 0' } }),
   );
   execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
+  if (origin) execFileSync('git', ['remote', 'add', 'origin', origin], { cwd: dir });
   return dir;
 }
 
+/** A complete project for the editor: Web app's Linear project and repository o/web. */
 function input(over: Partial<ProjectInput> & Pick<ProjectInput, 'repoPath'>): ProjectInput {
   return {
     name: 'Web app',
     scripts: 'test',
     context: '',
-    linear: { teamId: '', projectId: '', label: '', states: {} },
+    linear: { teamId: SCRIPTED_TEAM.id, projectId: 'lp_web', label: 'magpipe', states: STATES },
     github: {
-      repo: '',
+      repo: 'o/web',
       mergeMethod: 'squash',
       autoMerge: false,
       autoMergeLabel: 'auto-merge',
@@ -102,7 +126,9 @@ describe('factory projects', () => {
   let close: () => Promise<void>;
   let first: string;
   let second: string;
+  let elsewhere: string;
   const store = scriptedStore(true);
+  const forgeStore = scriptedForgeStore(true);
   const previous = process.env.MAGPIPE_SECRET_KEY;
   let def: FactoryProject;
   let web: FactoryProject;
@@ -110,28 +136,44 @@ describe('factory projects', () => {
   beforeAll(async () => {
     process.env.MAGPIPE_SECRET_KEY = SECRET;
     useTrackerFactory((key) => scriptedTracker(key, store));
+    useForgeFactory((token) => scriptedForge(token, forgeStore));
     ({ db, close } = await openDb('memory://'));
     first = repo('magpipe-proj-a-');
     second = repo('magpipe-proj-b-');
+    elsewhere = repo('magpipe-proj-c-', 'https://github.com/someone/else.git');
     await loadFactory(db, { path: first, scripts: ['test'] });
     await saveLinearKey(db, 'lin_api_projects');
-    await saveLinearMapping(db, { teamId: SCRIPTED_TEAM.id, label: 'magpipe', states: STATES });
+    await saveForgeKey(db, 'ghp_projects_shared');
   }, 30_000);
   afterAll(async () => {
     useTrackerFactory(undefined);
+    useForgeFactory(undefined);
     await close();
-    for (const d of [first, second]) fs.rmSync(d, { recursive: true, force: true });
+    for (const d of [first, second, elsewhere]) fs.rmSync(d, { recursive: true, force: true });
     if (previous === undefined) delete process.env.MAGPIPE_SECRET_KEY;
     else process.env.MAGPIPE_SECRET_KEY = previous;
   });
 
-  it('makes the factory as it was the Default project, once, and gives it the orphan issues', async () => {
+  it('makes the factory as it was the Default project, once, with what Settings held, and gives it the orphan issues', async () => {
     // Loading the factory made it already.
     const loaded = await listProjects(db);
     expect(loaded.map((p) => p.name)).toEqual(['Default']);
     expect(await ensureDefaultProject(db)).toBeUndefined();
 
-    // A factory from before projects: no project, and an issue without one.
+    // A factory from before projects: Settings held the team, statuses, label, repository and
+    // rule (written directly: the save functions for them are gone), no project, and an issue
+    // without one.
+    const read = await readBackMapping(await getTracker(db), {
+      teamId: SCRIPTED_TEAM.id,
+      label: 'magpipe',
+      states: STATES,
+    });
+    await db.update(t.linearSettings).set({
+      team: read.team,
+      label: { id: read.label.id, name: read.label.name },
+      states: read.states,
+    });
+    await db.update(t.forgeSettings).set(WORKSPACE_GITHUB);
     await db.delete(t.factoryProjects);
     const tracker = scriptedTracker('k', store);
     const remote = await tracker.createIssue({
@@ -142,8 +184,10 @@ describe('factory projects', () => {
       stateId: 'st_spec',
     });
     const run = await createRun(db, { text: 'old', attachments: [] });
-    const { settings } = await linearOf(db);
-    const orphan = await recordFiledIssue(db, remote, { runId: run.id, settings });
+    const orphan = await recordFiledIssue(db, remote, {
+      runId: run.id,
+      settings: await getLinearSettings(db),
+    });
     expect(orphan.projectId).toBeNull();
 
     def = (await ensureDefaultProject(db))!;
@@ -153,14 +197,82 @@ describe('factory projects', () => {
     expect(await listProjects(db)).toHaveLength(1);
     expect((await getIssue(db, orphan.id))!.projectId).toBe(def.id);
 
-    // It inherits the workspace's Linear: the same team, label and statuses.
+    // It takes over what Settings held (D46), all but a Linear project, which Settings never had.
+    expect(def.linear).toEqual({
+      team: SCRIPTED_TEAM,
+      project: null,
+      label: { id: read.label.id, name: 'magpipe' },
+      states: read.states,
+    });
+    expect(def.github).toEqual(WORKSPACE_GITHUB);
+    // Without its Linear project it files and watches nothing yet.
     const view = await projectView(db, def);
-    expect(view.effectiveLinear).toMatchObject({ team: SCRIPTED_TEAM, own: false });
-    expect(view.linearReady).toBe(true);
+    expect(view.linearReady).toBe(false);
+    expect(view.gaps).toContain('linear_project');
+    expect(view.gaps).not.toContain('github_repo');
+    expect(view.githubReady).toBe(true);
     expect(view).not.toHaveProperty('linearKeyRef');
   });
 
+  it('inherits nothing from Settings: no Linear project, no team; no repository, no repository', async () => {
+    // The workspace row still holds a team and a repository.
+    expect((await getLinearSettings(db)).team).toEqual(SCRIPTED_TEAM);
+    const linear = await projectLinear(db, def);
+    expect(linear.team).toBeNull();
+    expect(linear.label).toBeNull();
+    expect(linear.states).toEqual({});
+    expect(linear.keyRef).not.toBeNull();
+    const bare = { ...def, github: { ...def.github, repo: null } };
+    const forge = await projectForge(db, bare);
+    expect(forge.repo).toBeNull();
+    expect(forge.keyRef).not.toBeNull();
+    expect((await projectView(db, bare)).gaps).toEqual(['linear_project', 'github_repo']);
+    // No project, no Linear and no repository at all.
+    expect((await projectLinear(db, undefined)).team).toBeNull();
+    expect((await projectForge(db, undefined)).repo).toBeNull();
+  });
+
+  it('a lone project made under D45, empty on both sides, takes what Settings held', async () => {
+    await db
+      .update(t.factoryProjects)
+      .set({
+        linear: { team: null, project: null, label: null, states: {} },
+        github: { ...WORKSPACE_GITHUB, repo: null, mergeMethod: 'squash', autoMerge: false },
+      })
+      .where(eq(t.factoryProjects.id, def.id));
+    expect(await ensureDefaultProject(db)).toBeUndefined();
+    const adopted = (await getProject(db, def.id))!;
+    expect(adopted.linear).toEqual(def.linear);
+    expect(adopted.github).toEqual(WORKSPACE_GITHUB);
+
+    // Once it holds them, Settings no longer reaches it.
+    await db.update(t.forgeSettings).set({ repo: 'o/changed' });
+    await ensureDefaultProject(db);
+    expect((await getProject(db, def.id))!.github.repo).toBe('o/default');
+    await db.update(t.forgeSettings).set({ repo: WORKSPACE_GITHUB.repo });
+
+    // The Default project gets its Linear project (API) and files and watches from now on.
+    def = await setUpProject(db, { linearProject: API });
+    expect(def.linear.project).toEqual(API);
+    expect(def.github).toEqual(WORKSPACE_GITHUB);
+    expect((await projectView(db, def)).linearReady).toBe(true);
+    expect((await projectLinear(db, def)).team).toEqual(SCRIPTED_TEAM);
+  });
+
   it('checks what a project names before saving it', async () => {
+    // What the action's schema refuses before the library sees it.
+    const blank = projectInput.safeParse(
+      input({
+        repoPath: second,
+        linear: { teamId: SCRIPTED_TEAM.id, projectId: '', label: 'magpipe', states: STATES },
+        github: { ...input({ repoPath: '' }).github, repo: 'not a repo' },
+      }),
+    );
+    expect(blank.success).toBe(false);
+    const messages = blank.error!.issues.map((i) => i.message);
+    expect(messages).toContain('Pick the Linear project this project files into.');
+    expect(messages).toContain('Give the GitHub repository as owner/name.');
+
     await expect(saveProject(db, null, input({ repoPath: '/no/such/folder' }))).rejects.toThrow(
       ProjectError,
     );
@@ -182,20 +294,70 @@ describe('factory projects', () => {
         }),
       ),
     ).rejects.toThrow('Magpipe has no such Linear project any more.');
+    // Each Linear project belongs to one project.
     await expect(
       saveProject(
         db,
         null,
         input({
           repoPath: second,
-          github: { ...input({ repoPath: '' }).github, repo: 'not a repo' },
+          linear: { teamId: SCRIPTED_TEAM.id, projectId: API.id, label: 'magpipe', states: STATES },
         }),
       ),
-    ).rejects.toMatchObject({ field: 'github' });
+    ).rejects.toMatchObject({
+      field: 'linear',
+      message: expect.stringContaining('Default already files into that Linear project'),
+    });
+    // The statuses are read back as the Settings mapping was: one status per state.
+    await expect(
+      saveProject(
+        db,
+        null,
+        input({
+          repoPath: second,
+          linear: {
+            teamId: SCRIPTED_TEAM.id,
+            projectId: 'lp_web',
+            label: 'magpipe',
+            states: { ...STATES, approved: STATES.spec_ready },
+          },
+        }),
+      ),
+    ).rejects.toMatchObject({ field: 'linear', message: expect.stringContaining('both use') });
+    // Each repository belongs to one project.
+    await expect(
+      saveProject(
+        db,
+        null,
+        input({
+          repoPath: second,
+          github: { ...input({ repoPath: '' }).github, repo: 'O/Default' },
+        }),
+      ),
+    ).rejects.toMatchObject({
+      field: 'github',
+      message: expect.stringContaining('Default already lands in O/Default'),
+    });
+    // The folder pushes to its origin, so a GitHub origin must be the repository.
+    await expect(saveProject(db, null, input({ repoPath: elsewhere }))).rejects.toMatchObject({
+      field: 'github',
+      message: expect.stringContaining('The folder’s origin is someone/else, not o/web.'),
+    });
+    // The repository is read back from GitHub.
+    await expect(
+      saveProject(
+        db,
+        null,
+        input({
+          repoPath: second,
+          github: { ...input({ repoPath: '' }).github, repo: 'nobody/x' },
+        }),
+      ),
+    ).rejects.toThrow('GitHub found nothing at /repos/nobody/x.');
     expect(await listProjects(db)).toHaveLength(1);
   });
 
-  it('saves a project with its own Linear project, read back from Linear', async () => {
+  it('saves a project with its own Linear project and repository, read back from both', async () => {
     const options = await projectLinearOptions(db, null, SCRIPTED_TEAM.id);
     expect(options.projects.map((p) => p.name)).toEqual(['Web app', 'API']);
     const saved = await saveProject(
@@ -205,7 +367,6 @@ describe('factory projects', () => {
         repoPath: second,
         scripts: 'test, lint',
         context: 'A web app for clinics. Dates are always in the clinic’s time zone.',
-        linear: { teamId: SCRIPTED_TEAM.id, projectId: 'lp_web', label: 'magpipe', states: STATES },
         maxRuns: 1,
         spendCapUsd: 0.0001,
         models: { 'spec-builder': 'claude-haiku-5-5', 'spec-review': '' },
@@ -213,10 +374,15 @@ describe('factory projects', () => {
     );
     web = saved.project;
     expect(saved.notes[0]).toContain('project Web app');
+    expect(saved.notes[1]).toBe('Read back from GitHub: o/web, default branch main.');
     expect(web.linear.project).toEqual({ id: 'lp_web', name: 'Web app' });
+    expect(web.linear.team).toEqual(SCRIPTED_TEAM);
+    expect(web.github).toMatchObject({ repo: 'o/web', mergeMethod: 'squash', autoMerge: false });
     expect(web.scripts).toEqual(['test', 'lint']);
     // An empty pick means the agent's own model.
     expect(web.models).toEqual({ 'spec-builder': 'claude-haiku-5-5' });
+    expect((await projectForge(db, web)).repo).toBe('o/web');
+    expect((await projectForge(db, def)).repo).toBe('o/default');
   });
 
   it('files a spec into its project’s Linear project, with the project’s context, model and folder', async () => {
@@ -260,7 +426,7 @@ describe('factory projects', () => {
     expect(store.issues.find((i) => i.id === issue.externalId)!.projectId).toBe('lp_web');
   }, 20_000);
 
-  it('the watcher gives each project its own issues', async () => {
+  it('the watcher gives each project the issues of its own Linear project, and no others', async () => {
     const tracker = scriptedTracker('k', store);
     const label = store.labels.find((l) => l.name === 'magpipe')!.id;
     const inWeb = await tracker.createIssue({
@@ -271,7 +437,15 @@ describe('factory projects', () => {
       stateId: 'st_spec',
       projectId: 'lp_web',
     });
-    const elsewhere = await tracker.createIssue({
+    const inApi = await tracker.createIssue({
+      teamId: SCRIPTED_TEAM.id,
+      title: 'Labelled in API',
+      description: '',
+      labelIds: [label],
+      stateId: 'st_spec',
+      projectId: API.id,
+    });
+    const unclaimed = await tracker.createIssue({
       teamId: SCRIPTED_TEAM.id,
       title: 'Labelled in the team',
       description: '',
@@ -281,10 +455,12 @@ describe('factory projects', () => {
     const check = await checkLinear(db, { force: true });
     expect(check.status).toBe('done');
     const byExternal = async (id: string) =>
-      (await db.select().from(t.trackerIssues).where(eq(t.trackerIssues.externalId, id)))[0]!;
-    expect((await byExternal(inWeb.id)).projectId).toBe(web.id);
-    // The Default project inherits the whole team, so it holds what no other project claims.
-    expect((await byExternal(elsewhere.id)).projectId).toBe(def.id);
+      (await db.select().from(t.trackerIssues).where(eq(t.trackerIssues.externalId, id)))[0];
+    expect((await byExternal(inWeb.id))!.projectId).toBe(web.id);
+    expect((await byExternal(inApi.id))!.projectId).toBe(def.id);
+    // D46: the Default project no longer holds the whole team; an issue in no project's Linear
+    // project belongs to none, and the watcher leaves it alone.
+    expect(await byExternal(unclaimed.id)).toBeUndefined();
   });
 
   it('keeps builds to a project’s own limit', async () => {
@@ -372,8 +548,12 @@ describe('factory projects', () => {
     expect(who).toBe('Scripted Operator');
     expect(project.linearKeyHint).toBe('_own');
     expect((await projectView(db, project)).hasLinearKey).toBe(true);
+    expect((await projectLinear(db, project)).keyRef).toBe(project.linearKeyRef);
     const back = await setProjectKey(db, web.id, 'linear', null);
     expect(back.project.linearKeyRef).toBeNull();
+    expect((await projectLinear(db, back.project)).keyRef).toBe(
+      (await getLinearSettings(db)).keyRef,
+    );
 
     expect(await deleteProject(db, web.id)).toBe(true);
     expect(await getProject(db, web.id)).toBeUndefined();

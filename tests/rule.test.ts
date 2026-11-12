@@ -13,22 +13,12 @@ import { openDb, type Db } from '@/lib/db';
 import { Engine } from '@/lib/engine';
 import type { ModelClient, ModelMessage } from '@/lib/engine/model';
 import { factoryTick, loadFactory, ruleVerdict, startBuildRun } from '@/lib/factory';
-import {
-  getForgeSettings,
-  saveAutoMerge,
-  saveForgeKey,
-  saveForgeRepo,
-  useForgeFactory,
-} from '@/lib/forge';
+import { saveForgeKey, useForgeFactory } from '@/lib/forge';
 import { scriptedForge, scriptedForgeStore } from '@/lib/forge/scripted';
+import { forgeOf, linearOf } from '@/lib/projects';
 import { createRun } from '@/lib/runs';
 import type { Goal, Step, TrackerIssue } from '@/lib/schemas';
-import {
-  getLinearSettings,
-  saveLinearKey,
-  saveLinearMapping,
-  useTrackerFactory,
-} from '@/lib/tracker';
+import { saveLinearKey, useTrackerFactory } from '@/lib/tracker';
 import { checkLinear, getIssue, recordFiledIssue } from '@/lib/tracker/issues';
 import {
   addScriptedLabel,
@@ -36,6 +26,7 @@ import {
   scriptedStore,
   scriptedTracker,
 } from '@/lib/tracker/scripted';
+import { setUpProject, TEST_LINEAR_PROJECT } from '@/tests/stubs/project';
 
 const RULE = {
   autoMerge: true,
@@ -180,7 +171,7 @@ describe('unattended merges in the tick', () => {
   let spec: TrackerIssue;
 
   async function goalAtQuestion(key: string): Promise<TrackerIssue> {
-    const settings = await getLinearSettings(db);
+    const { project, settings } = await linearOf(db);
     const remote = await scriptedTracker('k', store).createIssue({
       teamId: SCRIPTED_TEAM.id,
       title: `Goal ${key}`,
@@ -188,6 +179,7 @@ describe('unattended merges in the tick', () => {
       labelIds: [store.labels[0]!.id],
       stateId: 'st_todo',
       parentId: spec.externalId,
+      projectId: TEST_LINEAR_PROJECT.id,
     });
     const goal: Goal = {
       key,
@@ -200,6 +192,7 @@ describe('unattended merges in the tick', () => {
     const issue = await recordFiledIssue(db, remote, {
       runId: spec.runId!,
       settings,
+      projectId: project!.id,
       parentId: spec.id,
       goal,
     });
@@ -247,8 +240,7 @@ describe('unattended merges in the tick', () => {
     ({ db, close } = await openDb('memory://'));
     await loadFactory(db, { path: repo, scripts: ['test'] });
     await saveLinearKey(db, 'lin_api_rule');
-    await saveLinearMapping(db, {
-      teamId: SCRIPTED_TEAM.id,
+    await setUpProject(db, {
       label: 'magpipe',
       states: {
         spec_ready: 'st_spec',
@@ -258,10 +250,10 @@ describe('unattended merges in the tick', () => {
         done: 'st_done',
         needs_you: 'st_blocked',
       },
+      github: { repo: 'o/app', mergeMethod: 'squash' },
     });
     await saveForgeKey(db, 'ghp_rule');
-    await saveForgeRepo(db, { repo: 'o/app', mergeMethod: 'squash' });
-    const settings = await getLinearSettings(db);
+    const { project, settings } = await linearOf(db);
     const run = await createRun(db, { text: 'Goals', attachments: [] });
     spec = await recordFiledIssue(
       db,
@@ -271,8 +263,9 @@ describe('unattended merges in the tick', () => {
         description: '# Spec',
         labelIds: [store.labels[0]!.id],
         stateId: 'st_progress',
+        projectId: TEST_LINEAR_PROJECT.id,
       }),
-      { runId: run.id, settings },
+      { runId: run.id, settings, projectId: project!.id },
     );
   }, 30_000);
   afterAll(async () => {
@@ -290,7 +283,7 @@ describe('unattended merges in the tick', () => {
   });
 
   it('is off by default: a labelled goal still waits for the operator', async () => {
-    expect((await getForgeSettings(db)).autoMerge).toBe(false);
+    expect((await forgeOf(db)).settings.autoMerge).toBe(false);
     const a = await goalAtQuestion('a');
     addScriptedLabel(store, a.identifier, 'auto-merge');
     await tick();
@@ -301,7 +294,8 @@ describe('unattended merges in the tick', () => {
   }, 30_000);
 
   it('turned on, it merges the labelled goal, says why, and leaves the unlabelled one', async () => {
-    await saveAutoMerge(db, RULE);
+    await setUpProject(db, { github: RULE });
+    expect((await forgeOf(db)).settings).toMatchObject({ repo: 'o/app', ...RULE });
     const b = await goalAtQuestion('b');
     const [a] = (await Promise.all([getIssue(db, (await goalIssue('a')).id)])) as TrackerIssue[];
     await tick();

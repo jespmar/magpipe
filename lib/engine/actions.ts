@@ -319,7 +319,7 @@ async function goalsContext(db: Db, run: Run) {
   if (!linearReady(settings)) {
     throw new EngineError(
       'linear_not_ready',
-      'Linear is no longer set up. Finish Settings → Linear, then re-fly this run.',
+      'Linear is no longer set up for this project. Give it its Linear project and a key in the project’s settings, then re-fly this run.',
     );
   }
   if (!issue) throw new EngineError('no_issue', 'This run names no spec issue to split.');
@@ -533,7 +533,7 @@ async function fileIssue({
   if (!linearReady(settings)) {
     throw new EngineError(
       'linear_not_ready',
-      'Linear is no longer set up, so the spec was not filed. Finish Settings → Linear, then re-fly.',
+      'Linear is no longer set up for this project, so the spec was not filed. Give it its Linear project and a key in the project’s settings, then re-fly.',
     );
   }
   const tracker = await getTracker(db, settings);

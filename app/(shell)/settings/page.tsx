@@ -31,9 +31,7 @@ import { formatUsd } from '@/lib/runs-util';
 import { getShellData } from '@/lib/shell-data';
 import { SHORTCUTS } from '@/lib/shortcuts';
 import { getLinearSettings, linearView, type LinearView } from '@/lib/tracker';
-import { factoryRepository } from '@/lib/factory';
-import { forgeView, getForgeSettings, repoFromRemote, type ForgeView } from '@/lib/forge';
-import { originUrl } from '@/lib/worktrees';
+import { forgeView, getForgeSettings, type ForgeView } from '@/lib/forge';
 import { capReached, capText, spendToday, type SpendToday } from '@/lib/spend';
 import type { MemoryEntry, Settings } from '@/lib/schemas';
 
@@ -84,18 +82,10 @@ async function loadLinear(): Promise<LinearView | null> {
   }
 }
 
-/** GitHub access as Settings shows it, and a repository read from the factory's origin. */
-async function loadForge(): Promise<{ view: ForgeView; suggested: string | null } | null> {
+/** GitHub access as Settings shows it: the shared token (D46). */
+async function loadForge(): Promise<ForgeView | null> {
   try {
-    const db = await getDb();
-    const view = forgeView(await getForgeSettings(db));
-    let suggested: string | null = null;
-    if (!view.repo) {
-      const repo = await factoryRepository(db).catch(() => null);
-      const url = repo ? await originUrl(repo.path) : null;
-      suggested = url ? repoFromRemote(url) : null;
-    }
-    return { view, suggested };
+    return forgeView(await getForgeSettings(await getDb()));
   } catch {
     return null;
   }
@@ -236,14 +226,13 @@ export default async function SettingsPage() {
           <Section id="factory" title="Software factory">
             <p className="max-w-[31rem] text-body-sm text-body">
               Nine birds that turn an idea into a reviewed change, each stage run from a template
-              rather than a plan. Send to the factory on Home has the Spec Builder write a spec and
-              the Spec Review check it. With Linear set up, an approved spec is split into goals,
-              and each goal is built on its own branch, tests first, until it is ready to merge.
-              The folder loaded here is the Default project; add more on{' '}
-              <Link href="/factory/projects" className="text-ink underline underline-offset-2">
-                Factory, Projects
-              </Link>
-              .
+              rather than a plan. Each project in{' '}
+              <Link href="/factory" className="text-ink underline underline-offset-2">
+                Factory
+              </Link>{' '}
+              has its own repository and Linear project: a spec written there is filed in its Linear
+              project, and once approved its goals are built on their own branches, tests first,
+              until they are ready to merge. The folder loaded here becomes the Default project.
             </p>
             <FactoryForm
               defaultScripts={DEFAULT_FACTORY_SCRIPTS}
@@ -327,8 +316,8 @@ export default async function SettingsPage() {
           <p className="max-w-[31rem] text-body-sm text-body">
             Where the factory keeps its record. A spec that passes review is filed as an issue with
             the label, and you approve it there or from the spec&rsquo;s flight. Without Linear,
-            specs stay in Magpipe. The key, team and statuses here are the workspace&rsquo;s: every
-            project uses them unless it sets its own.
+            specs stay in Magpipe. The key here serves every project; the watcher checks each
+            project&rsquo;s Linear project.
           </p>
           {linear ? (
             <LinearForm initial={linear} />
@@ -343,11 +332,11 @@ export default async function SettingsPage() {
           <p className="max-w-[31rem] text-body-sm text-body">
             Where goals land. With GitHub set up, a goal that passes its checks is pushed and opened
             as a pull request, and the merge question waits for you here, in Linear or on GitHub.
-            Without it, goals stop at a branch you merge by hand. A project with a repository of its
-            own uses that instead, and its own rule.
+            Without it, goals stop at a branch you merge by hand. The token here serves every
+            project&rsquo;s repository.
           </p>
           {forge ? (
-            <GitHubForm initial={forge.view} suggestedRepo={forge.suggested} />
+            <GitHubForm initial={forge} />
           ) : (
             <GitHubForm
               initial={EMPTY_FORGE}

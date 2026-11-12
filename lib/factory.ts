@@ -634,7 +634,7 @@ export async function templatePlan(
   const linear = linearReady((await linearOf(db, opts.projectId)).settings);
   if (template.needsLinear && !linear) {
     throw new FactoryNotReadyError(
-      `The ${template.name.toLowerCase()} template works on Linear issues. Finish Settings → Linear first.`,
+      `The ${template.name.toLowerCase()} template works on Linear issues. Give the project its Linear project, and save a Linear key, first.`,
     );
   }
   const github = forgeReady((await forgeOf(db, opts.projectId)).settings);
