@@ -416,8 +416,10 @@ describe('the merge question', () => {
       spendCapUsd: before!.spendCapUsd,
       models: before!.models,
     });
+    // The repository GitHub cannot find is named on the project's GitHub part.
     await expect(saveProject(db, before!.id, input('nobody/here'))).rejects.toMatchObject({
-      code: 'not_found',
+      field: 'github',
+      message: 'GitHub found nothing at /repos/nobody/here.',
     });
     expect((await forgeOf(db)).settings.repo).toBeNull();
     const { notes } = await saveProject(db, before!.id, input('o/app'));

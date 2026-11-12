@@ -17,7 +17,7 @@ import * as t from '@/lib/db/schema';
 import { Engine } from '@/lib/engine';
 import type { ModelClient, ModelMessage } from '@/lib/engine/model';
 import { loadFactory, readyGoals, templatePlan } from '@/lib/factory';
-import { saveForgeKey, useForgeFactory } from '@/lib/forge';
+import { getForgeSettings, saveForgeKey, useForgeFactory } from '@/lib/forge';
 import { scriptedForge, scriptedForgeStore } from '@/lib/forge/scripted';
 import {
   deleteProject,
@@ -221,10 +221,13 @@ describe('factory projects', () => {
     expect(linear.team).toBeNull();
     expect(linear.label).toBeNull();
     expect(linear.states).toEqual({});
+    // The keys are the only thing shared: the workspace's own key and token.
+    expect(linear.keyRef).toBe((await getLinearSettings(db)).keyRef);
     expect(linear.keyRef).not.toBeNull();
     const bare = { ...def, github: { ...def.github, repo: null } };
     const forge = await projectForge(db, bare);
     expect(forge.repo).toBeNull();
+    expect(forge.keyRef).toBe((await getForgeSettings(db)).keyRef);
     expect(forge.keyRef).not.toBeNull();
     expect((await projectView(db, bare)).gaps).toEqual(['linear_project', 'github_repo']);
     // No project, no Linear and no repository at all.
@@ -245,11 +248,18 @@ describe('factory projects', () => {
     expect(adopted.linear).toEqual(def.linear);
     expect(adopted.github).toEqual(WORKSPACE_GITHUB);
 
-    // Once it holds them, Settings no longer reaches it.
+    // Once it holds them, Settings no longer reaches it, on either side.
+    const before = await getLinearSettings(db);
     await db.update(t.forgeSettings).set({ repo: 'o/changed' });
+    await db
+      .update(t.linearSettings)
+      .set({ label: { id: 'lbl_other', name: 'other' }, states: {} });
     await ensureDefaultProject(db);
-    expect((await getProject(db, def.id))!.github.repo).toBe('o/default');
+    const kept = (await getProject(db, def.id))!;
+    expect(kept.github.repo).toBe('o/default');
+    expect(kept.linear).toEqual(def.linear);
     await db.update(t.forgeSettings).set({ repo: WORKSPACE_GITHUB.repo });
+    await db.update(t.linearSettings).set({ label: before.label, states: before.states });
 
     // The Default project gets its Linear project (API) and files and watches from now on.
     def = await setUpProject(db, { linearProject: API });
@@ -353,11 +363,30 @@ describe('factory projects', () => {
           github: { ...input({ repoPath: '' }).github, repo: 'nobody/x' },
         }),
       ),
-    ).rejects.toThrow('GitHub found nothing at /repos/nobody/x.');
+    ).rejects.toMatchObject({
+      field: 'github',
+      message: 'GitHub found nothing at /repos/nobody/x.',
+    });
+    // The library keeps its own owner/name guard behind the action's schema.
+    await expect(
+      saveProject(
+        db,
+        null,
+        input({
+          repoPath: second,
+          github: { ...input({ repoPath: '' }).github, repo: 'not a repo' },
+        }),
+      ),
+    ).rejects.toMatchObject({
+      field: 'github',
+      message: 'Give the GitHub repository as owner/name.',
+    });
     expect(await listProjects(db)).toHaveLength(1);
   });
 
   it('saves a project with its own Linear project and repository, read back from both', async () => {
+    // A new project means a new Linear project to read: the next check reads every issue.
+    await db.update(t.linearSettings).set({ lastCheckAt: new Date() });
     const options = await projectLinearOptions(db, null, SCRIPTED_TEAM.id);
     expect(options.projects.map((p) => p.name)).toEqual(['Web app', 'API']);
     const saved = await saveProject(
@@ -383,6 +412,29 @@ describe('factory projects', () => {
     expect(web.models).toEqual({ 'spec-builder': 'claude-haiku-5-5' });
     expect((await projectForge(db, web)).repo).toBe('o/web');
     expect((await projectForge(db, def)).repo).toBe('o/default');
+    expect((await getLinearSettings(db)).lastCheckAt).toBeNull();
+
+    // Saved again on the same Linear project, the check goes on from where it was.
+    const at = new Date();
+    await db.update(t.linearSettings).set({ lastCheckAt: at });
+    await saveProject(
+      db,
+      web.id,
+      input({
+        repoPath: second,
+        scripts: 'test, lint',
+        maxRuns: 1,
+        spendCapUsd: 0.0001,
+        models: web.models,
+        context: web.context,
+      }),
+    );
+    expect((await getLinearSettings(db)).lastCheckAt).toEqual(at);
+
+    // With two projects, a run or issue that names none has no project, so no Linear.
+    const none = await linearOf(db);
+    expect(none.project).toBeUndefined();
+    expect(none.settings.team).toBeNull();
   });
 
   it('files a spec into its project’s Linear project, with the project’s context, model and folder', async () => {

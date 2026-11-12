@@ -31,7 +31,7 @@ import {
   type TrackerState,
 } from './tracker';
 import type { PipelineState, TrackerRef, TrackerTeam } from './schemas';
-import { forgeFor, forgeReady, getForgeSettings, repoFromRemote } from './forge';
+import { ForgeError, forgeFor, forgeReady, getForgeSettings, repoFromRemote } from './forge';
 import { originUrl } from './worktrees';
 import { readSecret } from './secrets';
 
@@ -312,6 +312,10 @@ export async function saveProject(
   // GitHub: the project's own repository, read back with the token it will use.
   let github: FactoryProject['github'];
   {
+    // The action's schema checks this too; the library keeps its own guard.
+    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(input.github.repo)) {
+      throw new ProjectError('Give the GitHub repository as owner/name.', 'github');
+    }
     const same = (a: string | null) => a?.toLowerCase() === input.github.repo.toLowerCase();
     const clash = others.find((p) => same(p.github.repo));
     if (clash) {
@@ -337,7 +341,11 @@ export async function saveProject(
         'Save a GitHub token first, in Settings or on this project.',
         'github',
       );
-    const { defaultBranch } = await forgeFor(token).repository(input.github.repo);
+    const { defaultBranch } = await forgeFor(token)
+      .repository(input.github.repo)
+      .catch((err: unknown) => {
+        throw err instanceof ForgeError ? new ProjectError(err.message, 'github') : err;
+      });
     github = { ...input.github, repo: input.github.repo };
     notes.push(`Read back from GitHub: ${input.github.repo}, default branch ${defaultBranch}.`);
   }

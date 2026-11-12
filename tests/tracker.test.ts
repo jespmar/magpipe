@@ -377,6 +377,8 @@ describe('Linear for the factory', () => {
     expect(settings.states.approved).toEqual({ id: 'st_todo', name: 'Approved' });
     expect(linearReady(settings)).toBe(true);
     expect((await readBackMapping(tracker, MAPPING)).label.created).toBe(false);
+    // Three read-backs, one label: it is made once.
+    expect(store.labels.filter((l) => l.name === 'magpipe')).toHaveLength(1);
   });
 
   it('a spec whose review fails is not filed', async () => {
