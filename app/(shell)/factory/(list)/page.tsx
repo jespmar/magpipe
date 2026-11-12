@@ -116,8 +116,8 @@ export default async function FactoryPage() {
               <dl className="grid grid-cols-[6rem_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-body-sm">
                 <dt className="text-mute">Linear</dt>
                 <dd className={p.linearReady ? 'text-ink' : 'text-amber'}>
-                  {p.linearReady && p.linear.project
-                    ? `${p.linear.project.name} (${p.linear.team?.key ?? ''})`
+                  {p.linear.project && !p.gaps.includes('linear_project')
+                    ? `${p.linear.project.name} (${p.linear.team?.key ?? ''})${p.gaps.includes('linear_key') ? ', needs a key' : ''}`
                     : 'needs its Linear project'}
                 </dd>
                 <dt className="text-mute">GitHub</dt>

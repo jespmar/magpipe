@@ -13,6 +13,7 @@ export const SCRIPTED_TEAM = { id: 'team_mag', key: 'MAG', name: 'Magpipe' };
 export const SCRIPTED_PROJECTS: TrackerRef[] = [
   { id: 'lp_web', name: 'Web app' },
   { id: 'lp_api', name: 'API' },
+  { id: 'lp_mobile', name: 'Mobile' },
 ];
 
 export const SCRIPTED_STATES: TrackerState[] = [
@@ -151,6 +152,16 @@ export function scriptedTracker(
       const found = issue(issueId);
       found.title = input.title;
       found.description = input.description;
+      touch(found);
+      return view(found);
+    },
+    async setProject(issueId, projectId) {
+      authed();
+      const found = issue(issueId);
+      if (!SCRIPTED_PROJECTS.some((p) => p.id === projectId)) {
+        throw new TrackerError('Linear has no such project.', 'not_found');
+      }
+      found.projectId = projectId;
       touch(found);
       return view(found);
     },

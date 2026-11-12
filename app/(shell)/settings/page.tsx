@@ -31,6 +31,7 @@ import { formatUsd } from '@/lib/runs-util';
 import { getShellData } from '@/lib/shell-data';
 import { SHORTCUTS } from '@/lib/shortcuts';
 import { getLinearSettings, linearView, type LinearView } from '@/lib/tracker';
+import { anyProjectLinearKey } from '@/lib/projects';
 import { forgeView, getForgeSettings, type ForgeView } from '@/lib/forge';
 import { capReached, capText, spendToday, type SpendToday } from '@/lib/spend';
 import type { MemoryEntry, Settings } from '@/lib/schemas';
@@ -76,7 +77,10 @@ async function loadStanding(): Promise<MemoryEntry[] | null> {
 /** Linear access as Settings shows it (no key), or null when the database cannot be read. */
 async function loadLinear(): Promise<LinearView | null> {
   try {
-    return linearView(await getLinearSettings(await getDb()));
+    const db = await getDb();
+    const view = linearView(await getLinearSettings(db));
+    // A check can run on a project's own key too (D46).
+    return { ...view, ready: view.ready || (await anyProjectLinearKey(db)) };
   } catch {
     return null;
   }

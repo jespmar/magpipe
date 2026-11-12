@@ -121,6 +121,26 @@ function input(over: Partial<ProjectInput> & Pick<ProjectInput, 'repoPath'>): Pr
   };
 }
 
+/** A project's own settings as the editor sends them back unchanged. */
+function editOf(p: FactoryProject): ProjectInput {
+  return {
+    name: p.name,
+    repoPath: p.repoPath,
+    scripts: p.scripts.join(', '),
+    context: p.context,
+    linear: {
+      teamId: p.linear.team!.id,
+      projectId: p.linear.project!.id,
+      label: p.linear.label!.name,
+      states: Object.fromEntries(Object.entries(p.linear.states).map(([k, v]) => [k, v!.id])),
+    },
+    github: { ...p.github, repo: p.github.repo! },
+    maxRuns: p.maxRuns,
+    spendCapUsd: p.spendCapUsd,
+    models: p.models,
+  };
+}
+
 describe('factory projects', () => {
   let db: Db;
   let close: () => Promise<void>;
@@ -388,7 +408,7 @@ describe('factory projects', () => {
     // A new project means a new Linear project to read: the next check reads every issue.
     await db.update(t.linearSettings).set({ lastCheckAt: new Date() });
     const options = await projectLinearOptions(db, null, SCRIPTED_TEAM.id);
-    expect(options.projects.map((p) => p.name)).toEqual(['Web app', 'API']);
+    expect(options.projects.map((p) => p.name)).toEqual(['Web app', 'API', 'Mobile']);
     const saved = await saveProject(
       db,
       null,
@@ -592,6 +612,71 @@ describe('factory projects', () => {
     expect(events[events.length - 1]!.text).toContain('Today’s spend on Web app');
   }, 20_000);
 
+  it('a missing key is its own gap, not a missing Linear project', async () => {
+    const shared = (await getLinearSettings(db)).keyRef;
+    await db.update(t.linearSettings).set({ keyRef: null });
+    try {
+      const view = await projectView(db, web);
+      expect(view.gaps).toEqual(['linear_key']);
+      expect(view.linearReady).toBe(false);
+    } finally {
+      await db.update(t.linearSettings).set({ keyRef: shared });
+    }
+    expect((await projectView(db, web)).gaps).toEqual([]);
+  });
+
+  it('any change to the mapping makes the next check read every issue again', async () => {
+    const at = new Date();
+    await db.update(t.linearSettings).set({ lastCheckAt: at });
+    // The same mapping: the check goes on from where it was.
+    await saveProject(db, web.id, editOf(web));
+    expect((await getLinearSettings(db)).lastCheckAt).toEqual(at);
+    // Only the label changes, on the same Linear project: everything is read again.
+    const relabelled = await saveProject(db, web.id, {
+      ...editOf(web),
+      linear: { ...editOf(web).linear, label: 'factory' },
+    });
+    expect(relabelled.project.linear.label?.name).toBe('factory');
+    expect((await getLinearSettings(db)).lastCheckAt).toBeNull();
+    await db.update(t.linearSettings).set({ lastCheckAt: at });
+    // One status moves: the same.
+    await saveProject(db, web.id, {
+      ...editOf(web),
+      linear: {
+        ...editOf(web).linear,
+        label: 'factory',
+        states: { ...STATES, needs_you: 'st_backlog' },
+      },
+    });
+    expect((await getLinearSettings(db)).lastCheckAt).toBeNull();
+    web = (await saveProject(db, web.id, editOf(web))).project;
+  });
+
+  it('a new Linear project takes the project’s open issues along, so they are still watched', async () => {
+    const remoteOf = async (title: string) => {
+      const [row] = await db.select().from(t.trackerIssues).where(eq(t.trackerIssues.title, title));
+      return store.issues.find((i) => i.id === row!.externalId)!;
+    };
+    expect((await remoteOf('Labelled in Web app')).projectId).toBe('lp_web');
+    const { project, notes } = await saveProject(db, web.id, {
+      ...editOf(web),
+      linear: { ...editOf(web).linear, projectId: 'lp_mobile' },
+    });
+    expect(project.linear.project).toEqual({ id: 'lp_mobile', name: 'Mobile' });
+    expect(notes.join(' ')).toMatch(
+      /Moved MAG-\d+(, MAG-\d+)* into Mobile, so they are still watched\./,
+    );
+    expect((await remoteOf('Labelled in Web app')).projectId).toBe('lp_mobile');
+    // The watcher reads Mobile now, and the issue is still Web app's.
+    await checkLinear(db, { force: true });
+    const [row] = await db
+      .select()
+      .from(t.trackerIssues)
+      .where(eq(t.trackerIssues.title, 'Labelled in Web app'));
+    expect(row!.projectId).toBe(web.id);
+    web = project;
+  });
+
   it('keeps a key of its own only once Linear accepts it, and deletes cleanly', async () => {
     await expect(setProjectKey(db, web.id, 'linear', 'lin_api_bad_one')).rejects.toThrow(
       'Linear did not accept the API key',
@@ -607,8 +692,20 @@ describe('factory projects', () => {
       (await getLinearSettings(db)).keyRef,
     );
 
+    // Work in flight keeps a project: it would be left with no repository or Linear (D46).
+    await expect(deleteProject(db, web.id)).rejects.toMatchObject({
+      message: expect.stringMatching(/^Web app still has \d+ open issues \(MAG-\d+/),
+    });
+    expect(await getProject(db, web.id)).toBeDefined();
+    // Finished, it can go; its issues stay, without a project.
+    await db
+      .update(t.trackerIssues)
+      .set({ stage: 'done', mergedAt: new Date() })
+      .where(eq(t.trackerIssues.projectId, web.id));
     expect(await deleteProject(db, web.id)).toBe(true);
     expect(await getProject(db, web.id)).toBeUndefined();
+    // The last project stays: the factory needs one to build in.
+    await expect(deleteProject(db, def.id)).rejects.toThrow('This is the only project.');
     const left = await db
       .select()
       .from(t.trackerIssues)

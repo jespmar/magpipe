@@ -62,6 +62,8 @@ export interface Tracker {
     signal?: AbortSignal,
   ): Promise<RemoteIssue>;
   comment(issueId: string, body: string, signal?: AbortSignal): Promise<void>;
+  /** Moves an issue into a Linear project: a project's open issues follow its new one (D46). */
+  setProject(issueId: string, projectId: string, signal?: AbortSignal): Promise<RemoteIssue>;
   /**
    * Every issue of the team that carries the label, in the Linear project when given, updated
    * since `since` when given.

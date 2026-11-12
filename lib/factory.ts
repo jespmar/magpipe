@@ -919,10 +919,22 @@ async function clearWorktrees(db: Db): Promise<void> {
 }
 
 /**
+ * One issue's part of a tick, on its own (D46): a failure is reported for that issue, and the
+ * rest of the issues, of every project, go on.
+ */
+async function perIssue(problems: string[], what: string, fn: () => Promise<void>) {
+  try {
+    await fn();
+  } catch (err) {
+    problems.push(`${what}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/**
  * Build runs that ended without reporting (cancelled, or failed before their finish step could
  * run): the goal moves to needs you with what happened, and is released to build again.
  */
-async function reconcileBuilds(db: Db): Promise<string[]> {
+async function reconcileBuilds(db: Db, problems: string[]): Promise<string[]> {
   const goals = await db
     .select()
     .from(t.trackerIssues)
@@ -930,54 +942,61 @@ async function reconcileBuilds(db: Db): Promise<string[]> {
   if (goals.length === 0) return [];
   const out: string[] = [];
   for (const goal of goals) {
-    const [run] = await db.select().from(t.runs).where(eq(t.runs.id, goal.buildRunId!));
-    if (!run || ACTIVE.has(run.status)) continue;
-    const { settings } = await linearOf(db, goal.projectId);
-    const tracker = await getTracker(db, settings);
-    const finish = run.plan.find((s) => s.action === 'finish_goal');
-    if (finish?.status === 'done') continue;
-    const failed = run.plan.find((s) => s.status === 'failed');
-    const why =
-      run.status === 'cancelled'
-        ? `${run.displayId} was cancelled`
-        : `${run.displayId} ended before it could report${failed ? `: “${failed.title}” failed, ${failed.error?.message ?? ''}` : ''}`;
-    await tracker.comment(
-      goal.externalId,
-      `Not ready: ${why}. Move this issue back to ${settings.states.approved!.name} to build it again.`,
-    );
-    const moved = await tracker.setState(goal.externalId, settings.states.needs_you!.id);
-    await recordState(db, goal.id, settings, moved);
-    await releaseBuildRun(db, goal.id);
-    out.push(`${goal.identifier} needs you: ${why}.`);
+    await perIssue(problems, `Build not reconciled for ${goal.identifier}`, async () => {
+      const [run] = await db.select().from(t.runs).where(eq(t.runs.id, goal.buildRunId!));
+      if (!run || ACTIVE.has(run.status)) return;
+      const { settings } = await linearOf(db, goal.projectId);
+      // A goal whose project has no Linear (D46) waits until it has.
+      if (!linearReady(settings)) return;
+      const tracker = await getTracker(db, settings);
+      const finish = run.plan.find((s) => s.action === 'finish_goal');
+      if (finish?.status === 'done') return;
+      const failed = run.plan.find((s) => s.status === 'failed');
+      const why =
+        run.status === 'cancelled'
+          ? `${run.displayId} was cancelled`
+          : `${run.displayId} ended before it could report${failed ? `: “${failed.title}” failed, ${failed.error?.message ?? ''}` : ''}`;
+      await tracker.comment(
+        goal.externalId,
+        `Not ready: ${why}. Move this issue back to ${settings.states.approved!.name} to build it again.`,
+      );
+      const moved = await tracker.setState(goal.externalId, settings.states.needs_you!.id);
+      await recordState(db, goal.id, settings, moved);
+      await releaseBuildRun(db, goal.id);
+      out.push(`${goal.identifier} needs you: ${why}.`);
+    });
   }
   return out;
 }
 
 /** A spec whose goals are all done is done (D40). */
-async function closeSpecs(db: Db): Promise<string[]> {
+async function closeSpecs(db: Db, problems: string[]): Promise<string[]> {
   const specs = await db
     .select()
     .from(t.trackerIssues)
     .where(and(eq(t.trackerIssues.stage, 'building'), isNull(t.trackerIssues.parentId)));
   const out: string[] = [];
   for (const spec of specs) {
-    const goals = await goalIssues(db, spec.id);
-    // A goal with a pull request counts once it merged (D42).
-    if (
-      goals.length === 0 ||
-      goals.some((g) => g.stage !== 'done' || (g.prNumber !== null && g.mergedAt === null))
-    ) {
-      continue;
-    }
-    const { settings } = await linearOf(db, spec.projectId);
-    const tracker = await getTracker(db, settings);
-    await tracker.comment(
-      spec.externalId,
-      `Every goal is done: ${goals.map((g) => g.identifier).join(', ')}.`,
-    );
-    const moved = await tracker.setState(spec.externalId, settings.states.done!.id);
-    await recordState(db, spec.id, settings, moved);
-    out.push(`${spec.identifier} is done.`);
+    await perIssue(problems, `Spec not closed for ${spec.identifier}`, async () => {
+      const goals = await goalIssues(db, spec.id);
+      // A goal with a pull request counts once it merged (D42).
+      if (
+        goals.length === 0 ||
+        goals.some((g) => g.stage !== 'done' || (g.prNumber !== null && g.mergedAt === null))
+      ) {
+        return;
+      }
+      const { settings } = await linearOf(db, spec.projectId);
+      if (!linearReady(settings)) return;
+      const tracker = await getTracker(db, settings);
+      await tracker.comment(
+        spec.externalId,
+        `Every goal is done: ${goals.map((g) => g.identifier).join(', ')}.`,
+      );
+      const moved = await tracker.setState(spec.externalId, settings.states.done!.id);
+      await recordState(db, spec.id, settings, moved);
+      out.push(`${spec.identifier} is done.`);
+    });
   }
   return out;
 }
@@ -1031,54 +1050,58 @@ export async function startLandRun(
  * The merge question's GitHub door (D42): a goal's pull request merged on GitHub is done; one
  * closed there without merging needs the operator.
  */
-async function watchPulls(db: Db): Promise<void> {
+async function watchPulls(db: Db, problems: string[]): Promise<void> {
   const open = await db
     .select()
     .from(t.trackerIssues)
     .where(and(isNotNull(t.trackerIssues.prNumber), isNull(t.trackerIssues.mergedAt)));
   for (const goal of open) {
-    // Each goal through its own project's repository and Linear (D45).
-    const { settings: forgeSettings } = await forgeOf(db, goal.projectId);
-    if (!forgeReady(forgeSettings)) continue;
-    const { forge, repo } = await getForge(db, forgeSettings);
-    const { settings } = await linearOf(db, goal.projectId);
-    const tracker = await getTracker(db, settings);
-    // A land run in progress settles the pull request itself.
-    if (goal.landRunId) {
-      const [land] = await db
-        .select({ status: t.runs.status })
-        .from(t.runs)
-        .where(eq(t.runs.id, goal.landRunId));
-      if (land && ACTIVE.has(land.status)) continue;
-    }
-    const pr = await forge.pullRequest(repo, goal.prNumber!).catch((err: unknown) => {
-      if (err instanceof ForgeError && err.code === 'not_found') return null;
-      throw err;
-    });
-    if (!pr || pr.state === 'open') continue;
-    if (pr.state === 'merged') {
-      await recordMerged(db, goal.id);
+    await perIssue(problems, `Pull request not checked for ${goal.identifier}`, async () => {
+      // Each goal through its own project's repository and Linear (D45).
+      const { settings: forgeSettings } = await forgeOf(db, goal.projectId);
+      if (!forgeReady(forgeSettings)) return;
+      const { settings } = await linearOf(db, goal.projectId);
+      // Nothing is recorded for a goal whose project has no Linear: it waits until it has (D46).
+      if (!linearReady(settings)) return;
+      const { forge, repo } = await getForge(db, forgeSettings);
+      const tracker = await getTracker(db, settings);
+      // A land run in progress settles the pull request itself.
+      if (goal.landRunId) {
+        const [land] = await db
+          .select({ status: t.runs.status })
+          .from(t.runs)
+          .where(eq(t.runs.id, goal.landRunId));
+        if (land && ACTIVE.has(land.status)) return;
+      }
+      const pr = await forge.pullRequest(repo, goal.prNumber!).catch((err: unknown) => {
+        if (err instanceof ForgeError && err.code === 'not_found') return null;
+        throw err;
+      });
+      if (!pr || pr.state === 'open') return;
+      if (pr.state === 'merged') {
+        await recordMerged(db, goal.id);
+        await tracker.comment(
+          goal.externalId,
+          `Pull request #${goal.prNumber} was merged on GitHub.`,
+        );
+        if (goal.stage !== 'done') {
+          const moved = await tracker.setState(goal.externalId, settings.states.done!.id);
+          await recordState(db, goal.id, settings, moved);
+        }
+        return;
+      }
       await tracker.comment(
         goal.externalId,
-        `Pull request #${goal.prNumber} was merged on GitHub.`,
+        `Pull request #${goal.prNumber} was closed without merging. Move this issue back to ${settings.states.approved!.name} to build it again.`,
       );
-      if (goal.stage !== 'done') {
-        const moved = await tracker.setState(goal.externalId, settings.states.done!.id);
-        await recordState(db, goal.id, settings, moved);
-      }
-      continue;
-    }
-    await tracker.comment(
-      goal.externalId,
-      `Pull request #${goal.prNumber} was closed without merging. Move this issue back to ${settings.states.approved!.name} to build it again.`,
-    );
-    const moved = await tracker.setState(goal.externalId, settings.states.needs_you!.id);
-    await recordState(db, goal.id, settings, moved);
-    await db
-      .update(t.trackerIssues)
-      .set({ prNumber: null, prUrl: null, updatedAt: new Date() })
-      .where(eq(t.trackerIssues.id, goal.id));
-    await releaseGoal(db, goal.id);
+      const moved = await tracker.setState(goal.externalId, settings.states.needs_you!.id);
+      await recordState(db, goal.id, settings, moved);
+      await db
+        .update(t.trackerIssues)
+        .set({ prNumber: null, prUrl: null, updatedAt: new Date() })
+        .where(eq(t.trackerIssues.id, goal.id));
+      await releaseGoal(db, goal.id);
+    });
   }
 }
 
@@ -1139,7 +1162,7 @@ export function ruleVerdict(input: {
  * goal lands the usual way: brought up to date, tested again, checked. Where it does not, the
  * question waits for the operator, as it always has; nothing is said every check.
  */
-async function answerByRule(db: Db): Promise<void> {
+async function answerByRule(db: Db, problems: string[]): Promise<void> {
   const asking = await db
     .select()
     .from(t.trackerIssues)
@@ -1152,38 +1175,41 @@ async function answerByRule(db: Db): Promise<void> {
       ),
     );
   for (const goal of asking) {
-    // Each project holds its own rule (D45).
-    const { settings: forgeSettings } = await forgeOf(db, goal.projectId);
-    if (!forgeSettings.autoMerge || !forgeReady(forgeSettings)) continue;
-    const { settings } = await linearOf(db, goal.projectId);
-    const tracker = await getTracker(db, settings);
-    const { forge, repo } = await getForge(db, forgeSettings);
-    const remote = await tracker.getIssue(goal.externalId);
-    const spec = goal.parentId ? await getIssue(db, goal.parentId) : undefined;
-    const specLabels = spec ? (await tracker.getIssue(spec.externalId)).labels : [];
-    const [build] = goal.buildRunId
-      ? await db.select({ plan: t.runs.plan }).from(t.runs).where(eq(t.runs.id, goal.buildRunId))
-      : [];
-    const pr = await forge.pullRequest(repo, goal.prNumber!);
-    if (pr.state !== 'open') continue;
-    const verdict = ruleVerdict({
-      rule: forgeSettings,
-      labels: [...remote.labels, ...specLabels],
-      build,
-      checks: pr.checks,
+    await perIssue(problems, `Rule not checked for ${goal.identifier}`, async () => {
+      // Each project holds its own rule (D45).
+      const { settings: forgeSettings } = await forgeOf(db, goal.projectId);
+      if (!forgeSettings.autoMerge || !forgeReady(forgeSettings)) return;
+      const { settings } = await linearOf(db, goal.projectId);
+      if (!linearReady(settings)) return;
+      const tracker = await getTracker(db, settings);
+      const { forge, repo } = await getForge(db, forgeSettings);
+      const remote = await tracker.getIssue(goal.externalId);
+      const spec = goal.parentId ? await getIssue(db, goal.parentId) : undefined;
+      const specLabels = spec ? (await tracker.getIssue(spec.externalId)).labels : [];
+      const [build] = goal.buildRunId
+        ? await db.select({ plan: t.runs.plan }).from(t.runs).where(eq(t.runs.id, goal.buildRunId))
+        : [];
+      const pr = await forge.pullRequest(repo, goal.prNumber!);
+      if (pr.state !== 'open') return;
+      const verdict = ruleVerdict({
+        rule: forgeSettings,
+        labels: [...remote.labels, ...specLabels],
+        build,
+        checks: pr.checks,
+      });
+      if (!verdict.holds) return;
+      const now = new Date();
+      const [row] = await db
+        .update(t.trackerIssues)
+        .set({ mergeRequestedAt: now, mergeRequestedVia: 'rule', updatedAt: now })
+        .where(and(eq(t.trackerIssues.id, goal.id), isNull(t.trackerIssues.mergeRequestedAt)))
+        .returning();
+      if (!row) return;
+      await tracker.comment(
+        goal.externalId,
+        `The question to merge answered itself under your rule: ${verdict.reasons.join(', ')}. Magpipe brings the branch up to date, runs the tests again and has the Merge Agent check it before merging; anything that fails comes back to you.`,
+      );
     });
-    if (!verdict.holds) continue;
-    const now = new Date();
-    const [row] = await db
-      .update(t.trackerIssues)
-      .set({ mergeRequestedAt: now, mergeRequestedVia: 'rule', updatedAt: now })
-      .where(and(eq(t.trackerIssues.id, goal.id), isNull(t.trackerIssues.mergeRequestedAt)))
-      .returning();
-    if (!row) continue;
-    await tracker.comment(
-      goal.externalId,
-      `The question to merge answered itself under your rule: ${verdict.reasons.join(', ')}. Magpipe brings the branch up to date, runs the tests again and has the Merge Agent check it before merging; anything that fails comes back to you.`,
-    );
   }
 }
 
@@ -1230,16 +1256,16 @@ export async function factoryTick(
     });
   }
   await attempt('Builds not reconciled', async () => {
-    await reconcileBuilds(db);
+    await reconcileBuilds(db, problems);
   });
   await attempt('Specs not closed', async () => {
-    await closeSpecs(db);
+    await closeSpecs(db, problems);
   });
   await attempt('Pull requests not checked', async () => {
-    await watchPulls(db);
+    await watchPulls(db, problems);
   });
   await attempt('Unattended merges not checked', async () => {
-    await answerByRule(db);
+    await answerByRule(db, problems);
   });
   for (const goal of await answeredGoals(db)) {
     await attempt(`Merge not started for ${goal.identifier}`, async () => {

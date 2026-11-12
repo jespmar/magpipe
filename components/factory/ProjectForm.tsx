@@ -171,7 +171,15 @@ export function ProjectForm({ initial, agents, models, workspace }: Props) {
     setStates(res.states);
     setLinearProjects(res.projects);
     setLoaded(true);
-    if (res.suggested && id !== view?.linear.team?.id) {
+    if (id && id === view?.linear.team?.id) {
+      // The project's own team again: its saved statuses and Linear project, not an earlier pick.
+      setMap(
+        Object.fromEntries(
+          pipelineStates.map((p) => [p, view.linear.states[p]?.id ?? res.suggested?.[p] ?? '']),
+        ) as Record<PipelineState, string>,
+      );
+      setLinearProject(view.linear.project?.id ?? '');
+    } else if (res.suggested) {
       setMap(res.suggested);
       setLinearProject('');
     }
@@ -276,7 +284,7 @@ export function ProjectForm({ initial, agents, models, workspace }: Props) {
     ...models.map((m) => ({ value: m, label: m })),
   ];
 
-  return (
+  const form = (
     <form onSubmit={save} noValidate className="flex flex-col gap-6">
       <Section
         title="Repository"
@@ -570,79 +578,94 @@ export function ProjectForm({ initial, agents, models, workspace }: Props) {
         ) : null}
       </div>
       <NoteLine note={note} />
-
-      {view ? (
-        <Section
-          title="Keys of its own"
-          description="Only when this project lives in another Linear workspace or GitHub account. Checked before they are stored, encrypted, never shown again."
-        >
-          <div className="grid gap-6 md:grid-cols-2 md:items-start">
-            {(['linear', 'github'] as const).map((kind) => {
-              const has = kind === 'linear' ? view.hasLinearKey : view.hasGithubKey;
-              const hint = kind === 'linear' ? view.linearKeyHint : view.githubKeyHint;
-              const value = kind === 'linear' ? linearKey : githubKey;
-              const fallback = kind === 'linear' ? workspace.hasLinearKey : workspace.hasGithubKey;
-              return (
-                <div key={kind} className="flex flex-col gap-3">
-                  <h3 className="text-body-sm font-medium text-ink">
-                    {kind === 'linear' ? 'Linear key' : 'GitHub token'}
-                  </h3>
-                  <p className="text-body-sm text-body">
-                    {has ? (
-                      <>
-                        Its own, ending in{' '}
-                        <span style={MONO} className="text-code">
-                          {hint}
-                        </span>
-                        .
-                      </>
-                    ) : fallback ? (
-                      'The workspace’s, from Settings.'
-                    ) : (
-                      'None yet: Settings has none either.'
-                    )}
-                  </p>
-                  <Input
-                    id={`${ids}-${kind}-key`}
-                    label={has ? 'Replace it' : 'Its own'}
-                    type="password"
-                    autoComplete="off"
-                    spellCheck={false}
-                    value={value}
-                    readOnly={pending}
-                    onChange={(e) =>
-                      kind === 'linear'
-                        ? setLinearKey(e.target.value)
-                        : setGithubKey(e.target.value)
-                    }
-                  />
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      onClick={() => saveKey(kind, value)}
-                      loading={busy === `${kind}-key`}
-                      disabled={pending && busy !== `${kind}-key`}
-                    >
-                      Save {kind === 'linear' ? 'key' : 'token'}
-                    </Button>
-                    {has ? (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => saveKey(kind, null)}
-                        disabled={pending}
-                      >
-                        Use the workspace’s
-                      </Button>
-                    ) : null}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <NoteLine note={keyNote} />
-        </Section>
-      ) : null}
     </form>
+  );
+
+  const keys = view ? (
+    <Section
+      title="Keys of its own"
+      description="Only when this project lives in another Linear workspace or GitHub account. Checked before they are stored, encrypted, never shown again."
+    >
+      <div className="grid gap-6 md:grid-cols-2 md:items-start">
+        {(['linear', 'github'] as const).map((kind) => {
+          const has = kind === 'linear' ? view.hasLinearKey : view.hasGithubKey;
+          const hint = kind === 'linear' ? view.linearKeyHint : view.githubKeyHint;
+          const value = kind === 'linear' ? linearKey : githubKey;
+          const fallback = kind === 'linear' ? workspace.hasLinearKey : workspace.hasGithubKey;
+          return (
+            // Each key is its own form: Enter saves that key, not the project.
+            <form
+              key={kind}
+              noValidate
+              aria-label={kind === 'linear' ? 'Linear key of its own' : 'GitHub token of its own'}
+              className="flex flex-col gap-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                saveKey(kind, value);
+              }}
+            >
+              <h3 className="text-body-sm font-medium text-ink">
+                {kind === 'linear' ? 'Linear key' : 'GitHub token'}
+              </h3>
+              <p className="text-body-sm text-body">
+                {has ? (
+                  <>
+                    Its own, ending in{' '}
+                    <span style={MONO} className="text-code">
+                      {hint}
+                    </span>
+                    .
+                  </>
+                ) : fallback ? (
+                  'The shared one, from Settings.'
+                ) : (
+                  'None yet: Settings has none either.'
+                )}
+              </p>
+              <Input
+                id={`${ids}-${kind}-key`}
+                label={has ? 'Replace it' : 'Its own'}
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                value={value}
+                readOnly={pending}
+                onChange={(e) =>
+                  kind === 'linear' ? setLinearKey(e.target.value) : setGithubKey(e.target.value)
+                }
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="submit"
+                  size="sm"
+                  loading={busy === `${kind}-key`}
+                  disabled={pending && busy !== `${kind}-key`}
+                >
+                  Save {kind === 'linear' ? 'key' : 'token'}
+                </Button>
+                {has ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => saveKey(kind, null)}
+                    disabled={pending}
+                  >
+                    Use the shared one
+                  </Button>
+                ) : null}
+              </div>
+            </form>
+          );
+        })}
+      </div>
+      <NoteLine note={keyNote} />
+    </Section>
+  ) : null;
+
+  return (
+    <div className="flex flex-col gap-6">
+      {form}
+      {keys}
+    </div>
   );
 }

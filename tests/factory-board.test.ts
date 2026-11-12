@@ -13,6 +13,9 @@ import { eq } from 'drizzle-orm';
 import { getBoard } from '@/lib/factory-board';
 import { loadFactory } from '@/lib/factory';
 import { linearOf } from '@/lib/projects';
+import { saveForgeKey, useForgeFactory } from '@/lib/forge';
+import { scriptedForge, scriptedForgeStore } from '@/lib/forge/scripted';
+import { newId } from '@/lib/ids';
 import { createRun } from '@/lib/runs';
 import type { Goal, Step } from '@/lib/schemas';
 import { saveLinearKey, useTrackerFactory } from '@/lib/tracker';
@@ -164,5 +167,63 @@ describe('the factory board', () => {
       runs: [{ label: 'Build', run: { displayId: build.displayId, status: 'queued' } }],
     });
     expect(column('done')[0]).toMatchObject({ identifier: b.identifier, merged: true });
+  });
+
+  it('shows one project’s board, ready by that project’s own Linear and repository (D46)', async () => {
+    useForgeFactory((token) => scriptedForge(token, scriptedForgeStore(true)));
+    try {
+      await saveForgeKey(db, 'ghp_board');
+      // With the shared token, the Default's own repository makes its board ready for GitHub.
+      const own = await setUpProject(db, { github: { repo: 'o/app' } });
+      expect(await getBoard(db, { projectId: own.id })).toMatchObject({
+        linear: true,
+        github: true,
+      });
+      // A second project with no repository of its own is not, whatever the Default has.
+      const now = new Date();
+      const other = {
+        ...own,
+        id: newId('proj'),
+        name: 'API',
+        linear: { ...own.linear, project: { id: 'lp_api', name: 'API' } },
+        github: { ...own.github, repo: null },
+        createdAt: now,
+        updatedAt: now,
+      };
+      await db.insert(t.factoryProjects).values(other);
+      const tracker = scriptedTracker('k', store);
+      const run = await createRun(db, { text: 'spec', attachments: [] });
+      const { settings } = await linearOf(db, other.id);
+      const theirs = await recordFiledIssue(
+        db,
+        await tracker.createIssue({
+          teamId: SCRIPTED_TEAM.id,
+          title: 'An API idea',
+          description: '',
+          labelIds: ['lbl'],
+          stateId: 'st_spec',
+          projectId: 'lp_api',
+        }),
+        { runId: run.id, settings, projectId: other.id },
+      );
+
+      const board = await getBoard(db, { projectId: other.id });
+      expect(board).toMatchObject({
+        projectId: other.id,
+        linear: true,
+        github: false,
+        counts: { specs: 1, goals: 0 },
+      });
+      const cards = board.columns.flatMap((c) => c.cards);
+      expect(cards.map((c) => c.identifier)).toEqual([theirs.identifier]);
+      // Shown alone, its cards need no project name.
+      expect(cards[0]!.project).toBeNull();
+
+      const mine = await getBoard(db, { projectId: own.id });
+      expect(mine.counts).toMatchObject({ specs: 2, goals: 2 });
+      expect(mine.columns.flatMap((c) => c.cards).map((c) => c.id)).not.toContain(theirs.id);
+    } finally {
+      useForgeFactory(undefined);
+    }
   });
 });

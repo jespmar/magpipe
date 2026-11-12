@@ -80,9 +80,7 @@ export default async function ProjectPage({ params }: Props) {
   if (!project) notFound();
 
   const where = [
-    project.linear.project && project.linearReady
-      ? `files into ${project.linear.project.name}`
-      : 'no Linear project',
+    project.linear.project ? `files into ${project.linear.project.name}` : 'no Linear project',
     project.github.repo ? `lands in ${project.github.repo}` : 'no repository',
     board!.lastCheckAt ? `last check ${clockTime(board!.lastCheckAt)}` : 'not checked yet',
   ];

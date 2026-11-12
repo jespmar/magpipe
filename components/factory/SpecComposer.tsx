@@ -75,7 +75,7 @@ export function SpecComposer({
         description={
           linearReady
             ? 'The Spec Builder writes it up with the project’s context, the Spec Review checks it, and a spec that passes is filed in the project’s Linear project for your approval.'
-            : 'The Spec Builder writes it up and the Spec Review checks it. It is filed in Linear once the project has its Linear project.'
+            : 'The Spec Builder writes it up and the Spec Review checks it, but it stays in Magpipe: this project has no Linear project yet. Give it one in its settings before writing specs you want filed.'
         }
         rows={3}
         placeholder="What should change, for whom, and how you will know it worked…"

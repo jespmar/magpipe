@@ -1145,6 +1145,21 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
   what it still needs, its board and its latest runs; its settings page is the editor
   (`/factory/[id]/settings`), and `/factory/new` adds one. Home keeps Send to the factory with
   the project picker. The board filter and `/factory/projects` are gone.
+- **Work never changes hands.** A project with work in flight (an issue waiting, approved,
+  building, at the merge question or needing the operator, a pull request not merged, or a run
+  going) cannot be deleted, and the last project cannot be deleted at all: either would leave
+  goals with no repository or Linear, or hand them to whichever project remained. Finished
+  issues stay, without a project.
+- **A new Linear project takes the open issues along.** When a project's Linear project changes
+  (or the Default gets its first one), its open issues are moved into it in Linear, so the
+  watcher, which reads only that Linear project, still sees them; the save says which moved and
+  which did not. Any change to the team, Linear project, label or a status makes the next check
+  read every issue again.
+- **The tick goes on, one issue at a time.** Each issue's part of a tick is its own: one whose
+  project has no Linear or no repository waits, and a failure is reported for that issue without
+  stopping the others. When no project is ready in Linear, the watcher still runs the factory's
+  other work and says why nothing in Linear is watched; with no project at all it does not fall
+  back to the workspace's old mapping.
 - **Not done.** A project in another Linear workspace can be given its own key only once it
   exists, and it cannot be created until the shared key reads its Linear project back; the
   same holds for GitHub.

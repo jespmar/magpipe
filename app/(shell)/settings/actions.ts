@@ -14,6 +14,7 @@ import {
   watcherInput,
   type FlockLoadInput,
   type LinearKeyInput,
+  type LinearSettings,
   type TrackerTeam,
   type WatcherInput,
 } from '@/lib/schemas';
@@ -30,6 +31,7 @@ import {
   type LinearView,
 } from '@/lib/tracker';
 import { checkLinear, type CheckResult } from '@/lib/tracker/issues';
+import { anyProjectLinearKey } from '@/lib/projects';
 import {
   ForgeError,
   forgeMessage,
@@ -159,6 +161,12 @@ export async function loadFactoryAction(
 // ─── Linear (D38) ──────────────────────────────────────────────────────────
 
 /** What every Linear action answers: the settings as Settings shows them, or what went wrong. */
+/** What Settings shows of Linear: Check now also runs on projects' own keys (D46). */
+async function viewOf(settings: LinearSettings): Promise<LinearView> {
+  const view = linearView(settings);
+  return { ...view, ready: view.ready || (await anyProjectLinearKey(await getDb())) };
+}
+
 export type LinearResult<T = object> =
   ({ ok: true; view: LinearView } & T) | { ok: false; message: string; field?: string };
 
@@ -182,7 +190,7 @@ export async function saveLinearKeyAction(
   }
   try {
     const { settings, teams } = await saveLinearKey(await getDb(), parsed.data.key);
-    return { ok: true, view: linearView(settings), teams };
+    return { ok: true, view: await viewOf(settings), teams };
   } catch (err) {
     const failed = await linearFailure(err, 'save the Linear key');
     return { ...failed, field: 'key' };
@@ -191,7 +199,7 @@ export async function saveLinearKeyAction(
 
 export async function removeLinearKeyAction(): Promise<LinearResult> {
   try {
-    return { ok: true, view: linearView(await removeLinearKey(await getDb())) };
+    return { ok: true, view: await viewOf(await removeLinearKey(await getDb())) };
   } catch (err) {
     return linearFailure(err, 'remove the Linear key');
   }
@@ -203,7 +211,7 @@ export async function saveWatcherAction(input: WatcherInput): Promise<LinearResu
     return { ok: false, message: parsed.error.issues[0]!.message, field: 'pollSeconds' };
   }
   try {
-    return { ok: true, view: linearView(await saveWatcher(await getDb(), parsed.data)) };
+    return { ok: true, view: await viewOf(await saveWatcher(await getDb(), parsed.data)) };
   } catch (err) {
     return linearFailure(err, 'save the watcher');
   }
@@ -223,7 +231,7 @@ export async function checkLinearAction(): Promise<LinearResult<{ check: CheckRe
       force: true,
       afterCheck: (d) => factoryTick(d, (id) => getEngine().enqueue(id)),
     });
-    return { ok: true, view: linearView(await getLinearSettings(db)), check };
+    return { ok: true, view: await viewOf(await getLinearSettings(db)), check };
   } catch (err) {
     return linearFailure(err, 'check Linear');
   }

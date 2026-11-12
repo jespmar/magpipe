@@ -6,7 +6,7 @@
  * takes the workspace's old team, statuses and repository once and then owns them.
  */
 import 'server-only';
-import { asc, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Db } from './db';
 import * as t from './db/schema';
 import { newId } from './ids';
@@ -140,7 +140,8 @@ export async function projectView(db: Db, project: FactoryProject): Promise<Proj
   const { linearKeyRef, githubKeyRef, ...rest } = project;
   const gaps: ProjectGap[] = [];
   if (!linear.keyRef) gaps.push('linear_key');
-  if (!linearReady(linear)) gaps.push('linear_project');
+  // The Linear project and its mapping, whatever the key: a missing key is its own gap.
+  if (!linearReady({ ...linear, keyRef: linear.keyRef ?? 'any' })) gaps.push('linear_project');
   if (!forge.keyRef) gaps.push('github_token');
   if (!forge.repo) gaps.push('github_repo');
   return {
@@ -269,6 +270,7 @@ export async function saveProject(
 
   // Linear: the project's own team and Linear project, read back with the key it will use.
   let linear: FactoryProject['linear'];
+  let tracker: Tracker;
   const ws = await getLinearSettings(db);
   const linearKey = current?.linearKeyRef ?? ws.keyRef;
   {
@@ -280,9 +282,8 @@ export async function saveProject(
       );
     }
     const key = linearKey ? await readSecret(db, linearKey) : null;
-    if (!key)
-      throw new ProjectError('Save a Linear key first, in Settings or on this project.', 'linear');
-    const tracker = trackerFor(key);
+    if (!key) throw new ProjectError(noKey('Linear key', current), 'linear');
+    tracker = trackerFor(key);
     try {
       const read = await readBackMapping(tracker, {
         teamId: input.linear.teamId,
@@ -336,11 +337,7 @@ export async function saveProject(
     const fs = await getForgeSettings(db);
     const ref = current?.githubKeyRef ?? fs.keyRef;
     const token = ref ? await readSecret(db, ref) : null;
-    if (!token)
-      throw new ProjectError(
-        'Save a GitHub token first, in Settings or on this project.',
-        'github',
-      );
+    if (!token) throw new ProjectError(noKey('GitHub token', current), 'github');
     const { defaultBranch } = await forgeFor(token)
       .repository(input.github.repo)
       .catch((err: unknown) => {
@@ -369,9 +366,15 @@ export async function saveProject(
       .set(fields)
       .where(eq(t.factoryProjects.id, current.id))
       .returning();
-    // A new mapping: the next check reads every labelled issue again.
-    if (current.linear.project?.id !== linear.project?.id) {
+    // Any change to the mapping: the next check reads every labelled issue again, so each takes
+    // its stage from the new statuses and label.
+    if (mappingKey(current.linear) !== mappingKey(linear)) {
       await db.update(t.linearSettings).set({ lastCheckAt: null });
+    }
+    // A new Linear project: the project's open issues follow it, so the watcher, which reads
+    // only that Linear project, still sees them (D46).
+    if (current.linear.project?.id !== linear.project!.id) {
+      notes.push(...(await moveOpenIssues(db, tracker!, current.id, linear.project!)));
     }
     return { project: row!, notes };
   }
@@ -427,10 +430,106 @@ export async function setProjectKey(
   return { project: row!, who };
 }
 
-/** Deletes a project. Its issues stay, without a project; its keys are removed. */
+/** Ids that say whether two mappings differ: team, Linear project, label and each status. */
+function mappingKey(l: FactoryProject['linear']): string {
+  return JSON.stringify([
+    l.team?.id ?? null,
+    l.project?.id ?? null,
+    l.label?.id ?? null,
+    Object.entries(l.states)
+      .map(([k, v]) => `${k}:${v?.id ?? ''}`)
+      .sort(),
+  ]);
+}
+
+/** The message for a missing key: a new project can only use the shared one in Settings. */
+function noKey(what: string, current: FactoryProject | undefined): string {
+  return current
+    ? `Save a ${what} first, in Settings or on this project.`
+    : `Save the shared ${what} in Settings first.`;
+}
+
+/**
+ * A project's issues that are still in flight: waiting, approved, building, at the merge
+ * question, needing the operator, or done in Linear with a pull request not merged yet.
+ */
+async function openIssues(db: Db, projectId: string) {
+  const rows = await db
+    .select()
+    .from(t.trackerIssues)
+    .where(eq(t.trackerIssues.projectId, projectId));
+  return rows.filter(
+    (i) =>
+      (i.stage !== 'done' && i.stage !== 'other') || (i.prNumber !== null && i.mergedAt === null),
+  );
+}
+
+/** Moves a project's open issues into its Linear project, saying what moved and what did not. */
+async function moveOpenIssues(
+  db: Db,
+  tracker: Tracker,
+  projectId: string,
+  to: TrackerRef,
+): Promise<string[]> {
+  const open = await openIssues(db, projectId);
+  if (open.length === 0) return [];
+  const moved: string[] = [];
+  const failed: string[] = [];
+  for (const issue of open) {
+    try {
+      await tracker.setProject(issue.externalId, to.id);
+      moved.push(issue.identifier);
+    } catch (err) {
+      failed.push(`${issue.identifier} (${err instanceof Error ? err.message : String(err)})`);
+    }
+  }
+  return [
+    ...(moved.length
+      ? [`Moved ${moved.join(', ')} into ${to.name}, so they are still watched.`]
+      : []),
+    ...(failed.length
+      ? [`Could not move ${failed.join('; ')} into ${to.name}: move them there in Linear.`]
+      : []),
+  ];
+}
+
+/**
+ * Deletes a project (D46): never the last one, the factory needs a project to build in, and
+ * never one with work in flight, which would be left with no repository or Linear. Its finished
+ * issues stay, without a project; its keys are removed.
+ */
 export async function deleteProject(db: Db, id: string): Promise<boolean> {
   const project = await getProject(db, id);
   if (!project) return false;
+  if ((await listProjects(db)).length === 1) {
+    throw new ProjectError(
+      'This is the only project. Add another before deleting it: the factory needs one to build in.',
+    );
+  }
+  const open = await openIssues(db, id);
+  const [{ going } = { going: 0 }] = await db
+    .select({ going: sql<number>`count(*)::int` })
+    .from(t.runs)
+    .where(
+      and(
+        sql`${t.runs.input}->>'projectId' = ${id}`,
+        inArray(t.runs.status, ['queued', 'running', 'waiting']),
+      ),
+    );
+  if (open.length || going) {
+    const parts = [
+      open.length
+        ? `${open.length === 1 ? 'an open issue' : `${open.length} open issues`} (${open
+            .slice(0, 5)
+            .map((i) => i.identifier)
+            .join(', ')}${open.length > 5 ? '…' : ''})`
+        : '',
+      going ? `${going === 1 ? 'a run going' : `${going} runs going`}` : '',
+    ].filter(Boolean);
+    throw new ProjectError(
+      `${project.name} still has ${parts.join(' and ')}. Finish or close them first: a deleted project's work would be left with no repository or Linear.`,
+    );
+  }
   await db.delete(t.factoryProjects).where(eq(t.factoryProjects.id, id));
   for (const ref of [project.linearKeyRef, project.githubKeyRef]) {
     if (ref) await deleteSecret(db, ref);
@@ -562,4 +661,9 @@ export async function projectRuns(
     .where(sql`${t.runs.input}->>'projectId' = ${id}`)
     .orderBy(desc(t.runs.createdAt))
     .limit(limit);
+}
+
+/** Whether any project carries a Linear key of its own (Settings shows Check now then, D46). */
+export async function anyProjectLinearKey(db: Db): Promise<boolean> {
+  return (await listProjects(db)).some((p) => p.linearKeyRef !== null);
 }
