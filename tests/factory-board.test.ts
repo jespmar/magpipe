@@ -2,21 +2,26 @@
  * The factory board (D43): every issue the factory owns in its stage's column, a spec with its
  * goal count, a goal with its branch, pull request, latest build's verdicts and the runs to follow.
  */
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { openDb, type Db } from '@/lib/db';
 import * as t from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { getBoard } from '@/lib/factory-board';
+import { loadFactory } from '@/lib/factory';
+import { linearOf } from '@/lib/projects';
+import { saveForgeKey, useForgeFactory } from '@/lib/forge';
+import { scriptedForge, scriptedForgeStore } from '@/lib/forge/scripted';
+import { newId } from '@/lib/ids';
 import { createRun } from '@/lib/runs';
 import type { Goal, Step } from '@/lib/schemas';
-import {
-  saveLinearKey,
-  saveLinearMapping,
-  useTrackerFactory,
-  getLinearSettings,
-} from '@/lib/tracker';
+import { saveLinearKey, useTrackerFactory } from '@/lib/tracker';
 import { recordFiledIssue, recordMerged, recordPull } from '@/lib/tracker/issues';
 import { SCRIPTED_TEAM, scriptedStore, scriptedTracker } from '@/lib/tracker/scripted';
+import { SCRIPTED_MAPPING, setUpProject } from '@/tests/stubs/project';
 
 const SECRET = Buffer.from('unit-test-key-unit-test-key-0123').toString('base64url');
 
@@ -42,6 +47,7 @@ const judge = (id: string, title: string, extra: Partial<Step>): Step => ({
 describe('the factory board', () => {
   let db: Db;
   let close: () => Promise<void>;
+  let dir: string;
   const store = scriptedStore(true);
   const previous = process.env.MAGPIPE_SECRET_KEY;
 
@@ -49,10 +55,17 @@ describe('the factory board', () => {
     process.env.MAGPIPE_SECRET_KEY = SECRET;
     useTrackerFactory((key) => scriptedTracker(key, store));
     ({ db, close } = await openDb('memory://'));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'magpipe-board-'));
+    fs.writeFileSync(
+      path.join(dir, 'package.json'),
+      JSON.stringify({ scripts: { test: 'node -e 0' } }),
+    );
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
   }, 30_000);
   afterAll(async () => {
     useTrackerFactory(undefined);
     await close();
+    fs.rmSync(dir, { recursive: true, force: true });
     if (previous === undefined) delete process.env.MAGPIPE_SECRET_KEY;
     else process.env.MAGPIPE_SECRET_KEY = previous;
   });
@@ -71,20 +84,13 @@ describe('the factory board', () => {
   });
 
   it('lays out specs and goals by stage with what a glance needs', async () => {
+    // The factory loaded onto a folder is its Default project, which holds its own Linear side (D46).
+    await loadFactory(db, { path: dir, scripts: ['test'] });
     await saveLinearKey(db, 'lin_api_board');
-    await saveLinearMapping(db, {
-      teamId: SCRIPTED_TEAM.id,
-      label: 'magpipe',
-      states: {
-        spec_ready: 'st_spec',
-        approved: 'st_todo',
-        building: 'st_progress',
-        merge_question: 'st_review',
-        done: 'st_done',
-        needs_you: 'st_blocked',
-      },
-    });
-    const settings = await getLinearSettings(db);
+    const project = await setUpProject(db, { label: 'magpipe', states: SCRIPTED_MAPPING });
+    const { settings } = await linearOf(db, project.id);
+    // Readiness comes from the project shown: its Linear side is set, its repository is not.
+    expect(await getBoard(db)).toMatchObject({ linear: true, github: false });
     const tracker = scriptedTracker('k', store);
     const specRun = await createRun(db, { text: 'spec', attachments: [] });
     const mk = async (title: string, stateId: string, parentId?: string) =>
@@ -97,20 +103,27 @@ describe('the factory board', () => {
         parentId,
       });
     const specRemote = await mk('Export runs', 'st_progress');
-    const spec = await recordFiledIssue(db, specRemote, { runId: specRun.id, settings });
+    const spec = await recordFiledIssue(db, specRemote, {
+      runId: specRun.id,
+      settings,
+      projectId: project.id,
+    });
     const waiting = await recordFiledIssue(db, await mk('Another idea', 'st_spec'), {
       runId: specRun.id,
       settings,
+      projectId: project.id,
     });
     const a = await recordFiledIssue(db, await mk('Goal a', 'st_review', specRemote.id), {
       runId: specRun.id,
       settings,
+      projectId: project.id,
       parentId: spec.id,
       goal: goal('a'),
     });
     const b = await recordFiledIssue(db, await mk('Goal b', 'st_done', specRemote.id), {
       runId: specRun.id,
       settings,
+      projectId: project.id,
       parentId: spec.id,
       goal: goal('b'),
     });
@@ -154,5 +167,63 @@ describe('the factory board', () => {
       runs: [{ label: 'Build', run: { displayId: build.displayId, status: 'queued' } }],
     });
     expect(column('done')[0]).toMatchObject({ identifier: b.identifier, merged: true });
+  });
+
+  it('shows one project’s board, ready by that project’s own Linear and repository (D46)', async () => {
+    useForgeFactory((token) => scriptedForge(token, scriptedForgeStore(true)));
+    try {
+      await saveForgeKey(db, 'ghp_board');
+      // With the shared token, the Default's own repository makes its board ready for GitHub.
+      const own = await setUpProject(db, { github: { repo: 'o/app' } });
+      expect(await getBoard(db, { projectId: own.id })).toMatchObject({
+        linear: true,
+        github: true,
+      });
+      // A second project with no repository of its own is not, whatever the Default has.
+      const now = new Date();
+      const other = {
+        ...own,
+        id: newId('proj'),
+        name: 'API',
+        linear: { ...own.linear, project: { id: 'lp_api', name: 'API' } },
+        github: { ...own.github, repo: null },
+        createdAt: now,
+        updatedAt: now,
+      };
+      await db.insert(t.factoryProjects).values(other);
+      const tracker = scriptedTracker('k', store);
+      const run = await createRun(db, { text: 'spec', attachments: [] });
+      const { settings } = await linearOf(db, other.id);
+      const theirs = await recordFiledIssue(
+        db,
+        await tracker.createIssue({
+          teamId: SCRIPTED_TEAM.id,
+          title: 'An API idea',
+          description: '',
+          labelIds: ['lbl'],
+          stateId: 'st_spec',
+          projectId: 'lp_api',
+        }),
+        { runId: run.id, settings, projectId: other.id },
+      );
+
+      const board = await getBoard(db, { projectId: other.id });
+      expect(board).toMatchObject({
+        projectId: other.id,
+        linear: true,
+        github: false,
+        counts: { specs: 1, goals: 0 },
+      });
+      const cards = board.columns.flatMap((c) => c.cards);
+      expect(cards.map((c) => c.identifier)).toEqual([theirs.identifier]);
+      // Shown alone, its cards need no project name.
+      expect(cards[0]!.project).toBeNull();
+
+      const mine = await getBoard(db, { projectId: own.id });
+      expect(mine.counts).toMatchObject({ specs: 2, goals: 2 });
+      expect(mine.columns.flatMap((c) => c.cards).map((c) => c.id)).not.toContain(theirs.id);
+    } finally {
+      useForgeFactory(undefined);
+    }
   });
 });

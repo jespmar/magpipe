@@ -7,37 +7,29 @@ import { loadFlock, summarizeFlock } from '@/lib/flock';
 import { parseScripts, RosterValidationError, type RosterLine } from '@/lib/roster';
 import { plural } from '@/lib/format';
 import {
-  autoMergeInput,
-  type AutoMergeInput,
   forgeKeyInput,
-  forgeRepoInput,
   type ForgeKeyInput,
-  type ForgeRepoInput,
   flockLoadInput,
   linearKeyInput,
-  linearMappingInput,
   watcherInput,
   type FlockLoadInput,
   type LinearKeyInput,
-  type LinearMappingInput,
-  type PipelineState,
+  type LinearSettings,
   type TrackerTeam,
   type WatcherInput,
 } from '@/lib/schemas';
 import {
+  anyProjectLinearKey,
   getLinearSettings,
   LinearMappingError,
   LinearNotReadyError,
-  linearOptions,
   linearView,
   removeLinearKey,
   saveLinearKey,
-  saveLinearMapping,
   saveWatcher,
   TrackerError,
   trackerMessage,
   type LinearView,
-  type TrackerState,
 } from '@/lib/tracker';
 import { checkLinear, type CheckResult } from '@/lib/tracker/issues';
 import {
@@ -46,9 +38,7 @@ import {
   ForgeNotReadyError,
   forgeView,
   removeForgeKey,
-  saveAutoMerge,
   saveForgeKey,
-  saveForgeRepo,
   type ForgeView,
 } from '@/lib/forge';
 
@@ -171,6 +161,12 @@ export async function loadFactoryAction(
 // ─── Linear (D38) ──────────────────────────────────────────────────────────
 
 /** What every Linear action answers: the settings as Settings shows them, or what went wrong. */
+/** What Settings shows of Linear: Check now also runs on projects' own keys (D46). */
+async function viewOf(settings: LinearSettings): Promise<LinearView> {
+  const view = linearView(settings);
+  return { ...view, ready: view.ready || (await anyProjectLinearKey(await getDb())) };
+}
+
 export type LinearResult<T = object> =
   ({ ok: true; view: LinearView } & T) | { ok: false; message: string; field?: string };
 
@@ -194,7 +190,7 @@ export async function saveLinearKeyAction(
   }
   try {
     const { settings, teams } = await saveLinearKey(await getDb(), parsed.data.key);
-    return { ok: true, view: linearView(settings), teams };
+    return { ok: true, view: await viewOf(settings), teams };
   } catch (err) {
     const failed = await linearFailure(err, 'save the Linear key');
     return { ...failed, field: 'key' };
@@ -203,43 +199,9 @@ export async function saveLinearKeyAction(
 
 export async function removeLinearKeyAction(): Promise<LinearResult> {
   try {
-    return { ok: true, view: linearView(await removeLinearKey(await getDb())) };
+    return { ok: true, view: await viewOf(await removeLinearKey(await getDb())) };
   } catch (err) {
     return linearFailure(err, 'remove the Linear key');
-  }
-}
-
-/** The teams the key can see and, for one team, its statuses with a first guess at the mapping. */
-export async function linearOptionsAction(teamId?: string): Promise<
-  LinearResult<{
-    teams: TrackerTeam[];
-    states: TrackerState[];
-    suggested: Record<PipelineState, string> | null;
-  }>
-> {
-  try {
-    const db = await getDb();
-    const options = await linearOptions(db, teamId);
-    return { ok: true, view: linearView(await getLinearSettings(db)), ...options };
-  } catch (err) {
-    return linearFailure(err, 'read the Linear teams');
-  }
-}
-
-/** Saves the team, label and statuses after reading them back from Linear. */
-export async function saveLinearMappingAction(
-  input: LinearMappingInput,
-): Promise<LinearResult<{ labelCreated: boolean; statuses: number }>> {
-  const parsed = linearMappingInput.safeParse(input);
-  if (!parsed.success) return { ok: false, message: parsed.error.issues[0]!.message };
-  try {
-    const { settings, labelCreated, statuses } = await saveLinearMapping(
-      await getDb(),
-      parsed.data,
-    );
-    return { ok: true, view: linearView(settings), labelCreated, statuses };
-  } catch (err) {
-    return linearFailure(err, 'save the Linear mapping');
   }
 }
 
@@ -249,7 +211,7 @@ export async function saveWatcherAction(input: WatcherInput): Promise<LinearResu
     return { ok: false, message: parsed.error.issues[0]!.message, field: 'pollSeconds' };
   }
   try {
-    return { ok: true, view: linearView(await saveWatcher(await getDb(), parsed.data)) };
+    return { ok: true, view: await viewOf(await saveWatcher(await getDb(), parsed.data)) };
   } catch (err) {
     return linearFailure(err, 'save the watcher');
   }
@@ -269,7 +231,7 @@ export async function checkLinearAction(): Promise<LinearResult<{ check: CheckRe
       force: true,
       afterCheck: (d) => factoryTick(d, (id) => getEngine().enqueue(id)),
     });
-    return { ok: true, view: linearView(await getLinearSettings(db)), check };
+    return { ok: true, view: await viewOf(await getLinearSettings(db)), check };
   } catch (err) {
     return linearFailure(err, 'check Linear');
   }
@@ -305,34 +267,5 @@ export async function removeForgeKeyAction(): Promise<ForgeResult> {
     return { ok: true, view: forgeView(await removeForgeKey(await getDb())) };
   } catch (err) {
     return forgeFailure(err, 'remove the GitHub token');
-  }
-}
-
-/** Saves the repository and merge method once the token can reach the repository. */
-export async function saveForgeRepoAction(
-  input: ForgeRepoInput,
-): Promise<ForgeResult<{ defaultBranch: string }>> {
-  const parsed = forgeRepoInput.safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, message: parsed.error.issues[0]!.message, field: 'repo' };
-  }
-  try {
-    const { settings, defaultBranch } = await saveForgeRepo(await getDb(), parsed.data);
-    return { ok: true, view: forgeView(settings), defaultBranch };
-  } catch (err) {
-    return { ...(await forgeFailure(err, 'save the GitHub repository')), field: 'repo' };
-  }
-}
-
-/** Saves the unattended-merge rule (D44). */
-export async function saveAutoMergeAction(input: AutoMergeInput): Promise<ForgeResult> {
-  const parsed = autoMergeInput.safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, message: parsed.error.issues[0]!.message, field: 'autoMergeLabel' };
-  }
-  try {
-    return { ok: true, view: forgeView(await saveAutoMerge(await getDb(), parsed.data)) };
-  } catch (err) {
-    return forgeFailure(err, 'save the unattended-merge rule');
   }
 }

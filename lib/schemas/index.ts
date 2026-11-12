@@ -763,20 +763,6 @@ export const linearKeyInput = z.object({
   key: z.string().trim().min(1, 'Paste the API key from Linear.').max(500),
 });
 
-/** Settings → Linear: the team, the label and the six statuses. */
-export const linearMappingInput = z.object({
-  teamId: z.string().min(1, 'Pick a team.'),
-  label: z.string().trim().min(1, 'Name the label that marks factory issues.').max(80),
-  states: z.object({
-    spec_ready: z.string().min(1, 'Pick a status for each state.'),
-    approved: z.string().min(1, 'Pick a status for each state.'),
-    building: z.string().min(1, 'Pick a status for each state.'),
-    merge_question: z.string().min(1, 'Pick a status for each state.'),
-    done: z.string().min(1, 'Pick a status for each state.'),
-    needs_you: z.string().min(1, 'Pick a status for each state.'),
-  }),
-});
-
 /** Settings → Linear: the watcher's pace. */
 export const watcherInput = z.object({
   pollSeconds: z.coerce
@@ -792,7 +778,6 @@ export type TrackerIssue = z.infer<typeof trackerIssue>;
 export type TrackerRef = z.infer<typeof trackerRef>;
 export type TrackerTeam = z.infer<typeof trackerTeam>;
 export type PipelineStateMap = z.infer<typeof pipelineStateMap>;
-export type LinearMappingInput = z.infer<typeof linearMappingInput>;
 export type LinearKeyInput = z.infer<typeof linearKeyInput>;
 export type WatcherInput = z.infer<typeof watcherInput>;
 
@@ -830,35 +815,19 @@ export const forgeKeyInput = z.object({
   key: z.string().trim().min(1, 'Paste a GitHub token.').max(500),
 });
 
-/** Settings → GitHub: the repository and how pull requests merge. */
-export const forgeRepoInput = z.object({
-  repo: z
-    .string()
-    .trim()
-    .regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, 'Give the repository as owner/name.'),
-  mergeMethod: z.enum(mergeMethods),
-});
-
-/** Settings → GitHub → Unattended merges (D44). */
-export const autoMergeInput = z.object({
-  autoMerge: z.boolean(),
-  autoMergeLabel: z.string().trim().min(1, 'Name the label that allows it.').max(80),
-  autoMergeFirstPass: z.boolean(),
-  autoMergeChecks: z.boolean(),
-});
-export type AutoMergeInput = z.infer<typeof autoMergeInput>;
-
 /** The merge question answered no from Magpipe (D42): the note goes back to the Code Agent. */
 export const sendBackInput = z.object({
   note: z.string().trim().min(1, 'Say what should change.').max(4000),
 });
 
 export type ForgeKeyInput = z.infer<typeof forgeKeyInput>;
-export type ForgeRepoInput = z.infer<typeof forgeRepoInput>;
 
 // ─── factory projects (D45) ────────────────────────────────────────────────
 
-/** A project's Linear side: the team, an optional Linear project, the label and the statuses. */
+/**
+ * A project's Linear side: the team, its Linear project, the label and the statuses. Required to
+ * save (D46); null only on a Default project made before it had them.
+ */
 export const projectLinear = z.object({
   team: trackerTeam.nullable(),
   /** Issues are filed in this Linear project, and the watcher reads only its issues. */
@@ -913,13 +882,16 @@ export const projectInput = z.object({
   scripts: z.string().max(2000),
   context: z.string().max(4000, 'Keep the brief under 4000 characters.'),
   linear: z.object({
-    teamId: z.string(),
-    projectId: z.string(),
-    label: z.string().trim().max(80),
+    teamId: z.string().min(1, 'Pick the Linear team.'),
+    projectId: z.string().min(1, 'Pick the Linear project this project files into.'),
+    label: z.string().trim().min(1, 'Name the label that marks factory issues.').max(80),
     states: z.record(z.string(), z.string()),
   }),
   github: z.object({
-    repo: z.string().trim(),
+    repo: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, 'Give the GitHub repository as owner/name.'),
     mergeMethod: z.enum(mergeMethods),
     autoMerge: z.boolean(),
     autoMergeLabel: z.string().trim().min(1, 'Name the label that allows it.').max(80),

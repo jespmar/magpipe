@@ -118,7 +118,8 @@ engine and no sign-in on desktop.
   (`ruleVerdict`, D44), off by default, and still go through the land. A factory issue or run belongs to a
   project (`lib/projects.ts`, D45): read Linear and GitHub settings through `linearOf` /
   `forgeOf` with its `projectId`, never `getLinearSettings` / `getForgeSettings` directly, and
-  pass the project on to the runs it starts.
+  pass the project on to the runs it starts. A project owns its Linear project and repository and
+  inherits nothing but the keys (D46); the workspace rows hold the keys and the watcher.
 - **Tests never need model credentials.** Unit tests script `ModelClient`; the Playwright
   server runs with `MAGPIPE_MODEL_STUB=scripted` (`lib/engine/stub-model.ts`), which the engine
   ignores in production builds.

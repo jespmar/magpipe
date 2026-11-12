@@ -24,17 +24,13 @@ import {
   startLandRun,
   templatePlan,
 } from '@/lib/factory';
-import { repoFromRemote, saveForgeKey, saveForgeRepo, useForgeFactory } from '@/lib/forge';
+import { getForgeSettings, repoFromRemote, saveForgeKey, useForgeFactory } from '@/lib/forge';
 import { githubForge } from '@/lib/forge/github';
 import { scriptedForge, scriptedForgeStore } from '@/lib/forge/scripted';
 import { createRun, getRun } from '@/lib/runs';
 import type { Goal, TrackerIssue } from '@/lib/schemas';
-import {
-  getLinearSettings,
-  saveLinearKey,
-  saveLinearMapping,
-  useTrackerFactory,
-} from '@/lib/tracker';
+import { forgeOf, linearOf, saveProject } from '@/lib/projects';
+import { saveLinearKey, useTrackerFactory } from '@/lib/tracker';
 import {
   checkLinear,
   getIssue,
@@ -44,6 +40,7 @@ import {
 } from '@/lib/tracker/issues';
 import { SCRIPTED_TEAM, scriptedStore, scriptedTracker } from '@/lib/tracker/scripted';
 import { ensureWorktree, pushBranch, updateBranch } from '@/lib/worktrees';
+import { SCRIPTED_MAPPING, setUpProject, TEST_LINEAR_PROJECT } from '@/tests/stubs/project';
 
 const SECRET = Buffer.from('unit-test-key-unit-test-key-0123').toString('base64url');
 
@@ -289,10 +286,11 @@ describe('the merge question', () => {
   });
 
   async function fileGoal(key: string, deps: string[] = []): Promise<TrackerIssue> {
-    const settings = await getLinearSettings(db);
+    const { project, settings } = await linearOf(db);
     const tracker = scriptedTracker('k', store);
     const remote = await tracker.createIssue({
       teamId: SCRIPTED_TEAM.id,
+      projectId: TEST_LINEAR_PROJECT.id,
       title: `Goal ${key}`,
       description: `Goal \`${key}\`.\n\n## Acceptance criteria\n\n1. It works.`,
       labelIds: [store.labels[0]!.id],
@@ -304,6 +302,7 @@ describe('the merge question', () => {
       settings,
       parentId: spec.id,
       goal: goal(key, deps),
+      projectId: project!.id,
     });
     await new Promise((r) => setTimeout(r, 5));
     return issue;
@@ -345,8 +344,7 @@ describe('the merge question', () => {
     ({ db, close } = await openDb('memory://'));
     await loadFactory(db, { path: repo, scripts: ['test'] });
     await saveLinearKey(db, 'lin_api_land');
-    await saveLinearMapping(db, {
-      teamId: SCRIPTED_TEAM.id,
+    await setUpProject(db, {
       label: 'magpipe',
       states: {
         spec_ready: 'st_spec',
@@ -357,18 +355,19 @@ describe('the merge question', () => {
         needs_you: 'st_blocked',
       },
     });
-    const settings = await getLinearSettings(db);
+    const { project, settings } = await linearOf(db);
     const run = await createRun(db, { text: 'Goals', attachments: [] });
     spec = await recordFiledIssue(
       db,
       await scriptedTracker('k', store).createIssue({
         teamId: SCRIPTED_TEAM.id,
+        projectId: TEST_LINEAR_PROJECT.id,
         title: 'Spec',
         description: '# Spec',
         labelIds: [store.labels[0]!.id],
         stateId: 'st_progress',
       }),
-      { runId: run.id, settings },
+      { runId: run.id, settings, projectId: project!.id },
     );
   }, 30_000);
   afterAll(async () => {
@@ -395,15 +394,42 @@ describe('the merge question', () => {
   it('a GitHub token and repository are checked before they are saved', async () => {
     await expect(saveForgeKey(db, 'ghp_bad_1')).rejects.toMatchObject({ code: 'auth' });
     await saveForgeKey(db, 'ghp_good_1234');
-    await expect(
-      saveForgeRepo(db, { repo: 'nobody/here', mergeMethod: 'squash' }),
-    ).rejects.toMatchObject({ code: 'not_found' });
-    const { settings, defaultBranch } = await saveForgeRepo(db, {
+    expect(await getForgeSettings(db)).toMatchObject({
+      keyHint: '1234',
+      viewer: 'scripted-operator',
+    });
+    // The repository is the project's own (D46), read back with the shared token on save.
+    const { project: before } = await forgeOf(db);
+    const input = (repo: string) => ({
+      name: before!.name,
+      repoPath: before!.repoPath,
+      scripts: before!.scripts.join(', '),
+      context: before!.context,
+      linear: {
+        teamId: SCRIPTED_TEAM.id,
+        projectId: TEST_LINEAR_PROJECT.id,
+        label: 'magpipe',
+        states: SCRIPTED_MAPPING,
+      },
+      github: { ...before!.github, repo, mergeMethod: 'squash' as const },
+      maxRuns: before!.maxRuns,
+      spendCapUsd: before!.spendCapUsd,
+      models: before!.models,
+    });
+    // The repository GitHub cannot find is named on the project's GitHub part.
+    await expect(saveProject(db, before!.id, input('nobody/here'))).rejects.toMatchObject({
+      field: 'github',
+      message: 'GitHub found nothing at /repos/nobody/here.',
+    });
+    expect((await forgeOf(db)).settings.repo).toBeNull();
+    const { notes } = await saveProject(db, before!.id, input('o/app'));
+    expect(notes).toContain('Read back from GitHub: o/app, default branch main.');
+    expect((await forgeOf(db)).settings).toMatchObject({
       repo: 'o/app',
       mergeMethod: 'squash',
+      keyHint: '1234',
+      viewer: 'scripted-operator',
     });
-    expect(settings).toMatchObject({ repo: 'o/app', keyHint: '1234', viewer: 'scripted-operator' });
-    expect(defaultBranch).toBe('main');
   });
 
   it('a passing build pushes, opens the pull request and asks the question', async () => {

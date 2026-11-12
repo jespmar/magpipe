@@ -5,14 +5,13 @@
  * is saved, so a wrong team or status is named then, not at the first spec.
  */
 import 'server-only';
-import { eq } from 'drizzle-orm';
+import { eq, isNotNull } from 'drizzle-orm';
 import type { Db } from '../db';
 import * as t from '../db/schema';
 import { env } from '../env';
 import { deleteSecret, readSecret, storeSecret } from '../secrets';
 import {
   pipelineStates,
-  type LinearMappingInput,
   type LinearSettings,
   type PipelineState,
   type PipelineStateMap,
@@ -71,7 +70,10 @@ export function trackerFor(apiKey: string): Tracker {
   return (g.__magpipeTrackerFactory ?? defaultFactory)(apiKey);
 }
 
-/** Linear is set up when it has a key, a team, a label and all six statuses. */
+/**
+ * Linear is set up when it has a key, a team, a label and all six statuses. For a project these
+ * come from the project (`projectLinear`, D46); the workspace row holds only the key and watcher.
+ */
 export function linearReady(
   s: Pick<LinearSettings, 'keyRef' | 'team' | 'label' | 'states'>,
 ): boolean {
@@ -110,12 +112,25 @@ async function writeLinear(
   return row!;
 }
 
-/** What Settings shows: everything but the key, and whether the factory can file issues. */
+/**
+ * Whether any factory project carries a Linear key of its own: Settings shows Check now then too
+ * (D46). Read here, not through lib/projects, so Settings stays light to compile.
+ */
+export async function anyProjectLinearKey(db: Db): Promise<boolean> {
+  const [row] = await db
+    .select({ id: t.factoryProjects.id })
+    .from(t.factoryProjects)
+    .where(isNotNull(t.factoryProjects.linearKeyRef))
+    .limit(1);
+  return row !== undefined;
+}
+
+/** What Settings shows: everything but the key. `ready` means a check can run: there is a key. */
 export type LinearView = Omit<LinearSettings, 'keyRef'> & { hasKey: boolean; ready: boolean };
 
 export function linearView(s: LinearSettings): LinearView {
   const { keyRef, ...rest } = s;
-  return { ...rest, hasKey: keyRef !== null, ready: linearReady(s) };
+  return { ...rest, hasKey: keyRef !== null, ready: keyRef !== null };
 }
 
 /**
@@ -185,30 +200,11 @@ export function suggestStates(states: readonly TrackerState[]): Record<PipelineS
   };
 }
 
-/** The teams the saved key can see, and the statuses of one of them with a first guess. */
-export async function linearOptions(
-  db: Db,
-  teamId?: string,
-): Promise<{
-  teams: TrackerTeam[];
-  states: TrackerState[];
-  suggested: Record<PipelineState, string> | null;
-}> {
-  const tracker = await getTracker(db);
-  const teams = await tracker.teams();
-  const states = teamId ? await tracker.states(teamId) : [];
-  return { teams, states, suggested: teamId ? suggestStates(states) : null };
-}
-
 /** A mapping Linear does not hold, or two states on one status. */
 export class LinearMappingError extends Error {
   readonly code = 'validation';
 }
 
-/**
- * Saves the team, the label (made in Linear when it is missing) and the six statuses, after
- * reading them back from Linear. Returns what the read-back found, for the result line.
- */
 /**
  * Reads a mapping back from Linear (D38, D45): the team the key can see, each pipeline state on a
  * status of its own, and the label (made when missing). Throws what is wrong in the operator's
@@ -216,7 +212,7 @@ export class LinearMappingError extends Error {
  */
 export async function readBackMapping(
   tracker: Tracker,
-  input: Pick<LinearMappingInput, 'teamId' | 'label'> & { states: Record<string, string> },
+  input: { teamId: string; label: string; states: Record<string, string> },
 ): Promise<{
   team: TrackerTeam;
   states: PipelineStateMap;
@@ -246,27 +242,6 @@ export async function readBackMapping(
   }
   const label = await tracker.ensureLabel(team.id, input.label);
   return { team, states: map, label, statuses: states.length };
-}
-
-/**
- * Saves the team, the label and the six statuses after reading them back from Linear. Since
- * projects (D45) this is the default project's mapping; the row keeps a copy for the default
- * project to start from.
- */
-export async function saveLinearMapping(
-  db: Db,
-  input: LinearMappingInput,
-): Promise<{ settings: LinearSettings; labelCreated: boolean; statuses: number }> {
-  const read = await readBackMapping(await getTracker(db), input);
-  // The next check reads every labelled issue again, so each takes its stage from this mapping.
-  const settings = await writeLinear(db, {
-    team: read.team,
-    label: { id: read.label.id, name: read.label.name },
-    states: read.states,
-    lastError: null,
-    lastCheckAt: null,
-  });
-  return { settings, labelCreated: read.label.created, statuses: read.statuses };
 }
 
 export async function saveWatcher(db: Db, input: WatcherInput): Promise<LinearSettings> {

@@ -394,25 +394,34 @@ export async function checkLinear(
   if (g.__magpipeCheck) return { status: 'skipped', reason: 'busy' };
   const run = (async (): Promise<CheckResult> => {
     const ws = await getLinearSettings(db);
-    // Each project with its own mapping (D45); without projects, the workspace's alone. A
-    // project that names a Linear project goes first, so it claims its issues before a project
-    // on the same team and label without one.
+    if (ws.paused && !opts.force) return { status: 'skipped', reason: 'paused' };
+    // Each project's own Linear project (D46). One that names the Linear project of another is
+    // refused when saved; an issue another project holds is left to it.
     const projects = await listProjects(db);
     const targets = (
-      projects.length
-        ? await Promise.all(
-            projects.map(async (p) => ({
-              projectId: p.id as string | null,
-              linearProject: linearProjectOf(p),
-              settings: await projectLinear(db, p),
-            })),
-          )
-        : [{ projectId: null, linearProject: undefined, settings: ws }]
-    )
-      .filter((x) => linearReady(x.settings))
-      .sort((a, b) => Number(!a.linearProject) - Number(!b.linearProject));
-    if (!targets.length) return { status: 'skipped', reason: 'not_ready' };
-    if (ws.paused && !opts.force) return { status: 'skipped', reason: 'paused' };
+      await Promise.all(
+        projects.map(async (p) => ({
+          projectId: p.id as string | null,
+          linearProject: linearProjectOf(p),
+          settings: await projectLinear(db, p),
+        })),
+      )
+    ).filter((x) => linearReady(x.settings));
+    // Nobody has set Linear up at all: nothing to say.
+    if (!targets.length && !ws.keyRef && !projects.some((p) => p.linearKeyRef)) {
+      return { status: 'skipped', reason: 'not_ready' };
+    }
+    if (!targets.length) {
+      // Nothing in Linear to read, but the factory's GitHub side still goes on (D46), and the
+      // operator is told why nothing is watched.
+      if (opts.afterCheck) await opts.afterCheck(db).catch(() => undefined);
+      await recordCheck(db, {
+        error: projects.length
+          ? 'No project has its Linear project and a key yet, so nothing in Linear is watched. Pick one in a project’s settings.'
+          : 'There is no factory project yet, so nothing in Linear is watched.',
+      });
+      return { status: 'skipped', reason: 'not_ready' };
+    }
     const at = new Date();
     try {
       const since = ws.lastCheckAt ? new Date(ws.lastCheckAt.getTime() - OVERLAP_MS) : undefined;

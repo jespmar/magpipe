@@ -481,26 +481,31 @@ Code Agent with the operator's note.
 
 ## Projects
 
-The factory works on more than one repository (D45). A project is one repository and where its
-work is tracked and lands, edited on Factory → Projects:
+The factory works on more than one repository (D45, D46). A project is one repository with its
+own GitHub repository and its own Linear project, and Factory lists them. Each project's page
+holds its own Specification Agent (a box to write a spec in), its factory board and its runs;
+its settings page holds the rest:
 
 - **Repository.** The folder the factory builds in (each goal in a worktree of it) and the
   scripts the Test Agent may run. The factory's agents keep their one repository grant; a
   project's run puts the project's folder and scripts in its place.
-- **Linear.** Its own team, label and six statuses, and optionally a Linear project: issues are
-  filed into it and the watcher reads only its issues. Without its own team it uses the
-  workspace's from Settings.
-- **GitHub.** Its own repository, merge method and unattended rule (D44), or the workspace's.
+- **Linear.** Its own team, Linear project, label and six statuses, all required. Specs and goals
+  are filed into the Linear project and the watcher reads only its issues. No two projects share
+  a Linear project.
+- **GitHub.** Its own repository, required, with its merge method and unattended rule (D44). No
+  two projects share a repository, and the folder's origin, when it is on GitHub, must be it.
 - **Keys.** One Linear key and one GitHub token in Settings serve every project; a project in
-  another workspace or account carries its own, checked and sealed the same way.
+  another workspace or account carries its own, checked and sealed the same way. Settings holds
+  only the keys and the watcher.
 - **Context for the agents.** A brief every factory agent reads in its prompt on that project's
   runs.
 - **Limits and models.** Builds at once and a daily spend cap of its own, inside the
   workspace's; a model per factory agent for its runs.
 
-A spec sent from Home goes to the project picked beside Send to the factory (the only one, when
-there is one), and everything after it, goals, builds and lands, carries that project. The
-factory as it was before projects is the Default project, inheriting everything.
+A spec written on a project's page, or sent from Home with that project picked, belongs to the
+project, and everything after it, goals, builds and lands, carries it. The factory as it was
+before projects is the Default project: it takes the team, statuses and repository Settings held
+then, and files nothing until it is given its Linear project.
 
 ## When something goes wrong
 

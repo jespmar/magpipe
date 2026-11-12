@@ -7,7 +7,6 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { openDb, type Db } from '@/lib/db';
 import * as t from '@/lib/db/schema';
@@ -16,14 +15,16 @@ import { issueTitle, parseVerdict } from '@/lib/engine/actions';
 import { listEvents } from '@/lib/engine/events';
 import type { ModelClient, ModelMessage } from '@/lib/engine/model';
 import { loadFactory, runDocument, templatePlan } from '@/lib/factory';
+import { linearOf, listProjects } from '@/lib/projects';
 import { createRun, getRun } from '@/lib/runs';
 import type { Step } from '@/lib/schemas';
 import {
   getLinearSettings,
+  getTracker,
   linearReady,
+  readBackMapping,
   removeLinearKey,
   saveLinearKey,
-  saveLinearMapping,
   saveWatcher,
   suggestStates,
   TrackerError,
@@ -43,6 +44,7 @@ import {
   scriptedStore,
   scriptedTracker,
 } from '@/lib/tracker/scripted';
+import { setUpProject, TEST_LINEAR_PROJECT } from '@/tests/stubs/project';
 
 const SECRET = Buffer.from('unit-test-key-unit-test-key-0123').toString('base64url');
 
@@ -358,14 +360,25 @@ describe('Linear for the factory', () => {
   });
 
   it('refuses two states on one status, then saves the mapping read back from Linear', async () => {
+    const tracker = await getTracker(db);
     await expect(
-      saveLinearMapping(db, { ...MAPPING, states: { ...MAPPING.states, approved: 'st_spec' } }),
+      readBackMapping(tracker, { ...MAPPING, states: { ...MAPPING.states, approved: 'st_spec' } }),
     ).rejects.toThrow('Spec ready and Approved both use Spec ready.');
-    const saved = await saveLinearMapping(db, MAPPING);
-    expect(saved).toMatchObject({ labelCreated: true, statuses: SCRIPTED_STATES.length });
-    expect(saved.settings.states.approved).toEqual({ id: 'st_todo', name: 'Approved' });
-    expect(linearReady(saved.settings)).toBe(true);
-    expect((await saveLinearMapping(db, MAPPING)).labelCreated).toBe(false);
+    const read = await readBackMapping(tracker, MAPPING);
+    expect(read).toMatchObject({
+      label: { name: 'magpipe', created: true },
+      statuses: SCRIPTED_STATES.length,
+    });
+    expect(read.states.approved).toEqual({ id: 'st_todo', name: 'Approved' });
+    // The key alone does not make the project ready: it needs its own Linear project (D46).
+    expect(linearReady((await linearOf(db)).settings)).toBe(false);
+    await setUpProject(db, { label: MAPPING.label, states: MAPPING.states });
+    const { settings } = await linearOf(db);
+    expect(settings.states.approved).toEqual({ id: 'st_todo', name: 'Approved' });
+    expect(linearReady(settings)).toBe(true);
+    expect((await readBackMapping(tracker, MAPPING)).label.created).toBe(false);
+    // Three read-backs, one label: it is made once.
+    expect(store.labels.filter((l) => l.name === 'magpipe')).toHaveLength(1);
   });
 
   it('a spec whose review fails is not filed', async () => {
@@ -486,6 +499,7 @@ describe('Linear for the factory', () => {
       description: '',
       labelIds: [store.labels[0]!.id],
       stateId: 'st_backlog',
+      projectId: TEST_LINEAR_PROJECT.id,
     });
     await saveWatcher(db, { pollSeconds: 30, paused: true });
     expect(await checkLinear(db)).toEqual({ status: 'skipped', reason: 'paused' });
@@ -578,22 +592,27 @@ describe('Linear for the factory', () => {
   });
 
   it('saving the mapping again makes the next check read every labelled issue', async () => {
-    const saved = await saveLinearMapping(db, MAPPING);
-    expect(saved.settings.lastCheckAt).toBeNull();
+    await setUpProject(db, { label: MAPPING.label, states: MAPPING.states });
+    expect((await getLinearSettings(db)).lastCheckAt).toBeNull();
     const all = await checkLinear(db);
     expect(all).toMatchObject({ status: 'done', issues: store.issues.length });
   });
 
   it('removing the key keeps the mapping and drops the issue step again', async () => {
     const after = await removeLinearKey(db);
-    expect(after).toMatchObject({ keyRef: null, keyHint: null, team: SCRIPTED_TEAM });
+    expect(after).toMatchObject({ keyRef: null, keyHint: null });
+    // The mapping is the project's (D46): it keeps its team, without a key to use it.
+    const { project, settings } = await linearOf(db);
+    expect(project!.linear).toMatchObject({ team: SCRIPTED_TEAM, project: TEST_LINEAR_PROJECT });
+    expect(settings).toMatchObject({ keyRef: null, team: SCRIPTED_TEAM });
+    expect(linearReady(settings)).toBe(false);
     expect(await db.select().from(t.secrets)).toHaveLength(0);
     expect((await templatePlan(db, 'spec')).plan.map((s) => s.id)).toEqual([
       'spec',
       'review',
       'merge',
     ]);
-    const [row] = await db.select().from(t.linearSettings).where(eq(t.linearSettings.id, 'linear'));
-    expect(row!.states.done).toEqual({ id: 'st_done', name: 'Done' });
+    const [row] = await listProjects(db);
+    expect(row!.linear.states.done).toEqual({ id: 'st_done', name: 'Done' });
   });
 });

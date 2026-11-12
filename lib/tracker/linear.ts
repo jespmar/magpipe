@@ -172,6 +172,15 @@ export function linearTracker(
       return issueOf(data.issueUpdate.issue, 'updated');
     },
 
+    async setProject(issueId, projectId, signal) {
+      const data = await call<{ issueUpdate: { issue: RawIssue | null } }>(
+        `mutation ($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success issue { ${ISSUE} } } }`,
+        { id: issueId, input: { projectId } },
+        signal,
+      );
+      return issueOf(data.issueUpdate.issue, 'updated');
+    },
+
     async getIssue(issueId, signal) {
       const data = await call<{ issue: (RawIssue & { description: string | null }) | null }>(
         `query ($id: String!) { issue(id: $id) { ${ISSUE} description } }`,

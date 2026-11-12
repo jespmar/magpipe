@@ -1118,3 +1118,49 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
 - **Not done.** No project per non-factory run, no moving an issue between projects, and the
   Linear project filter and `team.projects` query are untested against live Linear, like the
   rest of the client (D38).
+
+## D46 · Project pages: each project owns its repository and Linear project
+
+- **Why.** The operator's picture of the factory is a set of projects, each with its own GitHub
+  repository, its own Linear project, its own context, its own Specification Agent and its own
+  factory runs. D45 let a project borrow the workspace's Linear team and repository, made the
+  Linear project optional, and kept one board for all projects with specs written on Home.
+- **Decided: a project owns both.** A project's Linear team, Linear project, label and statuses,
+  and its GitHub repository, merge method and rule, are its own and required to save. Nothing is
+  inherited: `projectLinear` and `projectForge` read only the project, and a project without its
+  Linear project has no Linear (nothing filed, nothing watched) until it is given one. Only the
+  keys are shared: Settings keeps one Linear key, one GitHub token and the watcher, and a project
+  may carry its own key or token (D45). Settings → Linear loses the mapping and Settings → GitHub
+  the repository and the rule; `saveLinearMapping`, `linearOptions`, `saveForgeRepo` and
+  `saveAutoMerge` are gone with their inputs.
+- **One of each per project.** Saving refuses a Linear project another project files into, a
+  repository another project lands in, and a folder whose origin is a GitHub repository other
+  than the one named, since goals are pushed to the folder's origin.
+- **The Default project takes over the workspace's.** Made from the loaded factory, it starts
+  with the team, label, statuses, repository and rule Settings held before (and a Default made
+  under D45 takes them once, while it is the only project), and still needs its Linear project.
+  The workspace columns stay in their tables as that seed; no migration drops them.
+- **Screens.** Factory lists the projects with what waits for the operator in each. A project's
+  page has its Specification Agent (a spec box that runs the spec template for the project),
+  what it still needs, its board and its latest runs; its settings page is the editor
+  (`/factory/[id]/settings`), and `/factory/new` adds one. Home keeps Send to the factory with
+  the project picker. The board filter and `/factory/projects` are gone.
+- **Work never changes hands.** A project with work in flight (an issue waiting, approved,
+  building, at the merge question or needing the operator, a pull request not merged, or a run
+  going) cannot be deleted, and the last project cannot be deleted at all: either would leave
+  goals with no repository or Linear, or hand them to whichever project remained. Finished
+  issues stay, without a project.
+- **A new Linear project takes the open issues along.** When a project's Linear project changes
+  (or the Default gets its first one), its open issues are moved into it in Linear, so the
+  watcher, which reads only that Linear project, still sees them; the save says which moved and
+  which did not. Any change to the team, Linear project, label or a status makes the next check
+  read every issue again.
+- **The tick goes on, one issue at a time.** Each issue's part of a tick is its own: one whose
+  project has no Linear or no repository waits, and a failure is reported for that issue without
+  stopping the others. When no project is ready in Linear, the watcher still runs the factory's
+  other work and says why nothing in Linear is watched; with no project at all it does not fall
+  back to the workspace's old mapping.
+- **Not done.** A project in another Linear workspace can be given its own key only once it
+  exists, and it cannot be created until the shared key reads its Linear project back; the
+  same holds for GitHub.
+
