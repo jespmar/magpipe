@@ -1,5 +1,5 @@
 {
-  "id": "68de116a-7606-4627-9e35-cda692636a42",
+  "id": "631e6bef-6732-404c-a6f8-a7629daac24b",
   "prevId": "f0b34789-6248-4429-ba10-cff090b29ecb",
   "version": "7",
   "dialect": "postgresql",
@@ -403,6 +403,12 @@
         },
         "oauth_client_id": {
           "name": "oauth_client_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "token_client_id": {
+          "name": "token_client_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false

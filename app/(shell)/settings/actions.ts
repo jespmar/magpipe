@@ -1,6 +1,8 @@
 'use server';
 
 import { headers } from 'next/headers';
+import { accessMode } from '@/lib/auth-mode';
+import { originFrom } from '@/lib/request-origin';
 import { DbLockedError, getDb } from '@/lib/db';
 import { loadDemo } from '@/lib/db/seed';
 import { loadFactory, summarizeFactory } from '@/lib/factory';
@@ -25,7 +27,10 @@ import {
   LinearMappingError,
   LinearNotReadyError,
   linearView,
+  cancelLinearSignIn,
+  linearSignInOutcome,
   LinearSignInError,
+  type SignInOutcome,
   removeLinearKey,
   saveLinearClientId,
   saveLinearKey,
@@ -206,27 +211,39 @@ export async function saveLinearKeyAction(
 
 /**
  * Starts Sign in with Linear (D47): the address the browser opens, with this app's own origin
- * for Linear to come back to. The window then watches for the sign-in with `linearStatusAction`.
+ * for Linear to come back to, and the state the window asks about with `linearStatusAction`.
  */
 export async function startLinearSignInAction(): Promise<
-  LinearResult<{ url: string; redirectUri: string }>
+  LinearResult<{ url: string; redirectUri: string; state: string }>
 > {
   try {
     const db = await getDb();
-    const { url, redirectUri } = await startLinearSignIn(db, await ownOrigin());
-    return { ok: true, view: await viewOf(await getLinearSettings(db)), url, redirectUri };
+    const started = await startLinearSignIn(db, await ownOrigin());
+    return { ok: true, view: await viewOf(await getLinearSettings(db)), ...started };
   } catch (err) {
     return linearFailure(err, 'start Sign in with Linear');
   }
 }
 
-/** Linear as Settings shows it now: the window asks while a sign-in is under way. */
-export async function linearStatusAction(): Promise<LinearResult> {
+/** Linear as Settings shows it now, and how the sign-in this window started has gone. */
+export async function linearStatusAction(
+  state?: string,
+): Promise<LinearResult<{ outcome: SignInOutcome | null }>> {
   try {
-    return { ok: true, view: await viewOf(await getLinearSettings(await getDb())) };
+    return {
+      ok: true,
+      view: await viewOf(await getLinearSettings(await getDb())),
+      outcome: state ? linearSignInOutcome(state) : null,
+    };
   } catch (err) {
     return linearFailure(err, 'read the Linear sign-in');
   }
+}
+
+/** Ends a sign-in this window started, so a tab left open in the browser cannot finish it. */
+export async function cancelLinearSignInAction(state: string): Promise<{ ok: true }> {
+  cancelLinearSignIn(state);
+  return { ok: true };
 }
 
 /** Saves the OAuth app's client ID Sign in with Linear uses; empty forgets it. */
@@ -246,16 +263,9 @@ export async function saveLinearClientIdAction(clientId: string): Promise<Linear
   }
 }
 
-/**
- * This app's own origin, as the browser reached it: Linear sends the browser back here. The
- * desktop app answers on localhost; a hosted one behind a proxy says its protocol in a header.
- */
+/** This app's own origin, as the browser reached it: Linear sends the browser back here. */
 async function ownOrigin(): Promise<string> {
-  const h = await headers();
-  const host = h.get('x-forwarded-host') ?? h.get('host') ?? 'localhost';
-  const proto =
-    h.get('x-forwarded-proto') ?? (/^(localhost|127\.0\.0\.1)(:|$)/.test(host) ? 'http' : 'https');
-  return `${proto}://${host}`;
+  return originFrom(await headers(), { desktop: accessMode() === 'desktop' });
 }
 
 export async function removeLinearKeyAction(): Promise<LinearResult> {

@@ -705,6 +705,8 @@ export const linearSettings = z.object({
   expiresAt: z.date().nullable(),
   /** The OAuth app Sign in with Linear uses, when magpipe.env does not name one. Public. */
   oauthClientId: z.string().nullable(),
+  /** The OAuth app the signed-in tokens were issued to: renewals go to the same one. */
+  tokenClientId: z.string().nullable(),
   team: trackerTeam.nullable(),
   /** The label that marks the issues the factory owns. */
   label: trackerRef.nullable(),

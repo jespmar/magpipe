@@ -8,6 +8,7 @@ import { Input } from '@/components/arc/input/input';
 import { Button } from '@/components/ui/Button';
 import {
   checkLinearAction,
+  cancelLinearSignInAction,
   linearStatusAction,
   removeLinearKeyAction,
   saveLinearClientIdAction,
@@ -20,6 +21,8 @@ import type { LinearView } from '@/lib/tracker';
 
 type Props = {
   initial: LinearView;
+  /** Where Linear sends the browser back after Sign in with Linear, as the server builds it. */
+  callbackUrl: string;
   /** When set, nothing can be saved and this says why. */
   disabledReason?: string;
 };
@@ -56,7 +59,7 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
  * and the watcher's pace, with the last check and Check now. Each project maps its own team,
  * Linear project and statuses on its page.
  */
-export function LinearForm({ initial, disabledReason }: Props) {
+export function LinearForm({ initial, callbackUrl, disabledReason }: Props) {
   const router = useRouter();
   const ids = useId();
   const [view, setView] = useState(initial);
@@ -72,11 +75,13 @@ export function LinearForm({ initial, disabledReason }: Props) {
   // Sign in with Linear (D47): the OAuth app's client ID, and a sign-in under way.
   const [clientId, setClientId] = useState('');
   const [clientError, setClientError] = useState<string>();
-  const [signingIn, setSigningIn] = useState<{ url: string; since: number; at: number } | null>(
-    null,
-  );
-  const [callbackUrl, setCallbackUrl] = useState('/api/linear-callback');
-  useEffect(() => setCallbackUrl(`${window.location.origin}/api/linear-callback`), []);
+  const [signingIn, setSigningIn] = useState<{
+    state: string;
+    url: string;
+    at: number;
+    /** The browser kept the new window from opening: the link opens Linear instead. */
+    blocked: boolean;
+  } | null>(null);
 
   // the watcher
   const [seconds, setSeconds] = useState(String(initial.pollSeconds));
@@ -95,27 +100,24 @@ export function LinearForm({ initial, disabledReason }: Props) {
     });
   };
 
-  // While a sign-in is under way, ask every two seconds whether it landed; give up after ten
-  // minutes, when the server forgets it too.
+  // While a sign-in is under way, ask every two seconds how it is going; the server forgets a
+  // sign-in after ten minutes, and says so.
   useEffect(() => {
     if (!signingIn) return;
     const timer = setInterval(async () => {
-      if (Date.now() - signingIn.at > 10 * 60_000) {
-        setSigningIn(null);
-        setKeyNote({ tone: 'error', text: 'The sign-in took too long. Start it again.' });
-        return;
-      }
-      const res = await linearStatusAction();
-      if (!res.ok) return;
-      const landed =
-        res.view.hasKey &&
-        res.view.keyKind === 'oauth' &&
-        new Date(res.view.updatedAt).getTime() > signingIn.since;
-      if (!landed) return;
+      const res = await linearStatusAction(signingIn.state);
+      if (!res.ok || !res.outcome || res.outcome.status === 'waiting') return;
       setSigningIn(null);
       setView(res.view);
-      setKeyNote({ tone: 'done', text: `Signed in with Linear as ${res.view.viewer}.` });
-      router.refresh();
+      const o = res.outcome;
+      setKeyNote(
+        o.status === 'done'
+          ? { tone: 'done', text: `Signed in with Linear as ${o.viewer ?? res.view.viewer}.` }
+          : o.status === 'failed'
+            ? { tone: 'error', text: o.message }
+            : { tone: 'error', text: 'The sign-in ended before Linear came back. Start it again.' },
+      );
+      if (o.status === 'done') router.refresh();
     }, 2000);
     return () => clearInterval(timer);
   }, [signingIn, router]);
@@ -126,17 +128,35 @@ export function LinearForm({ initial, disabledReason }: Props) {
 
   function startSignIn() {
     setKeyNote(null);
+    if (signingIn) void cancelLinearSignInAction(signingIn.state);
+    setSigningIn(null);
+    // A browser only opens a window during the click itself, so open it now and point it at
+    // Linear once the address is known. The desktop app opens Linear in the system browser.
+    const desktop = 'magpipeDesktop' in window;
+    const tab = desktop ? null : window.open('', '_blank');
     run('signin', async () => {
       const res = await startLinearSignInAction();
-      if (!res.ok) return setKeyNote({ tone: 'error', text: res.message });
-      // The desktop app opens this in the system browser; a browser opens a tab.
-      window.open(res.url, '_blank', 'noopener');
-      setSigningIn({
-        url: res.url,
-        since: new Date(res.view.updatedAt).getTime(),
-        at: Date.now(),
-      });
+      if (!res.ok) {
+        tab?.close();
+        return setKeyNote({ tone: 'error', text: res.message });
+      }
+      let blocked = false;
+      if (desktop) {
+        window.open(res.url, '_blank');
+      } else if (tab) {
+        tab.opener = null;
+        tab.location.href = res.url;
+      } else {
+        blocked = true;
+      }
+      setSigningIn({ state: res.state, url: res.url, at: Date.now(), blocked });
     });
+  }
+
+  function cancelSignIn() {
+    if (signingIn) void cancelLinearSignInAction(signingIn.state);
+    setSigningIn(null);
+    setKeyNote({ tone: 'done', text: 'Sign-in cancelled.' });
   }
 
   function saveClientId(value: string) {
@@ -259,9 +279,25 @@ export function LinearForm({ initial, disabledReason }: Props) {
           <>
             <dl className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-[8rem_minmax(0,1fr)]">
               <Fact label="Linear user">{view.viewer}</Fact>
-              <Fact label="Signed in">with Linear; the token renews by itself</Fact>
+              <Fact label="Signed in">
+                {view.signInExpired ? (
+                  <span className="text-amber">with Linear; the sign-in expired</span>
+                ) : (
+                  'with Linear; the token renews by itself'
+                )}
+              </Fact>
             </dl>
             <div className="flex flex-wrap gap-2">
+              {view.signInExpired && view.signInClientId ? (
+                <Button
+                  size="sm"
+                  onClick={startSignIn}
+                  loading={busy === 'signin'}
+                  disabled={pending && busy !== 'signin'}
+                >
+                  Sign in with Linear again
+                </Button>
+              ) : null}
               <Button
                 size="sm"
                 variant="ghost"
@@ -310,10 +346,10 @@ export function LinearForm({ initial, disabledReason }: Props) {
                   <Button
                     size="sm"
                     onClick={startSignIn}
-                    loading={busy === 'signin' || signingIn !== null}
+                    loading={busy === 'signin'}
                     disabled={pending && busy !== 'signin'}
                   >
-                    Sign in with Linear
+                    {signingIn ? 'Start again' : 'Sign in with Linear'}
                   </Button>
                   {signingIn ? (
                     <>
@@ -323,9 +359,9 @@ export function LinearForm({ initial, disabledReason }: Props) {
                         rel="noreferrer"
                         className="text-body-sm text-ink underline underline-offset-2"
                       >
-                        Open Linear again
+                        {signingIn.blocked ? 'Open Linear' : 'Open Linear again'}
                       </a>
-                      <Button size="sm" variant="ghost" onClick={() => setSigningIn(null)}>
+                      <Button size="sm" variant="ghost" onClick={cancelSignIn}>
                         Cancel
                       </Button>
                     </>
@@ -342,9 +378,16 @@ export function LinearForm({ initial, disabledReason }: Props) {
                 </div>
                 {signingIn ? (
                   <p className="text-body-sm text-mute">
-                    Waiting for Linear in your browser. Allow Magpipe there, then come back.
+                    {signingIn.blocked
+                      ? 'Your browser kept Linear from opening in a new window: open it with the link.'
+                      : 'Waiting for Linear in your browser. Allow Magpipe there, then come back.'}
                   </p>
                 ) : null}
+                <p className="text-caption text-mute">
+                  Linear sends the browser back to{' '}
+                  <span className="font-mono text-code break-all">{callbackUrl}</span>; the OAuth
+                  app needs this callback URL.
+                </p>
               </div>
             ) : (
               <form

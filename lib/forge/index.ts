@@ -96,7 +96,50 @@ export async function getForge(
       'GitHub is not set up for this project. Save a token in Settings and give the project its repository.',
     );
   }
-  return { forge: forgeFor(token), repo: s.repo, settings: s };
+  // The GitHub CLI's token may have changed under Magpipe (gh auth switch, gh auth refresh):
+  // a refused one is asked for again once.
+  const fromCli = !s.keyRef && s.keySource === 'gh';
+  return {
+    forge: fromCli ? askAgainWhenRefused(forgeFor(token)) : forgeFor(token),
+    repo: s.repo,
+    settings: s,
+  };
+}
+
+/** A forge whose calls, refused for the token, ask the GitHub CLI for a fresh one and go again. */
+function askAgainWhenRefused(forge: Forge): Forge {
+  return new Proxy(forge, {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver) as unknown;
+      if (typeof value !== 'function') return value;
+      return async (...args: unknown[]) => {
+        try {
+          return await (value as (...a: unknown[]) => Promise<unknown>).apply(target, args);
+        } catch (err) {
+          if (!(err instanceof ForgeError && err.code === 'auth')) throw err;
+          const again = forgeFor(await ghToken(true)) as unknown as Record<
+            PropertyKey,
+            (...a: unknown[]) => Promise<unknown>
+          >;
+          return again[prop as string]!(...args);
+        }
+      };
+    },
+  });
+}
+
+/**
+ * With the GitHub CLI's sign-in, who it is signed in as may change outside Magpipe: Settings
+ * reads it again and keeps the login it shows current. Quiet when GitHub or gh is out of reach.
+ */
+export async function refreshCliViewer(db: Db, s: ForgeSettings): Promise<ForgeSettings> {
+  if (s.keySource !== 'gh' || s.keyRef) return s;
+  try {
+    const login = (await forgeFor(await ghToken()).viewer()).login;
+    return login === s.viewer ? s : await writeForge(db, { viewer: login });
+  } catch {
+    return s;
+  }
 }
 
 async function writeForge(

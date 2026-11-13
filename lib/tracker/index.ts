@@ -5,7 +5,7 @@
  * is saved, so a wrong team or status is named then, not at the first spec.
  */
 import 'server-only';
-import { eq, isNotNull } from 'drizzle-orm';
+import { and, eq, isNotNull } from 'drizzle-orm';
 import type { Db } from '../db';
 import * as t from '../db/schema';
 import { env } from '../env';
@@ -53,6 +53,7 @@ const DEFAULTS: Omit<LinearSettings, 'updatedAt'> = {
   refreshRef: null,
   expiresAt: null,
   oauthClientId: null,
+  tokenClientId: null,
   team: null,
   label: null,
   states: {},
@@ -125,88 +126,162 @@ const RENEW_BEFORE_MS = 10 * 60_000;
  * The credential to call Linear with: a key as saved, or the signed-in access token, renewed
  * with the refresh token when it is close to expiring. One renewal at a time: two checks that
  * both find the token due share the one renewal, since Linear may retire a refresh token once
- * it is used.
+ * it is used. A renewal that cannot reach Linear leaves the current token, while it still works.
  */
 async function linearToken(db: Db, s: LinearSettings): Promise<string | null> {
   if (!s.keyRef) return null;
   if (s.keyKind !== 'oauth' || !s.expiresAt || !s.refreshRef) return readSecret(db, s.keyRef);
-  if (s.expiresAt.getTime() - Date.now() > RENEW_BEFORE_MS) return readSecret(db, s.keyRef);
-  oauthState().renewing ??= renewSignIn(db).finally(() => {
-    oauthState().renewing = undefined;
+  const left = s.expiresAt.getTime() - Date.now();
+  if (left > RENEW_BEFORE_MS) return readSecret(db, s.keyRef);
+  const state = oauthState();
+  state.renewing ??= renewSignIn(db).finally(() => {
+    state.renewing = undefined;
   });
-  return oauthState().renewing!;
+  try {
+    return await state.renewing;
+  } catch (err) {
+    const refused = err instanceof TrackerError && err.code === 'auth';
+    if (!refused && left > 0) return readSecret(db, s.keyRef);
+    throw err;
+  }
 }
 
-/** Renews the signed-in token, storing the new pair before the old one is let go. */
+/** Lets a renewal under way finish before the sign-in is changed, so it cannot undo the change. */
+async function settleRenewal(): Promise<void> {
+  await oauthState().renewing?.catch(() => undefined);
+}
+
+/**
+ * Renews the signed-in token with the OAuth app it was issued to. The new pair is stored only if
+ * the sign-in it renews is still the one in place; if it was signed out or replaced meanwhile,
+ * the new pair is revoked instead.
+ */
 async function renewSignIn(db: Db): Promise<string> {
   const s = await getLinearSettings(db);
-  // Another renewal may have finished first: its token is good.
   if (s.keyKind !== 'oauth' || !s.keyRef) {
     throw new TrackerError('Linear is no longer signed in. Sign in again in Settings.', 'auth');
   }
+  // Another renewal may have finished first: its token is good.
   if (s.expiresAt && s.expiresAt.getTime() - Date.now() > RENEW_BEFORE_MS) {
     return (await readSecret(db, s.keyRef))!;
   }
-  const clientId = s.oauthClientId ?? env.MAGPIPE_LINEAR_CLIENT_ID;
+  const clientId = s.tokenClientId ?? s.oauthClientId ?? env.MAGPIPE_LINEAR_CLIENT_ID;
   const refreshToken = s.refreshRef ? await readSecret(db, s.refreshRef) : null;
   if (!clientId || !refreshToken) {
-    throw new TrackerError(
-      'The Linear sign-in cannot be renewed. Sign in again in Settings.',
-      'auth',
-    );
+    await writeLinear(db, { lastError: SIGN_IN_EXPIRED });
+    throw new TrackerError(SIGN_IN_EXPIRED, 'auth');
   }
   let tokens: LinearTokens;
   try {
     tokens = await refreshTokens({ clientId, refreshToken }, oauthHttp());
   } catch (err) {
     if (err instanceof TrackerError && err.code === 'auth') {
-      await writeLinear(db, {
-        lastError: 'The Linear sign-in expired. Sign in with Linear again in Settings.',
-      });
+      await writeLinear(db, { lastError: SIGN_IN_EXPIRED });
     }
     throw err;
   }
-  await storeSignIn(db, s, tokens, s.viewer);
+  // A refresh answer may leave the refresh token out: the old one stays good (RFC 6749 §6).
+  tokens = { ...tokens, refreshToken: tokens.refreshToken ?? refreshToken };
+  const stored = await storeSignIn(db, s, tokens, {
+    viewer: s.viewer,
+    clientId,
+    onlyIfKeyRef: s.keyRef,
+  });
+  if (!stored) {
+    await revokeIssued(tokens);
+    throw new TrackerError('Linear was signed out while its sign-in was being renewed.', 'auth');
+  }
   return tokens.accessToken;
 }
 
-/** Writes a signed-in token pair, then lets go of the pair before it (D47). */
+/** What Settings says once the sign-in cannot be renewed (D47). */
+export const SIGN_IN_EXPIRED = 'The Linear sign-in expired. Sign in with Linear again in Settings.';
+
+/**
+ * Writes a signed-in token pair, then lets go of the pair before it (D47). With `onlyIfKeyRef`
+ * (a renewal), it writes only while the row still holds that token, and otherwise stores nothing
+ * and answers null.
+ */
 async function storeSignIn(
   db: Db,
   before: LinearSettings,
   tokens: LinearTokens,
-  viewer: string | null,
-): Promise<LinearSettings> {
+  opts: { viewer: string | null; clientId: string; onlyIfKeyRef?: string },
+): Promise<LinearSettings | null> {
   const keyRef = await storeSecret(db, tokens.accessToken);
   const refreshRef = tokens.refreshToken ? await storeSecret(db, tokens.refreshToken) : null;
-  const settings = await writeLinear(db, {
-    keyKind: 'oauth',
+  const patch = {
+    keyKind: 'oauth' as const,
     keyRef,
     keyHint: null,
     refreshRef,
     expiresAt: tokens.expiresAt,
-    viewer,
+    tokenClientId: opts.clientId,
+    viewer: opts.viewer,
     lastError: null,
-  });
+  };
+  let settings: LinearSettings | null;
+  if (opts.onlyIfKeyRef) {
+    const [row] = await db
+      .update(t.linearSettings)
+      .set({ ...patch, updatedAt: new Date() })
+      .where(and(eq(t.linearSettings.id, 'linear'), eq(t.linearSettings.keyRef, opts.onlyIfKeyRef)))
+      .returning();
+    settings = row ?? null;
+  } else {
+    settings = await writeLinear(db, patch);
+  }
+  if (!settings) {
+    for (const ref of [keyRef, refreshRef]) if (ref) await deleteSecret(db, ref);
+    return null;
+  }
   for (const ref of [before.keyRef, before.refreshRef]) {
     if (ref && ref !== keyRef && ref !== refreshRef) await deleteSecret(db, ref);
   }
   return settings;
 }
 
+/** Revokes a pair Magpipe will not keep, best effort: the grant is not left live in Linear. */
+async function revokeIssued(tokens: Pick<LinearTokens, 'accessToken' | 'refreshToken'>) {
+  await revokeToken(tokens.accessToken, { hint: 'access_token', fetchImpl: oauthHttp() });
+  if (tokens.refreshToken) {
+    await revokeToken(tokens.refreshToken, { hint: 'refresh_token', fetchImpl: oauthHttp() });
+  }
+}
+
 // ─── Sign in with Linear (D47) ─────────────────────────────────────────────
 
 type Pending = { verifier: string; redirectUri: string; clientId: string; at: number };
-type OAuthState = { pending: Map<string, Pending>; renewing?: Promise<string> };
+/** How a sign-in ended, for the window that started it. */
+export type SignInOutcome =
+  | { status: 'waiting' }
+  | { status: 'done'; viewer: string | null }
+  | { status: 'failed'; message: string }
+  | { status: 'gone' };
+type OAuthState = {
+  pending: Map<string, Pending>;
+  outcomes: Map<string, { outcome: SignInOutcome; at: number }>;
+  renewing?: Promise<string>;
+};
 
 function oauthState(): OAuthState {
   const holder = globalThis as unknown as { __magpipeLinearOAuth?: OAuthState };
-  holder.__magpipeLinearOAuth ??= { pending: new Map() };
+  holder.__magpipeLinearOAuth ??= { pending: new Map(), outcomes: new Map() };
   return holder.__magpipeLinearOAuth;
 }
 
-/** A sign-in started and not finished in this long is forgotten. */
+/** A sign-in started and not finished in this long is forgotten, and so is how one ended. */
 const SIGN_IN_MS = 10 * 60_000;
+
+function forgetOld(): void {
+  const { pending, outcomes } = oauthState();
+  for (const [k, p] of pending) if (Date.now() - p.at > SIGN_IN_MS) pending.delete(k);
+  for (const [k, o] of outcomes) if (Date.now() - o.at > SIGN_IN_MS) outcomes.delete(k);
+}
+
+function settle(state: string, outcome: SignInOutcome): void {
+  oauthState().outcomes.set(state, { outcome, at: Date.now() });
+}
 
 /** The scripted stand-in answers the sign-in's HTTP outside production (tests swap their own). */
 function oauthHttp(): typeof fetch | undefined {
@@ -224,7 +299,7 @@ export class LinearSignInError extends Error {
 export async function startLinearSignIn(
   db: Db,
   origin: string,
-): Promise<{ url: string; redirectUri: string }> {
+): Promise<{ url: string; redirectUri: string; state: string }> {
   const s = await getLinearSettings(db);
   const clientId = s.oauthClientId ?? env.MAGPIPE_LINEAR_CLIENT_ID;
   if (!clientId) {
@@ -235,45 +310,93 @@ export async function startLinearSignIn(
   const redirectUri = new URL(LINEAR_CALLBACK_PATH, origin).toString();
   const { verifier, challenge } = pkcePair();
   const state = randomState();
-  const { pending } = oauthState();
-  for (const [k, p] of pending) if (Date.now() - p.at > SIGN_IN_MS) pending.delete(k);
-  pending.set(state, { verifier, redirectUri, clientId, at: Date.now() });
+  forgetOld();
+  oauthState().pending.set(state, { verifier, redirectUri, clientId, at: Date.now() });
   // The stand-in comes straight back, as if the operator allowed it at once.
   const url = scripted()
     ? `${redirectUri}?${new URLSearchParams({ code: SCRIPTED_OAUTH_CODE, state })}`
     : authorizeUrl({ clientId, redirectUri, state, challenge });
-  return { url, redirectUri };
+  return { url, redirectUri, state };
 }
+
+/** Takes a started sign-in out, once: null when it was not started here or is too old. */
+function takePending(state: string): Pending | null {
+  const { pending } = oauthState();
+  const started = pending.get(state);
+  pending.delete(state);
+  return started && Date.now() - started.at <= SIGN_IN_MS ? started : null;
+}
+
+const NOT_STARTED =
+  'This sign-in was not started here, or took longer than ten minutes. Start it again from Settings.';
 
 /**
  * Finishes Sign in with Linear when the browser comes back: the state must be one started here
  * and not yet used, the code is traded for tokens with the PKCE verifier, the token is checked
- * with Linear, and only then stored, sealed, in place of any key before it.
+ * with Linear, and only then stored, sealed, in place of any key before it. Tokens that cannot be
+ * kept are revoked; how it ended is kept for the window that started it.
  */
 export async function finishLinearSignIn(
   db: Db,
   input: { code: string; state: string },
 ): Promise<LinearSettings> {
-  const { pending } = oauthState();
-  const started = pending.get(input.state);
-  pending.delete(input.state);
-  if (!started || Date.now() - started.at > SIGN_IN_MS) {
-    throw new LinearSignInError(
-      'This sign-in was not started here, or took longer than ten minutes. Start it again from Settings.',
+  const started = takePending(input.state);
+  if (!started) throw new LinearSignInError(NOT_STARTED);
+  let tokens: LinearTokens | null = null;
+  try {
+    tokens = await exchangeCode(
+      {
+        clientId: started.clientId,
+        redirectUri: started.redirectUri,
+        code: input.code,
+        verifier: started.verifier,
+      },
+      oauthHttp(),
     );
-  }
-  const tokens = await exchangeCode(
-    {
+    const viewer = await trackerFor(tokens.accessToken, 'oauth').viewer();
+    await settleRenewal();
+    const settings = await storeSignIn(db, await getLinearSettings(db), tokens, {
+      viewer: viewer.name,
       clientId: started.clientId,
-      redirectUri: started.redirectUri,
-      code: input.code,
-      verifier: started.verifier,
-    },
-    oauthHttp(),
-  );
-  const viewer = await trackerFor(tokens.accessToken, 'oauth').viewer();
-  const before = await getLinearSettings(db);
-  return storeSignIn(db, before, tokens, viewer.name);
+    });
+    settle(input.state, { status: 'done', viewer: viewer.name });
+    return settings!;
+  } catch (err) {
+    if (tokens) await revokeIssued(tokens);
+    settle(input.state, {
+      status: 'failed',
+      message: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
+}
+
+/**
+ * Linear came back without a code: the operator said no, or Linear could not go on. The sign-in,
+ * if it was started here, ends with a fixed message; nothing Linear sent is repeated.
+ */
+export function refuseLinearSignIn(state: string | null, error: string): string {
+  const message =
+    error === 'access_denied'
+      ? 'Magpipe was not allowed in Linear. You can try again from Settings.'
+      : 'Linear did not finish the sign-in. You can try again from Settings.';
+  if (state && takePending(state)) settle(state, { status: 'failed', message });
+  return message;
+}
+
+/** How a sign-in this window started ended, or that it is still under way. */
+export function linearSignInOutcome(state: string): SignInOutcome {
+  forgetOld();
+  const { pending, outcomes } = oauthState();
+  if (pending.has(state)) return { status: 'waiting' };
+  return outcomes.get(state)?.outcome ?? { status: 'gone' };
+}
+
+/** Ends a sign-in that has not come back, so a tab left open can no longer finish it. */
+export function cancelLinearSignIn(state?: string): void {
+  const { pending } = oauthState();
+  if (state) pending.delete(state);
+  else pending.clear();
 }
 
 /** Saves the OAuth app's client ID for Sign in with Linear (public: PKCE needs no secret). */
@@ -323,6 +446,8 @@ export type LinearView = Omit<LinearSettings, 'keyRef' | 'refreshRef'> & {
   hasKey: boolean;
   ready: boolean;
   signInClientId: string | null;
+  /** Signed in with Linear, and Linear no longer takes it: sign in again (D47). */
+  signInExpired: boolean;
 };
 
 export function linearView(s: LinearSettings): LinearView {
@@ -332,6 +457,10 @@ export function linearView(s: LinearSettings): LinearView {
     hasKey: keyRef !== null,
     ready: keyRef !== null,
     signInClientId: s.oauthClientId ?? env.MAGPIPE_LINEAR_CLIENT_ID ?? null,
+    signInExpired:
+      s.keyKind === 'oauth' &&
+      keyRef !== null &&
+      (s.lastError === SIGN_IN_EXPIRED || /did not accept the sign-in/.test(s.lastError ?? '')),
   };
 }
 
@@ -347,6 +476,9 @@ export async function saveLinearKey(
   const tracker = trackerFor(key);
   const viewer = await tracker.viewer();
   const teams = await tracker.teams();
+  // A sign-in left open in a browser tab can no longer replace this key, nor a renewal undo it.
+  cancelLinearSignIn();
+  await settleRenewal();
   const before = await getLinearSettings(db);
   const keyRef = await storeSecret(db, key);
   const settings = await writeLinear(db, {
@@ -367,10 +499,16 @@ export async function saveLinearKey(
  * best effort. Projects keep their mapping, so a new key picks up where this one left off.
  */
 export async function removeLinearKey(db: Db): Promise<LinearSettings> {
+  cancelLinearSignIn();
+  await settleRenewal();
   const before = await getLinearSettings(db);
   if (before.keyKind === 'oauth' && before.keyRef) {
-    const token = await readSecret(db, before.keyRef);
-    if (token) await revokeToken(token, oauthHttp());
+    const [access, refresh] = await Promise.all([
+      readSecret(db, before.keyRef),
+      before.refreshRef ? readSecret(db, before.refreshRef) : null,
+    ]);
+    // The refresh token too: an access token that expired while the app was closed is refused.
+    if (access) await revokeIssued({ accessToken: access, refreshToken: refresh });
   }
   const settings = await writeLinear(db, {
     keyKind: 'key',
@@ -378,6 +516,7 @@ export async function removeLinearKey(db: Db): Promise<LinearSettings> {
     keyHint: null,
     refreshRef: null,
     expiresAt: null,
+    tokenClientId: null,
     viewer: null,
   });
   for (const ref of [before.keyRef, before.refreshRef]) if (ref) await deleteSecret(db, ref);

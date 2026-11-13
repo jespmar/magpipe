@@ -150,12 +150,23 @@ export function refreshTokens(
   );
 }
 
-/** Tells Linear the token is no longer wanted. Best effort: signing out never waits on it. */
-export async function revokeToken(accessToken: string, fetchImpl?: typeof fetch): Promise<void> {
+/**
+ * Tells Linear a token is no longer wanted, best effort: signing out never waits on it. An
+ * access token goes as the Bearer token too, as Linear's revocation asks; a refresh token goes
+ * in the form, with its hint (RFC 7009).
+ */
+export async function revokeToken(
+  token: string,
+  opts: { hint: 'access_token' | 'refresh_token'; fetchImpl?: typeof fetch },
+): Promise<void> {
   try {
-    await http(fetchImpl)(LINEAR_REVOKE_URL, {
+    await http(opts.fetchImpl)(LINEAR_REVOKE_URL, {
       method: 'POST',
-      headers: { authorization: `Bearer ${accessToken}` },
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        ...(opts.hint === 'access_token' ? { authorization: `Bearer ${token}` } : {}),
+      },
+      body: new URLSearchParams({ token, token_type_hint: opts.hint }).toString(),
       signal: AbortSignal.timeout(10_000),
     });
   } catch {

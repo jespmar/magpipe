@@ -235,6 +235,7 @@ export const linearSettings = pgTable(
     refreshRef: text(),
     expiresAt: timestamptz(),
     oauthClientId: text(),
+    tokenClientId: text(),
     team: jsonb().$type<LinearSettings['team']>(),
     label: jsonb().$type<LinearSettings['label']>(),
     states: jsonb().$type<LinearSettings['states']>().notNull(),

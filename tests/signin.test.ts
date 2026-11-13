@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { openDb, type Db } from '@/lib/db';
 import * as t from '@/lib/db/schema';
 import {
@@ -17,17 +17,23 @@ import {
   forgeToken,
   getForge,
   getForgeSettings,
-  GhCliError,
+  refreshCliViewer,
   removeForgeKey,
   saveForgeKey,
   useForgeFactory,
 } from '@/lib/forge';
-import { forgetGh } from '@/lib/forge/gh-cli';
+import { forgetGh, onlyGhPathSetting } from '@/lib/forge/gh-cli';
+import { deleteSecret, readSecret, storeSecret } from '@/lib/secrets';
+import { originFrom } from '@/lib/request-origin';
+import { GET } from '@/app/api/linear-callback/route';
 import { scriptedForge, scriptedForgeStore } from '@/lib/forge/scripted';
 import { linearTracker } from '@/lib/tracker/linear';
 import {
+  cancelLinearSignIn,
   finishLinearSignIn,
   getLinearSettings,
+  linearSignInOutcome,
+  refuseLinearSignIn,
   getTracker,
   linearView,
   removeLinearKey,
@@ -74,22 +80,33 @@ describe('the GitHub CLI’s sign-in', () => {
   let gh: ReturnType<typeof fakeGh>;
   const previous = { key: process.env.MAGPIPE_SECRET_KEY, gh: process.env.MAGPIPE_GH_PATH };
   const tokensSeen: string[] = [];
+  /** Tokens GitHub no longer takes, and who each token signs in as. */
+  const refused = new Set<string>();
+  const logins: Record<string, string> = {};
 
   beforeAll(async () => {
     process.env.MAGPIPE_SECRET_KEY = SECRET;
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'magpipe-gh-'));
     gh = fakeGh(dir);
     process.env.MAGPIPE_GH_PATH = gh.bin;
-    forgetGh();
+    // Only the fake: a real gh on the machine running the tests is never found or called.
+    onlyGhPathSetting(true);
     useForgeFactory((token) => {
       tokensSeen.push(token);
-      return scriptedForge(token, scriptedForgeStore(true));
+      const forge = scriptedForge(
+        refused.has(token) ? 'ghp_bad_refused' : token,
+        scriptedForgeStore(true),
+      );
+      return {
+        ...forge,
+        viewer: async () => ({ login: logins[token] ?? (await forge.viewer()).login }),
+      };
     });
     ({ db, close } = await openDb('memory://'));
   });
   afterAll(async () => {
     useForgeFactory(undefined);
-    forgetGh();
+    onlyGhPathSetting(false);
     await close();
     fs.rmSync(dir, { recursive: true, force: true });
     for (const [k, v] of [
@@ -141,27 +158,46 @@ describe('the GitHub CLI’s sign-in', () => {
     expect(await forgeToken(db, s)).toBe('gho_from_cli');
     expect(gh.calls()).toBe(asked);
 
-    // A sealed token, as a project carries its own, is used instead of the CLI's.
-    await saveForgeKey(db, 'ghp_project_own');
-    const own = await getForgeSettings(db);
-    expect(own.keySource).toBe('token');
-    expect(await forgeToken(db, own)).toBe('ghp_project_own');
+    // A project's own token is sealed and comes first, while the workspace uses the CLI.
+    const ref = await storeSecret(db, 'ghp_project_own');
+    expect(await forgeToken(db, { keySource: 'gh', keyRef: ref })).toBe('ghp_project_own');
+    expect(gh.calls()).toBe(asked);
+    await deleteSecret(db, ref);
+  });
+
+  it('asks the CLI again when GitHub refuses its token, and Settings shows who it is now', async () => {
+    // The operator switched gh to another account: the cached token is refused.
+    refused.add('gho_from_cli');
+    gh.setToken('gho_second');
+    logins.gho_second = 'second-account';
+    const s = { ...(await getForgeSettings(db)), repo: 'o/app' };
+    const { forge, repo } = await getForge(db, s);
+    await expect(forge.repository(repo)).resolves.toEqual({ defaultBranch: 'main' });
+    expect(tokensSeen.slice(-2)).toEqual(['gho_from_cli', 'gho_second']);
+    // Settings reads who the CLI is signed in as and keeps it current.
+    expect(s.viewer).toBe('scripted-operator');
+    const shown = await refreshCliViewer(db, await getForgeSettings(db));
+    expect(shown.viewer).toBe('second-account');
+    expect((await getForgeSettings(db)).viewer).toBe('second-account');
   });
 
   it('stopping clears the choice, and a missing CLI is named', async () => {
-    gh.setToken('gho_from_cli');
+    gh.setToken('gho_second');
     await chooseGhCli(db);
     const stopped = await removeForgeKey(db);
     expect(stopped).toMatchObject({ keySource: 'token', keyRef: null, viewer: null });
     expect(forgeReady({ ...stopped, repo: 'o/app' })).toBe(false);
 
+    // No gh: named, and a pasted token stays as it was.
+    await saveForgeKey(db, 'ghp_kept_5678');
+    const kept = await getForgeSettings(db);
     process.env.MAGPIPE_GH_PATH = path.join(dir, 'no-such-gh');
     forgetGh();
-    // The machine running the tests may have a real gh on its PATH; only a missing one is named.
-    const err = await chooseGhCli(db).catch((e: unknown) => e);
-    if (err instanceof GhCliError && err.code === 'missing') {
-      expect(err.message).toContain('cli.github.com');
-    }
+    await expect(chooseGhCli(db)).rejects.toMatchObject({
+      code: 'missing',
+      message: expect.stringContaining('cli.github.com'),
+    });
+    expect(await getForgeSettings(db)).toMatchObject({ keySource: 'token', keyRef: kept.keyRef });
     process.env.MAGPIPE_GH_PATH = gh.bin;
     forgetGh();
   });
@@ -176,7 +212,7 @@ describe('Sign in with Linear', () => {
   const keys: string[] = [];
   /** What the fake token endpoint was sent, and what it answers next. */
   const sent: { url: string; form: URLSearchParams; auth: string | null }[] = [];
-  let answer: () => Response = () => new Response(null, { status: 500 });
+  let answer: () => Response | Promise<Response> = () => new Response(null, { status: 500 });
   let n = 0;
   const tokens = () => {
     n++;
@@ -335,18 +371,218 @@ describe('Sign in with Linear', () => {
     );
   });
 
-  it('signing out revokes the token with Linear and forgets both', async () => {
-    const token = keys.at(-1);
+  it('a renewal that cannot reach Linear keeps the current token while it works, and the next call renews', async () => {
+    const current = await readSecret(db, (await getLinearSettings(db)).keyRef!);
+    await db
+      .update(t.linearSettings)
+      .set({ expiresAt: new Date(Date.now() + 5 * 60_000), lastError: null });
+    answer = () => new Response(null, { status: 503 });
+    keys.length = 0;
+    await getTracker(db);
+    expect(keys.at(-1)).toBe(current);
+    // The failed renewal is not remembered: the next call tries again, and renews.
+    answer = tokens;
     sent.length = 0;
-    const settings = await removeLinearKey(db);
+    await getTracker(db);
+    expect(sent.filter((r) => r.form.get('grant_type') === 'refresh_token')).toHaveLength(1);
+    expect(keys.at(-1)).toBe(`lin_oauth_${n}`);
+  });
+
+  it('renews with the OAuth app the tokens came from, and keeps the refresh token when Linear sends none', async () => {
+    await saveLinearClientId(db, 'client_changed_since');
+    const before = await getLinearSettings(db);
+    const refresh = await readSecret(db, before.refreshRef!);
+    await db.update(t.linearSettings).set({ expiresAt: new Date(Date.now() + 60_000) });
+    answer = () => {
+      n++;
+      return Response.json({ access_token: `lin_oauth_${n}`, expires_in: 86_399 });
+    };
+    sent.length = 0;
+    await getTracker(db);
+    const renewal = sent.find((r) => r.form.get('grant_type') === 'refresh_token')!;
+    expect(renewal.form.get('client_id')).toBe('client_abc123');
+    const after = await getLinearSettings(db);
+    expect(await readSecret(db, after.keyRef!)).toBe(`lin_oauth_${n}`);
+    expect(await readSecret(db, after.refreshRef!)).toBe(refresh);
+    await saveLinearClientId(db, 'client_abc123');
+  });
+
+  it('a renewal under way does not bring back a sign-in replaced meanwhile: its pair is revoked', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    answer = async () => {
+      await gate;
+      return tokens();
+    };
+    await db.update(t.linearSettings).set({ expiresAt: new Date(Date.now() + 60_000) });
+    sent.length = 0;
+    const renewing = getTracker(db);
+    await vi.waitFor(() =>
+      expect(sent.some((r) => r.form.get('grant_type') === 'refresh_token')).toBe(true),
+    );
+    // Meanwhile the sign-in is replaced underneath it, as another window pasting a key would
+    // (which lets go of the pair it replaces).
+    const replaced = await getLinearSettings(db);
+    const other = await storeSecret(db, 'lin_api_other_window');
+    await db.update(t.linearSettings).set({ keyKind: 'key', keyRef: other, refreshRef: null });
+    for (const ref of [replaced.keyRef, replaced.refreshRef]) if (ref) await deleteSecret(db, ref);
+    release();
+    await expect(renewing).rejects.toMatchObject({
+      code: 'auth',
+      message: expect.stringContaining('signed out while'),
+    });
+    expect((await getLinearSettings(db)).keyRef).toBe(other);
+    const revoked = sent.filter((r) => r.url === LINEAR_REVOKE_URL).map((r) => r.form.get('token'));
+    expect(revoked).toEqual(expect.arrayContaining([`lin_oauth_${n}`, `lin_refresh_${n}`]));
+    // Nothing of the renewed pair is kept.
+    const kept = await Promise.all(
+      (await db.select({ id: t.secrets.id }).from(t.secrets)).map((r) => readSecret(db, r.id)),
+    );
+    expect(kept).not.toContain(`lin_oauth_${n}`);
+  });
+
+  it('says how each sign-in ended, and a sign-in left open cannot finish once cancelled or replaced', async () => {
+    const origin = 'http://localhost:3210';
+    const refused = await startLinearSignIn(db, origin);
+    expect(linearSignInOutcome(refused.state)).toEqual({ status: 'waiting' });
+    expect(refuseLinearSignIn(refused.state, 'access_denied')).toBe(
+      'Magpipe was not allowed in Linear. You can try again from Settings.',
+    );
+    expect(linearSignInOutcome(refused.state)).toEqual({
+      status: 'failed',
+      message: 'Magpipe was not allowed in Linear. You can try again from Settings.',
+    });
+
+    const cancelled = await startLinearSignIn(db, origin);
+    cancelLinearSignIn(cancelled.state);
+    expect(linearSignInOutcome(cancelled.state)).toEqual({ status: 'gone' });
+    await expect(finishLinearSignIn(db, { code: 'c', state: cancelled.state })).rejects.toThrow(
+      'This sign-in was not started here',
+    );
+
+    // Tokens that cannot be kept are revoked: here Linear refuses the new token's viewer check.
+    const broken = await startLinearSignIn(db, origin);
+    answer = () =>
+      Response.json({
+        access_token: 'lin_api_bad_issued',
+        refresh_token: 'lin_refresh_bad_issued',
+        expires_in: 86_399,
+      });
+    sent.length = 0;
+    await expect(finishLinearSignIn(db, { code: 'c', state: broken.state })).rejects.toMatchObject({
+      code: 'auth',
+    });
+    expect(sent.filter((r) => r.url === LINEAR_REVOKE_URL).map((r) => r.form.get('token'))).toEqual(
+      ['lin_api_bad_issued', 'lin_refresh_bad_issued'],
+    );
+    expect(linearSignInOutcome(broken.state)).toMatchObject({ status: 'failed' });
+
+    // A pasted key ends every sign-in still open.
+    const open = await startLinearSignIn(db, origin);
+    await saveLinearKey(db, 'lin_api_pasted_now');
+    expect(linearSignInOutcome(open.state)).toEqual({ status: 'gone' });
+
+    const done = await startLinearSignIn(db, origin);
+    answer = tokens;
+    await finishLinearSignIn(db, { code: 'c', state: done.state });
+    expect(linearSignInOutcome(done.state)).toEqual({
+      status: 'done',
+      viewer: 'Scripted Operator',
+    });
+  });
+
+  it('forgets a sign-in after ten minutes', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const late = await startLinearSignIn(db, 'http://localhost:3210');
+      vi.setSystemTime(Date.now() + 10 * 60_000 + 1000);
+      await expect(finishLinearSignIn(db, { code: 'c', state: late.state })).rejects.toThrow(
+        'took longer than ten minutes',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('signing out waits for a renewal under way, then revokes both tokens and forgets them', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    answer = async () => {
+      await gate;
+      return tokens();
+    };
+    await db.update(t.linearSettings).set({ expiresAt: new Date(Date.now() + 60_000) });
+    sent.length = 0;
+    const renewing = getTracker(db);
+    await vi.waitFor(() =>
+      expect(sent.some((r) => r.form.get('grant_type') === 'refresh_token')).toBe(true),
+    );
+    const signingOut = removeLinearKey(db);
+    release();
+    await renewing;
+    const settings = await signingOut;
     expect(settings).toMatchObject({
       keyKind: 'key',
       keyRef: null,
       refreshRef: null,
+      tokenClientId: null,
       viewer: null,
     });
-    const revoke = sent.find((r) => r.url === LINEAR_REVOKE_URL);
-    expect(revoke?.auth).toBe(`Bearer ${token}`);
+    // The pair the renewal stored is the one revoked: nothing is left live or kept.
+    const revokes = sent.filter((r) => r.url === LINEAR_REVOKE_URL);
+    expect(revokes.map((r) => [r.form.get('token'), r.form.get('token_type_hint')])).toEqual([
+      [`lin_oauth_${n}`, 'access_token'],
+      [`lin_refresh_${n}`, 'refresh_token'],
+    ]);
+    expect(revokes[0]!.auth).toBe(`Bearer lin_oauth_${n}`);
     expect(await db.select().from(t.secrets)).toHaveLength(0);
+  });
+});
+
+describe('the address Linear comes back to', () => {
+  const bag = (h: Record<string, string>) => ({ get: (k: string) => h[k.toLowerCase()] ?? null });
+
+  it('is the desktop app’s own host, ignoring forwarded headers there', () => {
+    expect(originFrom(bag({ host: '127.0.0.1:3457' }), { desktop: true })).toBe(
+      'http://127.0.0.1:3457',
+    );
+    expect(
+      originFrom(bag({ host: 'localhost:3457', 'x-forwarded-host': 'evil.example' }), {
+        desktop: true,
+      }),
+    ).toBe('http://localhost:3457');
+  });
+
+  it('is a hosted app’s public host, the first of several forwarded values', () => {
+    expect(
+      originFrom(
+        bag({
+          host: 'internal:3000',
+          'x-forwarded-host': 'magpipe.example, proxy.internal',
+          'x-forwarded-proto': 'https, http',
+        }),
+        { desktop: false },
+      ),
+    ).toBe('https://magpipe.example');
+    expect(originFrom(bag({ host: 'magpipe.example' }), { desktop: false })).toBe(
+      'https://magpipe.example',
+    );
+    expect(originFrom(bag({ host: '[::1]:3000' }), { desktop: false })).toBe('http://[::1]:3000');
+  });
+
+  it('answers a refusal with a fixed message, never what the address says', async () => {
+    const res = await GET(
+      new Request(
+        'http://localhost:3457/api/linear-callback?error=access_denied&error_description=Re-enter%20your%20token%20at%20evil.example&state=nope',
+      ),
+    );
+    expect(res.status).toBe(400);
+    const html = await res.text();
+    expect(html).toContain('Magpipe was not allowed in Linear.');
+    expect(html).not.toContain('evil.example');
+    expect(res.headers.get('content-security-policy')).toContain("default-src 'none'");
+    const bare = await GET(new Request('http://localhost:3457/api/linear-callback'));
+    expect(bare.status).toBe(400);
+    expect(await bare.text()).toContain('This address is only for Linear to come back to.');
   });
 });

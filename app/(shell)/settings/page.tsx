@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
+import { headers } from 'next/headers';
 import Link from 'next/link';
+import { originFrom } from '@/lib/request-origin';
 import type { ReactNode } from 'react';
 import { signOut } from '@/auth';
 import { PageHead } from '@/components/ui/PageHead';
@@ -31,7 +33,7 @@ import { formatUsd } from '@/lib/runs-util';
 import { getShellData } from '@/lib/shell-data';
 import { SHORTCUTS } from '@/lib/shortcuts';
 import { anyProjectLinearKey, getLinearSettings, linearView, type LinearView } from '@/lib/tracker';
-import { findGh, forgeView, getForgeSettings, type ForgeView } from '@/lib/forge';
+import { findGh, forgeView, getForgeSettings, refreshCliViewer, type ForgeView } from '@/lib/forge';
 import { capReached, capText, spendToday, type SpendToday } from '@/lib/spend';
 import type { MemoryEntry, Settings } from '@/lib/schemas';
 
@@ -45,7 +47,9 @@ const EMPTY_LINEAR: LinearView = {
   keyKind: 'key',
   expiresAt: null,
   oauthClientId: null,
+  tokenClientId: null,
   signInClientId: null,
+  signInExpired: false,
   team: null,
   label: null,
   states: {},
@@ -92,7 +96,8 @@ async function loadLinear(): Promise<LinearView | null> {
 /** GitHub access as Settings shows it: the shared token (D46). */
 async function loadForge(): Promise<ForgeView | null> {
   try {
-    return forgeView(await getForgeSettings(await getDb()));
+    const db = await getDb();
+    return forgeView(await refreshCliViewer(db, await getForgeSettings(db)));
   } catch {
     return null;
   }
@@ -151,6 +156,8 @@ export default async function SettingsPage() {
       // The GitHub CLI's sign-in can stand in for a token (D47).
       findGh().catch(() => null),
     ]);
+  // Where Linear sends the browser back after Sign in with Linear (D47): what the OAuth app needs.
+  const callbackUrl = `${originFrom(await headers(), { desktop: accessMode() === 'desktop' })}/api/linear-callback`;
   const backendRows: (readonly [string, string])[] =
     backend.backend === 'claude-code'
       ? [
@@ -331,10 +338,11 @@ export default async function SettingsPage() {
             project&rsquo;s Linear project.
           </p>
           {linear ? (
-            <LinearForm initial={linear} />
+            <LinearForm initial={linear} callbackUrl={callbackUrl} />
           ) : (
             <LinearForm
               initial={EMPTY_LINEAR}
+              callbackUrl={callbackUrl}
               disabledReason="Needs the database. See the notice at the top of the page."
             />
           )}
