@@ -98,6 +98,51 @@ test('settings loads the software factory, and Home sends a task to its spec tem
 // Linear (D38), against the scripted tracker the e2e server runs with: a refused key is named on
 // its field, a good one is saved, the mapping is suggested and read back, and a spec that passes
 // review is filed as an issue that Home approves.
+test('signing in without pasting: Sign in with Linear and the GitHub CLI’s sign-in (D47)', async ({
+  page,
+  context,
+}) => {
+  await page.goto('/settings');
+  // Hydrated before the first click: the buttons are the client's.
+  await page.waitForLoadState('networkidle');
+  const linear = page.getByRole('region', { name: 'Linear' });
+  // The OAuth app comes from magpipe.env here, so the button is offered straight away.
+  const signIn = linear.getByRole('button', { name: 'Sign in with Linear' });
+  await expect(signIn).toBeVisible({ timeout: 15_000 });
+  // Linear opens in the browser; the scripted stand-in comes straight back, as if allowed.
+  const opened = context.waitForEvent('page');
+  await signIn.click();
+  const tab = await opened;
+  await expect(tab.getByRole('status')).toContainText(
+    'Signed in to Linear as Scripted Operator. You can close this tab and go back to Magpipe.',
+    { timeout: 15_000 },
+  );
+  await tab.close();
+  // The window notices on its own.
+  await expect(linear.getByText('Signed in with Linear as Scripted Operator.')).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(linear.getByText('with Linear; the token renews by itself')).toBeVisible();
+
+  // The GitHub CLI on this computer (a stand-in here) can stand in for a token.
+  const github = page.getByRole('region', { name: 'GitHub' });
+  await expect(github.getByText(/The GitHub CLI is on this computer/)).toBeVisible();
+  await github.getByRole('button', { name: 'Use the GitHub CLI’s sign-in' }).click();
+  await expect(
+    github.getByText(/Using the GitHub CLI’s sign-in\. GitHub knows it as scripted-operator/),
+  ).toBeVisible({ timeout: 15_000 });
+  await expect(github.getByText('the GitHub CLI’s sign-in', { exact: true })).toBeVisible();
+
+  // Back to pasted keys, which the factory flow after this one uses.
+  await github.getByRole('button', { name: 'Stop using it' }).click();
+  await expect(github.getByRole('button', { name: 'Use the GitHub CLI’s sign-in' })).toBeVisible({
+    timeout: 15_000,
+  });
+  await linear.getByRole('button', { name: 'Sign out' }).click();
+  await expect(linear.getByText(/^Signed out of Linear\./)).toBeVisible({ timeout: 15_000 });
+  await expect(signIn).toBeVisible();
+});
+
 test('settings connects Linear, a passing spec is filed, Home approves it, its goals are filed and the first is built', async ({
   page,
   request,

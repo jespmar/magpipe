@@ -119,7 +119,10 @@ engine and no sign-in on desktop.
   project (`lib/projects.ts`, D45): read Linear and GitHub settings through `linearOf` /
   `forgeOf` with its `projectId`, never `getLinearSettings` / `getForgeSettings` directly, and
   pass the project on to the runs it starts. A project owns its Linear project and repository and
-  inherits nothing but the keys (D46); the workspace rows hold the keys and the watcher.
+  inherits nothing but the keys (D46); the workspace rows hold the keys and the watcher. Reach
+  Linear through `getTracker` and GitHub through `getForge` / `forgeToken`, never `readSecret`
+  on a key ref: the key may be a Sign in with Linear token due for renewal, or the GitHub CLI's
+  sign-in, which is never stored (D47).
 - **Tests never need model credentials.** Unit tests script `ModelClient`; the Playwright
   server runs with `MAGPIPE_MODEL_STUB=scripted` (`lib/engine/stub-model.ts`), which the engine
   ignores in production builds.

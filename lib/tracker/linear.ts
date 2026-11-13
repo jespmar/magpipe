@@ -1,6 +1,7 @@
 /**
  * The Linear tracker (D38): Linear's GraphQL API with a personal API key, sent as the
- * `Authorization` header the way Linear's API documentation asks for personal keys. One request
+ * `Authorization` header the way Linear's API documentation asks for personal keys, or with the
+ * OAuth access token from Sign in with Linear, sent as a Bearer token (D47). One request
  * per operation; the watcher's check is one query, paged only past 100 issues.
  */
 import type { TrackerRef, TrackerTeam } from '../schemas';
@@ -13,11 +14,19 @@ const ISSUE =
 
 type GraphQLError = { message: string; extensions?: { type?: string; code?: string } };
 
+/**
+ * A personal API key goes in `Authorization` as it is; the access token from Sign in with
+ * Linear (D47) goes as a Bearer token.
+ */
+export type LinearCredential = string | { token: string; bearer: true };
+
 export function linearTracker(
-  apiKey: string,
+  credential: LinearCredential,
   fetchImpl: typeof fetch = fetch,
   endpoint = LINEAR_API,
 ): Tracker {
+  const oauth = typeof credential !== 'string';
+  const authorization = oauth ? `Bearer ${credential.token}` : credential;
   async function call<T>(
     query: string,
     variables: Record<string, unknown>,
@@ -27,7 +36,7 @@ export function linearTracker(
     try {
       res = await fetchImpl(endpoint, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: apiKey },
+        headers: { 'content-type': 'application/json', authorization },
         body: JSON.stringify({ query, variables }),
         signal: signal ?? AbortSignal.timeout(20_000),
       });
@@ -48,7 +57,9 @@ export function linearTracker(
       /authenticat/i.test(first?.extensions?.type ?? first?.extensions?.code ?? '');
     if (authFailed) {
       throw new TrackerError(
-        'Linear did not accept the API key. Check that it is a personal API key and not revoked.',
+        oauth
+          ? 'Linear did not accept the sign-in. Sign in with Linear again in Settings.'
+          : 'Linear did not accept the API key. Check that it is a personal API key and not revoked.',
         'auth',
       );
     }

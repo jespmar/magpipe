@@ -23,6 +23,13 @@ const schema = z.object({
   MAGPIPE_MODEL_BACKEND: z.enum(['api', 'claude-code']).optional(),
   /** Where the `claude` command is, when it is not on the login shell's PATH. */
   MAGPIPE_CLAUDE_PATH: z.string().optional(),
+  /**
+   * The Linear OAuth app Sign in with Linear uses (D47): a public client with PKCE, so no
+   * secret. Settings can name one instead.
+   */
+  MAGPIPE_LINEAR_CLIENT_ID: z.string().optional(),
+  /** Where the `gh` command is, when it is not on the login shell's PATH (D47). */
+  MAGPIPE_GH_PATH: z.string().optional(),
   /** This server's own origin for the MCP endpoint, when it is not http://127.0.0.1:$PORT. */
   MAGPIPE_SELF_URL: z.string().optional(),
   AUTH_GITHUB_ID: z.string().optional(),

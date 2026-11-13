@@ -494,9 +494,10 @@ its settings page holds the rest:
   a Linear project.
 - **GitHub.** Its own repository, required, with its merge method and unattended rule (D44). No
   two projects share a repository, and the folder's origin, when it is on GitHub, must be it.
-- **Keys.** One Linear key and one GitHub token in Settings serve every project; a project in
-  another workspace or account carries its own, checked and sealed the same way. Settings holds
-  only the keys and the watcher.
+- **Keys.** One Linear sign-in and one GitHub token in Settings serve every project: Sign in with
+  Linear or a pasted key, and the GitHub CLI's own sign-in or a pasted token (D47). A project in
+  another workspace or account carries its own pasted key, checked and sealed the same way.
+  Settings holds only these and the watcher.
 - **Context for the agents.** A brief every factory agent reads in its prompt on that project's
   runs.
 - **Limits and models.** Builds at once and a daily spend cap of its own, inside the

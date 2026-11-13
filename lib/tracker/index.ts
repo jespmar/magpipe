@@ -22,6 +22,18 @@ import {
 import { PIPELINE_LABELS } from './labels';
 import { linearTracker } from './linear';
 import { scriptedTracker } from './scripted';
+import {
+  authorizeUrl,
+  exchangeCode,
+  LINEAR_CALLBACK_PATH,
+  pkcePair,
+  randomState,
+  refreshTokens,
+  revokeToken,
+  SCRIPTED_OAUTH_CODE,
+  scriptedOAuthFetch,
+  type LinearTokens,
+} from './oauth';
 import { TrackerError, type Tracker, type TrackerState } from './types';
 
 export { TrackerError } from './types';
@@ -37,6 +49,10 @@ const DEFAULTS: Omit<LinearSettings, 'updatedAt'> = {
   keyRef: null,
   keyHint: null,
   viewer: null,
+  keyKind: 'key',
+  refreshRef: null,
+  expiresAt: null,
+  oauthClientId: null,
   team: null,
   label: null,
   states: {},
@@ -49,16 +65,22 @@ const DEFAULTS: Omit<LinearSettings, 'updatedAt'> = {
 
 // ─── the tracker ───────────────────────────────────────────────────────────
 
-type TrackerFactory = (apiKey: string) => Tracker;
+/** How the key came (D47): a personal API key, or Sign in with Linear's access token. */
+export type LinearKeyKind = LinearSettings['keyKind'];
+
+type TrackerFactory = (apiKey: string, kind?: LinearKeyKind) => Tracker;
 
 const g = globalThis as unknown as { __magpipeTrackerFactory?: TrackerFactory };
 
 /** Linear, or the scripted tracker when the environment asks for it outside production. */
-function defaultFactory(apiKey: string): Tracker {
-  if (env.MAGPIPE_TRACKER_STUB === 'scripted' && process.env.NODE_ENV !== 'production') {
-    return scriptedTracker(apiKey);
-  }
-  return linearTracker(apiKey);
+function defaultFactory(apiKey: string, kind: LinearKeyKind = 'key'): Tracker {
+  if (scripted()) return scriptedTracker(apiKey);
+  return linearTracker(kind === 'oauth' ? { token: apiKey, bearer: true } : apiKey);
+}
+
+/** The scripted tracker stands in for Linear, sign-in included, outside production only. */
+function scripted(): boolean {
+  return env.MAGPIPE_TRACKER_STUB === 'scripted' && process.env.NODE_ENV !== 'production';
 }
 
 /** Tests swap the tracker; `undefined` puts Linear back. */
@@ -66,8 +88,8 @@ export function useTrackerFactory(factory: TrackerFactory | undefined): void {
   g.__magpipeTrackerFactory = factory;
 }
 
-export function trackerFor(apiKey: string): Tracker {
-  return (g.__magpipeTrackerFactory ?? defaultFactory)(apiKey);
+export function trackerFor(apiKey: string, kind: LinearKeyKind = 'key'): Tracker {
+  return (g.__magpipeTrackerFactory ?? defaultFactory)(apiKey, kind);
 }
 
 /**
@@ -84,12 +106,179 @@ export class LinearNotReadyError extends Error {
   readonly code = 'linear_not_ready';
 }
 
-/** The tracker for the saved key. */
+/** The tracker for the saved key, or the signed-in token, renewed first when it is due (D47). */
 export async function getTracker(db: Db, settings?: LinearSettings): Promise<Tracker> {
   const s = settings ?? (await getLinearSettings(db));
-  const key = s.keyRef ? await readSecret(db, s.keyRef) : null;
-  if (!key) throw new LinearNotReadyError('No Linear API key is saved. Add one in Settings.');
-  return trackerFor(key);
+  const key = await linearToken(db, s);
+  if (!key) {
+    throw new LinearNotReadyError(
+      'Linear is not connected. Sign in with Linear or add a key in Settings.',
+    );
+  }
+  return trackerFor(key, s.keyKind);
+}
+
+/** An access token is renewed when it has less than this left. */
+const RENEW_BEFORE_MS = 10 * 60_000;
+
+/**
+ * The credential to call Linear with: a key as saved, or the signed-in access token, renewed
+ * with the refresh token when it is close to expiring. One renewal at a time: two checks that
+ * both find the token due share the one renewal, since Linear may retire a refresh token once
+ * it is used.
+ */
+async function linearToken(db: Db, s: LinearSettings): Promise<string | null> {
+  if (!s.keyRef) return null;
+  if (s.keyKind !== 'oauth' || !s.expiresAt || !s.refreshRef) return readSecret(db, s.keyRef);
+  if (s.expiresAt.getTime() - Date.now() > RENEW_BEFORE_MS) return readSecret(db, s.keyRef);
+  oauthState().renewing ??= renewSignIn(db).finally(() => {
+    oauthState().renewing = undefined;
+  });
+  return oauthState().renewing!;
+}
+
+/** Renews the signed-in token, storing the new pair before the old one is let go. */
+async function renewSignIn(db: Db): Promise<string> {
+  const s = await getLinearSettings(db);
+  // Another renewal may have finished first: its token is good.
+  if (s.keyKind !== 'oauth' || !s.keyRef) {
+    throw new TrackerError('Linear is no longer signed in. Sign in again in Settings.', 'auth');
+  }
+  if (s.expiresAt && s.expiresAt.getTime() - Date.now() > RENEW_BEFORE_MS) {
+    return (await readSecret(db, s.keyRef))!;
+  }
+  const clientId = s.oauthClientId ?? env.MAGPIPE_LINEAR_CLIENT_ID;
+  const refreshToken = s.refreshRef ? await readSecret(db, s.refreshRef) : null;
+  if (!clientId || !refreshToken) {
+    throw new TrackerError(
+      'The Linear sign-in cannot be renewed. Sign in again in Settings.',
+      'auth',
+    );
+  }
+  let tokens: LinearTokens;
+  try {
+    tokens = await refreshTokens({ clientId, refreshToken }, oauthHttp());
+  } catch (err) {
+    if (err instanceof TrackerError && err.code === 'auth') {
+      await writeLinear(db, {
+        lastError: 'The Linear sign-in expired. Sign in with Linear again in Settings.',
+      });
+    }
+    throw err;
+  }
+  await storeSignIn(db, s, tokens, s.viewer);
+  return tokens.accessToken;
+}
+
+/** Writes a signed-in token pair, then lets go of the pair before it (D47). */
+async function storeSignIn(
+  db: Db,
+  before: LinearSettings,
+  tokens: LinearTokens,
+  viewer: string | null,
+): Promise<LinearSettings> {
+  const keyRef = await storeSecret(db, tokens.accessToken);
+  const refreshRef = tokens.refreshToken ? await storeSecret(db, tokens.refreshToken) : null;
+  const settings = await writeLinear(db, {
+    keyKind: 'oauth',
+    keyRef,
+    keyHint: null,
+    refreshRef,
+    expiresAt: tokens.expiresAt,
+    viewer,
+    lastError: null,
+  });
+  for (const ref of [before.keyRef, before.refreshRef]) {
+    if (ref && ref !== keyRef && ref !== refreshRef) await deleteSecret(db, ref);
+  }
+  return settings;
+}
+
+// ─── Sign in with Linear (D47) ─────────────────────────────────────────────
+
+type Pending = { verifier: string; redirectUri: string; clientId: string; at: number };
+type OAuthState = { pending: Map<string, Pending>; renewing?: Promise<string> };
+
+function oauthState(): OAuthState {
+  const holder = globalThis as unknown as { __magpipeLinearOAuth?: OAuthState };
+  holder.__magpipeLinearOAuth ??= { pending: new Map() };
+  return holder.__magpipeLinearOAuth;
+}
+
+/** A sign-in started and not finished in this long is forgotten. */
+const SIGN_IN_MS = 10 * 60_000;
+
+/** The scripted stand-in answers the sign-in's HTTP outside production (tests swap their own). */
+function oauthHttp(): typeof fetch | undefined {
+  return scripted() ? scriptedOAuthFetch : undefined;
+}
+
+export class LinearSignInError extends Error {
+  readonly code = 'validation';
+}
+
+/**
+ * Starts Sign in with Linear: a one-time state and PKCE pair kept here, and the address the
+ * browser opens. `origin` is this app's own, where Linear sends the browser back.
+ */
+export async function startLinearSignIn(
+  db: Db,
+  origin: string,
+): Promise<{ url: string; redirectUri: string }> {
+  const s = await getLinearSettings(db);
+  const clientId = s.oauthClientId ?? env.MAGPIPE_LINEAR_CLIENT_ID;
+  if (!clientId) {
+    throw new LinearSignInError(
+      'Sign in with Linear needs an OAuth app. Add its client ID here first, or paste a personal API key.',
+    );
+  }
+  const redirectUri = new URL(LINEAR_CALLBACK_PATH, origin).toString();
+  const { verifier, challenge } = pkcePair();
+  const state = randomState();
+  const { pending } = oauthState();
+  for (const [k, p] of pending) if (Date.now() - p.at > SIGN_IN_MS) pending.delete(k);
+  pending.set(state, { verifier, redirectUri, clientId, at: Date.now() });
+  // The stand-in comes straight back, as if the operator allowed it at once.
+  const url = scripted()
+    ? `${redirectUri}?${new URLSearchParams({ code: SCRIPTED_OAUTH_CODE, state })}`
+    : authorizeUrl({ clientId, redirectUri, state, challenge });
+  return { url, redirectUri };
+}
+
+/**
+ * Finishes Sign in with Linear when the browser comes back: the state must be one started here
+ * and not yet used, the code is traded for tokens with the PKCE verifier, the token is checked
+ * with Linear, and only then stored, sealed, in place of any key before it.
+ */
+export async function finishLinearSignIn(
+  db: Db,
+  input: { code: string; state: string },
+): Promise<LinearSettings> {
+  const { pending } = oauthState();
+  const started = pending.get(input.state);
+  pending.delete(input.state);
+  if (!started || Date.now() - started.at > SIGN_IN_MS) {
+    throw new LinearSignInError(
+      'This sign-in was not started here, or took longer than ten minutes. Start it again from Settings.',
+    );
+  }
+  const tokens = await exchangeCode(
+    {
+      clientId: started.clientId,
+      redirectUri: started.redirectUri,
+      code: input.code,
+      verifier: started.verifier,
+    },
+    oauthHttp(),
+  );
+  const viewer = await trackerFor(tokens.accessToken, 'oauth').viewer();
+  const before = await getLinearSettings(db);
+  return storeSignIn(db, before, tokens, viewer.name);
+}
+
+/** Saves the OAuth app's client ID for Sign in with Linear (public: PKCE needs no secret). */
+export async function saveLinearClientId(db: Db, clientId: string | null): Promise<LinearSettings> {
+  return writeLinear(db, { oauthClientId: clientId?.trim() || null });
 }
 
 // ─── the settings row ──────────────────────────────────────────────────────
@@ -125,12 +314,25 @@ export async function anyProjectLinearKey(db: Db): Promise<boolean> {
   return row !== undefined;
 }
 
-/** What Settings shows: everything but the key. `ready` means a check can run: there is a key. */
-export type LinearView = Omit<LinearSettings, 'keyRef'> & { hasKey: boolean; ready: boolean };
+/**
+ * What Settings shows: everything but the key and the refresh token. `ready` means a check can
+ * run: there is a key. `signInClientId` is the OAuth app Sign in with Linear uses (D47): the one
+ * Settings holds, else magpipe.env's, else none.
+ */
+export type LinearView = Omit<LinearSettings, 'keyRef' | 'refreshRef'> & {
+  hasKey: boolean;
+  ready: boolean;
+  signInClientId: string | null;
+};
 
 export function linearView(s: LinearSettings): LinearView {
-  const { keyRef, ...rest } = s;
-  return { ...rest, hasKey: keyRef !== null, ready: keyRef !== null };
+  const { keyRef, refreshRef: _refresh, ...rest } = s;
+  return {
+    ...rest,
+    hasKey: keyRef !== null,
+    ready: keyRef !== null,
+    signInClientId: s.oauthClientId ?? env.MAGPIPE_LINEAR_CLIENT_ID ?? null,
+  };
 }
 
 /**
@@ -148,20 +350,37 @@ export async function saveLinearKey(
   const before = await getLinearSettings(db);
   const keyRef = await storeSecret(db, key);
   const settings = await writeLinear(db, {
+    keyKind: 'key',
     keyRef,
     keyHint: key.slice(-4),
+    refreshRef: null,
+    expiresAt: null,
     viewer: viewer.name,
     lastError: null,
   });
-  if (before.keyRef) await deleteSecret(db, before.keyRef);
+  for (const ref of [before.keyRef, before.refreshRef]) if (ref) await deleteSecret(db, ref);
   return { settings, teams };
 }
 
-/** Forgets the key. The mapping stays, so a new key picks up where this one left off. */
+/**
+ * Forgets the key, or signs out of Linear (D47): a signed-in token is revoked with Linear first,
+ * best effort. Projects keep their mapping, so a new key picks up where this one left off.
+ */
 export async function removeLinearKey(db: Db): Promise<LinearSettings> {
   const before = await getLinearSettings(db);
-  const settings = await writeLinear(db, { keyRef: null, keyHint: null, viewer: null });
-  if (before.keyRef) await deleteSecret(db, before.keyRef);
+  if (before.keyKind === 'oauth' && before.keyRef) {
+    const token = await readSecret(db, before.keyRef);
+    if (token) await revokeToken(token, oauthHttp());
+  }
+  const settings = await writeLinear(db, {
+    keyKind: 'key',
+    keyRef: null,
+    keyHint: null,
+    refreshRef: null,
+    expiresAt: null,
+    viewer: null,
+  });
+  for (const ref of [before.keyRef, before.refreshRef]) if (ref) await deleteSecret(db, ref);
   return settings;
 }
 

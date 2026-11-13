@@ -1,5 +1,6 @@
 'use server';
 
+import { headers } from 'next/headers';
 import { DbLockedError, getDb } from '@/lib/db';
 import { loadDemo } from '@/lib/db/seed';
 import { loadFactory, summarizeFactory } from '@/lib/factory';
@@ -24,8 +25,11 @@ import {
   LinearMappingError,
   LinearNotReadyError,
   linearView,
+  LinearSignInError,
   removeLinearKey,
+  saveLinearClientId,
   saveLinearKey,
+  startLinearSignIn,
   saveWatcher,
   TrackerError,
   trackerMessage,
@@ -37,8 +41,10 @@ import {
   forgeMessage,
   ForgeNotReadyError,
   forgeView,
+  GhCliError,
   removeForgeKey,
   saveForgeKey,
+  chooseGhCli,
   type ForgeView,
 } from '@/lib/forge';
 
@@ -160,7 +166,6 @@ export async function loadFactoryAction(
 
 // ─── Linear (D38) ──────────────────────────────────────────────────────────
 
-/** What every Linear action answers: the settings as Settings shows them, or what went wrong. */
 /** What Settings shows of Linear: Check now also runs on projects' own keys (D46). */
 async function viewOf(settings: LinearSettings): Promise<LinearView> {
   const view = linearView(settings);
@@ -175,7 +180,9 @@ async function linearFailure(err: unknown, what: string): Promise<{ ok: false; m
   if (err instanceof TrackerError || err instanceof LinearNotReadyError) {
     return { ok: false, message: err.message };
   }
-  if (err instanceof LinearMappingError) return { ok: false, message: err.message };
+  if (err instanceof LinearMappingError || err instanceof LinearSignInError) {
+    return { ok: false, message: err.message };
+  }
   console.error(`[settings] ${what} failed:`, err);
   return { ok: false, message: trackerMessage(err) };
 }
@@ -195,6 +202,60 @@ export async function saveLinearKeyAction(
     const failed = await linearFailure(err, 'save the Linear key');
     return { ...failed, field: 'key' };
   }
+}
+
+/**
+ * Starts Sign in with Linear (D47): the address the browser opens, with this app's own origin
+ * for Linear to come back to. The window then watches for the sign-in with `linearStatusAction`.
+ */
+export async function startLinearSignInAction(): Promise<
+  LinearResult<{ url: string; redirectUri: string }>
+> {
+  try {
+    const db = await getDb();
+    const { url, redirectUri } = await startLinearSignIn(db, await ownOrigin());
+    return { ok: true, view: await viewOf(await getLinearSettings(db)), url, redirectUri };
+  } catch (err) {
+    return linearFailure(err, 'start Sign in with Linear');
+  }
+}
+
+/** Linear as Settings shows it now: the window asks while a sign-in is under way. */
+export async function linearStatusAction(): Promise<LinearResult> {
+  try {
+    return { ok: true, view: await viewOf(await getLinearSettings(await getDb())) };
+  } catch (err) {
+    return linearFailure(err, 'read the Linear sign-in');
+  }
+}
+
+/** Saves the OAuth app's client ID Sign in with Linear uses; empty forgets it. */
+export async function saveLinearClientIdAction(clientId: string): Promise<LinearResult> {
+  const clean = clientId.trim();
+  if (clean && !/^[\w-]{8,128}$/.test(clean)) {
+    return {
+      ok: false,
+      message: 'That does not look like a client ID: copy it from Linear.',
+      field: 'clientId',
+    };
+  }
+  try {
+    return { ok: true, view: await viewOf(await saveLinearClientId(await getDb(), clean || null)) };
+  } catch (err) {
+    return linearFailure(err, 'save the client ID');
+  }
+}
+
+/**
+ * This app's own origin, as the browser reached it: Linear sends the browser back here. The
+ * desktop app answers on localhost; a hosted one behind a proxy says its protocol in a header.
+ */
+async function ownOrigin(): Promise<string> {
+  const h = await headers();
+  const host = h.get('x-forwarded-host') ?? h.get('host') ?? 'localhost';
+  const proto =
+    h.get('x-forwarded-proto') ?? (/^(localhost|127\.0\.0\.1)(:|$)/.test(host) ? 'http' : 'https');
+  return `${proto}://${host}`;
 }
 
 export async function removeLinearKeyAction(): Promise<LinearResult> {
@@ -244,7 +305,7 @@ export type ForgeResult<T = object> =
 
 async function forgeFailure(err: unknown, what: string): Promise<{ ok: false; message: string }> {
   if (err instanceof DbLockedError) return { ok: false, message: LOCKED };
-  if (err instanceof ForgeError || err instanceof ForgeNotReadyError) {
+  if (err instanceof ForgeError || err instanceof ForgeNotReadyError || err instanceof GhCliError) {
     return { ok: false, message: err.message };
   }
   console.error(`[settings] ${what} failed:`, err);
@@ -259,6 +320,15 @@ export async function saveForgeKeyAction(input: ForgeKeyInput): Promise<ForgeRes
     return { ok: true, view: forgeView(await saveForgeKey(await getDb(), parsed.data.key)) };
   } catch (err) {
     return { ...(await forgeFailure(err, 'save the GitHub token')), field: 'key' };
+  }
+}
+
+/** Uses the GitHub CLI's sign-in from now on, once GitHub accepts its token (D47). */
+export async function chooseGhCliAction(): Promise<ForgeResult> {
+  try {
+    return { ok: true, view: forgeView(await chooseGhCli(await getDb())) };
+  } catch (err) {
+    return forgeFailure(err, 'use the GitHub CLI');
   }
 }
 

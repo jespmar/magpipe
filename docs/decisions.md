@@ -1164,3 +1164,42 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
   exists, and it cannot be created until the shared key reads its Linear project back; the
   same holds for GitHub.
 
+## D47 · Signing in without pasting: the GitHub CLI and Sign in with Linear
+
+- **Why.** The operator asked to use what is already signed in on their computer, the Linear MCP
+  and the GitHub CLI, instead of pasting a Linear key and a GitHub token.
+- **GitHub: the GitHub CLI's own sign-in.** Settings → GitHub offers it beside the pasted token
+  (`forge_settings.key_source`, `token` or `gh`, migration 0014). Chosen, Magpipe asks `gh auth
+  token --hostname github.com` for a token when it needs one, keeps it in memory for five minutes,
+  and stores nothing; signing out of `gh` signs Magpipe out. `gh` is looked for at
+  `MAGPIPE_GH_PATH`, in a login shell and where its installers put it, as `claude` is (D22),
+  since an app started from the Dock has no shell `PATH`. A project's own token (D45) still comes
+  first. Goal branches were already pushed with the operator's own git credentials. The CLI's
+  token reaches every repository the account can, wider than the fine-grained token Settings
+  suggests; that is the operator's choice to make, and Settings says what it uses.
+- **Linear: Sign in with Linear, not the MCP server.** D38 chose Linear's API over its MCP server
+  for the watcher's one precise query, and that still holds: MCP tools are shaped for a model to
+  read and may change, and an MCP client would still keep an OAuth token. What the operator wanted
+  from MCP, no key to paste, comes from Linear's own OAuth: OAuth 2.0 with PKCE (S256), so the
+  desktop app needs an OAuth app's client ID and no secret. The client ID comes from
+  `MAGPIPE_LINEAR_CLIENT_ID` in magpipe.env or is entered once in Settings, where the callback
+  URL to register is shown. Sign in opens Linear in the system browser; Linear sends it back to
+  `/api/linear-callback` on the app's own origin, which is public (the system browser carries no
+  desktop cookie) and safe by its state: one started here in the last ten minutes, used once,
+  with the PKCE verifier only this server holds; the desktop Host check still applies. The code
+  is traded for tokens, the token is checked with Linear, and the pair is stored sealed
+  (`linear_settings.key_kind`, `refresh_ref`, `expires_at`, `oauth_client_id`). Calls send it as
+  a Bearer token; it is renewed with the refresh token when it has under ten minutes left, one
+  renewal at a time, the new pair stored before the old is let go; a refused renewal asks the
+  operator to sign in again. Signing out revokes it with Linear, best effort. Settings watches
+  for the sign-in to land and says so.
+- **The pasted key and token stay**, as the fallback and for projects in another workspace or
+  account, whose own keys (D45) are always pasted ones.
+- **Tests.** A fake `gh` script (unit tests, and `e2e/stubs/gh` for the e2e server) and a fake
+  token endpoint (`useLinearOAuthFetch`); the scripted tracker's stand-in comes straight back from
+  the sign-in with a scripted code, so the e2e test runs the whole flow through the screens.
+- **Not done.** Neither has been tried against live Linear or a real `gh` sign-in from here
+  (D38): the OAuth endpoints and parameters follow Linear's published OAuth documentation. The
+  desktop app's port must match the callback URL registered with Linear; it is stable unless the
+  preferred port is taken at launch, and Settings shows the URL in use.
+
