@@ -94,6 +94,21 @@ const LOOKUP_MS = 60_000;
 /** A token from `gh` is used for this long before `gh` is asked again. */
 const TOKEN_MS = 5 * 60_000;
 
+/**
+ * Tests limit the search to MAGPIPE_GH_PATH, so a real `gh` on the machine running them is never
+ * found or called; `false` puts the full search back.
+ */
+export function onlyGhPathSetting(only: boolean): void {
+  (globalThis as unknown as { __magpipeGhOnlySetting?: boolean }).__magpipeGhOnlySetting = only;
+  forgetGh();
+}
+
+function searchOnlySetting(): boolean {
+  return Boolean(
+    (globalThis as unknown as { __magpipeGhOnlySetting?: boolean }).__magpipeGhOnlySetting,
+  );
+}
+
 /** The `gh` command on this computer, or null. */
 export async function findGh(fresh = false): Promise<string | null> {
   const cached = g.__magpipeGhPath;
@@ -101,8 +116,9 @@ export async function findGh(fresh = false): Promise<string | null> {
   let found: string | null = null;
   for (const file of [
     ...(ghPathSetting() ? [ghPathSetting()!] : []),
-    ...[await fromLoginShell()].filter((x): x is string => Boolean(x)),
-    ...usualPlaces(),
+    ...(searchOnlySetting()
+      ? []
+      : [...[await fromLoginShell()].filter((x): x is string => Boolean(x)), ...usualPlaces()]),
   ]) {
     if (await executable(file)) {
       found = file;

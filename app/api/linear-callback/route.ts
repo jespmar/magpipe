@@ -1,6 +1,11 @@
 import { getDb } from '@/lib/db';
 import { accessMode } from '@/lib/auth-mode';
-import { finishLinearSignIn, LinearSignInError, trackerMessage } from '@/lib/tracker';
+import {
+  finishLinearSignIn,
+  LinearSignInError,
+  refuseLinearSignIn,
+  trackerMessage,
+} from '@/lib/tracker';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,16 +25,13 @@ export async function GET(req: Request) {
       return page('Unexpected host.', 421);
     }
   }
+  const state = url.searchParams.get('state');
   const denied = url.searchParams.get('error');
   if (denied) {
-    const why = url.searchParams.get('error_description') ?? denied;
-    return page(
-      `Linear did not sign you in: ${why}. You can close this tab and try again from Magpipe.`,
-      400,
-    );
+    // A fixed message: nothing in the address is repeated on this page.
+    return page(`${refuseLinearSignIn(state, denied)} You can close this tab.`, 400);
   }
   const code = url.searchParams.get('code');
-  const state = url.searchParams.get('state');
   if (!code || !state) return page('This address is only for Linear to come back to.', 400);
   try {
     const settings = await finishLinearSignIn(await getDb(), { code, state });
