@@ -696,6 +696,15 @@ export const linearSettings = z.object({
   keyHint: z.string().nullable(),
   /** Who the key belongs to, as Linear said when it was saved. */
   viewer: z.string().nullable(),
+  /**
+   * How the key came (D47): a pasted personal API key, or Sign in with Linear, whose access
+   * token is sent as a Bearer token and renewed from `refreshRef` before `expiresAt`.
+   */
+  keyKind: z.enum(['key', 'oauth']),
+  refreshRef: z.string().nullable(),
+  expiresAt: z.date().nullable(),
+  /** The OAuth app Sign in with Linear uses, when magpipe.env does not name one. Public. */
+  oauthClientId: z.string().nullable(),
   team: trackerTeam.nullable(),
   /** The label that marks the issues the factory owns. */
   label: trackerRef.nullable(),
@@ -788,6 +797,11 @@ export const mergeMethods = ['squash', 'merge', 'rebase'] as const;
 /** GitHub access for the factory (D42): one row, `github`. The token is a sealed secret. */
 export const forgeSettings = z.object({
   id: z.literal('github'),
+  /**
+   * Where the token comes from (D47): a pasted token, sealed in `keyRef`, or the GitHub CLI's
+   * own sign-in, asked for with `gh auth token` whenever one is needed and never stored.
+   */
+  keySource: z.enum(['token', 'gh']),
   keyRef: z.string().nullable(),
   keyHint: z.string().nullable(),
   /** Who the token belongs to, as GitHub said when it was saved. */

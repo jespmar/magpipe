@@ -229,6 +229,12 @@ export const linearSettings = pgTable(
     keyRef: text(),
     keyHint: text(),
     viewer: text(),
+    keyKind: text({ enum: ['key', 'oauth'] })
+      .notNull()
+      .default('key'),
+    refreshRef: text(),
+    expiresAt: timestamptz(),
+    oauthClientId: text(),
     team: jsonb().$type<LinearSettings['team']>(),
     label: jsonb().$type<LinearSettings['label']>(),
     states: jsonb().$type<LinearSettings['states']>().notNull(),
@@ -284,6 +290,9 @@ export const forgeSettings = pgTable(
   'forge_settings',
   {
     id: text().$type<'github'>().primaryKey().default('github'),
+    keySource: text({ enum: ['token', 'gh'] })
+      .notNull()
+      .default('token'),
     keyRef: text(),
     keyHint: text(),
     viewer: text(),

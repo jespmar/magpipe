@@ -27,13 +27,22 @@ import {
   readBackMapping,
   suggestStates,
   trackerFor,
+  getTracker,
   type Tracker,
   type TrackerState,
 } from './tracker';
 import type { PipelineState, TrackerRef, TrackerTeam } from './schemas';
-import { ForgeError, forgeFor, forgeReady, getForgeSettings, repoFromRemote } from './forge';
+import {
+  ForgeError,
+  forgeFor,
+  forgeReady,
+  forgeToken,
+  getForgeSettings,
+  GhCliError,
+  hasForgeToken,
+  repoFromRemote,
+} from './forge';
 import { originUrl } from './worktrees';
-import { readSecret } from './secrets';
 
 export class ProjectError extends Error {
   readonly code = 'validation';
@@ -84,9 +93,12 @@ export async function projectLinear(
 ): Promise<LinearSettings> {
   const ws = await getLinearSettings(db);
   const own = project?.linear.project ? project.linear : null;
+  // A project's own key is always a pasted one; else the shared key or sign-in (D47).
+  const ownKey = project?.linearKeyRef ?? null;
   return {
     ...ws,
-    keyRef: project?.linearKeyRef ?? ws.keyRef,
+    keyRef: ownKey ?? ws.keyRef,
+    ...(ownKey ? { keyKind: 'key' as const, refreshRef: null, expiresAt: null } : {}),
     team: own?.team ?? null,
     label: own?.label ?? null,
     states: own?.states ?? {},
@@ -142,7 +154,7 @@ export async function projectView(db: Db, project: FactoryProject): Promise<Proj
   if (!linear.keyRef) gaps.push('linear_key');
   // The Linear project and its mapping, whatever the key: a missing key is its own gap.
   if (!linearReady({ ...linear, keyRef: linear.keyRef ?? 'any' })) gaps.push('linear_project');
-  if (!forge.keyRef) gaps.push('github_token');
+  if (!hasForgeToken(forge)) gaps.push('github_token');
   if (!forge.repo) gaps.push('github_repo');
   return {
     ...rest,
@@ -271,8 +283,6 @@ export async function saveProject(
   // Linear: the project's own team and Linear project, read back with the key it will use.
   let linear: FactoryProject['linear'];
   let tracker: Tracker;
-  const ws = await getLinearSettings(db);
-  const linearKey = current?.linearKeyRef ?? ws.keyRef;
   {
     const clash = others.find((p) => p.linear.project?.id === input.linear.projectId);
     if (clash) {
@@ -281,9 +291,10 @@ export async function saveProject(
         'linear',
       );
     }
-    const key = linearKey ? await readSecret(db, linearKey) : null;
-    if (!key) throw new ProjectError(noKey('Linear key', current), 'linear');
-    tracker = trackerFor(key);
+    // The key or sign-in this project will use: its own, else the shared one.
+    const keyed = await projectLinear(db, current);
+    if (!keyed.keyRef) throw new ProjectError(noKey('Linear key', current), 'linear');
+    tracker = await getTracker(db, keyed);
     try {
       const read = await readBackMapping(tracker, {
         teamId: input.linear.teamId,
@@ -334,9 +345,10 @@ export async function saveProject(
         'github',
       );
     }
-    const fs = await getForgeSettings(db);
-    const ref = current?.githubKeyRef ?? fs.keyRef;
-    const token = ref ? await readSecret(db, ref) : null;
+    // The token this project will use: its own, else the shared one or the GitHub CLI's (D47).
+    const token = await forgeToken(db, await projectForge(db, current)).catch((err: unknown) => {
+      throw err instanceof GhCliError ? new ProjectError(err.message, 'github') : err;
+    });
     if (!token) throw new ProjectError(noKey('GitHub token', current), 'github');
     const { defaultBranch } = await forgeFor(token)
       .repository(input.github.repo)
@@ -555,14 +567,18 @@ export async function forgeOf(
   return { project, settings: await projectForge(db, project) };
 }
 
-/** The tracker a project's editor reads Linear with: its own key, else the workspace's. */
+/** The tracker a project's editor reads Linear with: its own key, else the shared one. */
 async function editorTracker(db: Db, id: string | null): Promise<Tracker> {
   const project = id ? await getProject(db, id) : undefined;
-  const ref = project?.linearKeyRef ?? (await getLinearSettings(db)).keyRef;
-  const key = ref ? await readSecret(db, ref) : null;
-  if (!key)
-    throw new LinearNotReadyError('Save a Linear key first, in Settings or on this project.');
-  return trackerFor(key);
+  const keyed = await projectLinear(db, project);
+  if (!keyed.keyRef) {
+    throw new LinearNotReadyError(
+      project
+        ? 'Connect Linear first, in Settings or on this project.'
+        : 'Connect Linear in Settings first: sign in with Linear or paste a key.',
+    );
+  }
+  return getTracker(db, keyed);
 }
 
 /**
@@ -600,7 +616,7 @@ export async function workspaceDefaults(db: Db): Promise<{
   return {
     maxRuns: settings?.maxRuns ?? 2,
     hasLinearKey: linear.keyRef !== null,
-    hasGithubKey: forge.keyRef !== null,
+    hasGithubKey: hasForgeToken(forge),
   };
 }
 

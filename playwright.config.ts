@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
 
 const PORT = 3457;
@@ -44,6 +45,10 @@ export default defineConfig({
       MAGPIPE_MODEL_STUB: 'scripted',
       MAGPIPE_TRACKER_STUB: 'scripted',
       MAGPIPE_FORGE_STUB: 'scripted',
+      // Signing in without pasting (D47): a stand-in GitHub CLI, and an OAuth app for the
+      // scripted Linear's sign-in, which comes straight back with a scripted code.
+      MAGPIPE_GH_PATH: path.resolve('e2e/stubs/gh'),
+      MAGPIPE_LINEAR_CLIENT_ID: 'e2e_oauth_client',
     },
   },
 });

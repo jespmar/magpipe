@@ -74,9 +74,10 @@ export const config = {
   // jose's Edge-incompatible CompressionStream warnings from Auth.js.
   runtime: 'nodejs',
   // Public: Auth.js routes, the health probe (Electron boot + uptime checks), the sign-in
-  // page, static assets, and the per-step MCP endpoint, which checks its own bearer token
-  // (D22: Claude Code calls it from outside the app window).
+  // page, static assets, the per-step MCP endpoint, which checks its own bearer token (D22:
+  // Claude Code calls it from outside the app window), and the Linear sign-in callback, which
+  // checks its own one-time state (D47: the system browser comes back to it).
   matcher: [
-    '/((?!api/auth|api/health|api/mcp|signin|_next/static|_next/image|brand|icon.svg|favicon.ico).*)',
+    '/((?!api/auth|api/health|api/mcp|api/linear-callback|signin|_next/static|_next/image|brand|icon.svg|favicon.ico).*)',
   ],
 };

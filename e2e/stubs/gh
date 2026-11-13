@@ -1,0 +1,5 @@
+#!/bin/sh
+# A stand-in GitHub CLI for the end-to-end server (D47): signed in, with a scripted token.
+if [ "$1 $2" = "auth token" ]; then echo gho_e2e_cli_token; exit 0; fi
+echo "the e2e gh stub only answers auth token" >&2
+exit 2

@@ -31,7 +31,7 @@ import { formatUsd } from '@/lib/runs-util';
 import { getShellData } from '@/lib/shell-data';
 import { SHORTCUTS } from '@/lib/shortcuts';
 import { anyProjectLinearKey, getLinearSettings, linearView, type LinearView } from '@/lib/tracker';
-import { forgeView, getForgeSettings, type ForgeView } from '@/lib/forge';
+import { findGh, forgeView, getForgeSettings, type ForgeView } from '@/lib/forge';
 import { capReached, capText, spendToday, type SpendToday } from '@/lib/spend';
 import type { MemoryEntry, Settings } from '@/lib/schemas';
 
@@ -42,6 +42,10 @@ const EMPTY_LINEAR: LinearView = {
   id: 'linear',
   keyHint: null,
   viewer: null,
+  keyKind: 'key',
+  expiresAt: null,
+  oauthClientId: null,
+  signInClientId: null,
   team: null,
   label: null,
   states: {},
@@ -96,6 +100,7 @@ async function loadForge(): Promise<ForgeView | null> {
 
 const EMPTY_FORGE: ForgeView = {
   id: 'github',
+  keySource: 'token',
   keyHint: null,
   viewer: null,
   repo: null,
@@ -133,16 +138,19 @@ const MODE_LABEL = {
 
 /** Workspace facts (spec §3.7); the daily spend cap is the one the operator edits (D32). */
 export default async function SettingsPage() {
-  const [settings, spend, user, shell, backend, standing, linear, forge] = await Promise.all([
-    loadSettings(),
-    loadSpend(),
-    currentUser(),
-    getShellData(),
-    describeModelBackend(),
-    loadStanding(),
-    loadLinear(),
-    loadForge(),
-  ]);
+  const [settings, spend, user, shell, backend, standing, linear, forge, ghPath] =
+    await Promise.all([
+      loadSettings(),
+      loadSpend(),
+      currentUser(),
+      getShellData(),
+      describeModelBackend(),
+      loadStanding(),
+      loadLinear(),
+      loadForge(),
+      // The GitHub CLI's sign-in can stand in for a token (D47).
+      findGh().catch(() => null),
+    ]);
   const backendRows: (readonly [string, string])[] =
     backend.backend === 'claude-code'
       ? [
@@ -339,7 +347,7 @@ export default async function SettingsPage() {
             project&rsquo;s repository.
           </p>
           {forge ? (
-            <GitHubForm initial={forge} />
+            <GitHubForm initial={forge} ghPath={ghPath} />
           ) : (
             <GitHubForm
               initial={EMPTY_FORGE}
