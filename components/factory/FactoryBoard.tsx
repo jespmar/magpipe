@@ -112,7 +112,14 @@ function Card({ card }: { card: BoardCard }) {
  * The factory board (D43): every spec and goal by pipeline stage, as columns at wide widths and
  * three across below that. Both gates live on the cards that wait for them.
  */
-export function FactoryBoard({ board }: { board: Board }) {
+export function FactoryBoard({
+  board,
+  approvedWaits,
+}: {
+  board: Board;
+  /** Why approved goals are not building, when the project says (D51). */
+  approvedWaits?: string;
+}) {
   return (
     <div className="grid items-start gap-4 md:grid-cols-3 wide:grid-cols-6">
       {board.columns.map((col) => (
@@ -125,6 +132,9 @@ export function FactoryBoard({ board }: { board: Board }) {
             {PIPELINE_LABELS[col.stage]}
             <span className="font-mono text-code text-mute">{col.cards.length}</span>
           </h2>
+          {col.stage === 'approved' && approvedWaits && col.cards.length > 0 ? (
+            <p className="text-caption text-warn">{approvedWaits}</p>
+          ) : null}
           {col.cards.length > 0 ? (
             <ul className="flex flex-col gap-3">
               {col.cards.map((c) => (

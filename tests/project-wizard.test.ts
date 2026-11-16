@@ -32,6 +32,7 @@ import {
   wizardRepoScripts,
 } from '@/lib/project-wizard';
 import { saveLinearKey, useTrackerFactory } from '@/lib/tracker';
+import type { FactoryProject, ProjectInput } from '@/lib/schemas';
 import { linearTracker } from '@/lib/tracker/linear';
 import { SCRIPTED_TEAM, scriptedStore, scriptedTracker } from '@/lib/tracker/scripted';
 import { SCRIPTED_MAPPING } from './stubs/project';
@@ -70,6 +71,26 @@ const rawRepo = (owner: string, name: string, push = true) => ({
   pushed_at: '2026-10-01T00:00:00Z',
   permissions: { push },
 });
+
+/** A project's own settings as the editor sends them back unchanged. */
+function editOf(p: FactoryProject): ProjectInput {
+  return {
+    name: p.name,
+    repoPath: p.repoPath,
+    scripts: p.scripts.join(', '),
+    context: p.context,
+    linear: {
+      teamId: p.linear.team!.id,
+      projectId: p.linear.project!.id,
+      label: p.linear.label!.name,
+      states: Object.fromEntries(Object.entries(p.linear.states).map(([k, v]) => [k, v!.id])),
+    },
+    github: { ...p.github, repo: p.github.repo! },
+    maxRuns: p.maxRuns,
+    spendCapUsd: p.spendCapUsd,
+    models: p.models,
+  };
+}
 
 describe('GitHub for the wizard', () => {
   it('lists every repository the token can push to, page by page', async () => {
@@ -414,6 +435,23 @@ describe('the New project wizard', () => {
     });
     expect(project.scripts).toEqual([]);
     expect((await projectView(db, project)).gaps).toEqual(['scripts']);
+
+    // The scripts a build will add can be named before package.json has them (D51).
+    const named = await saveProject(db, project.id, {
+      ...editOf(project),
+      scripts: 'test, lint',
+    });
+    expect(named.project.scripts).toEqual(['test', 'lint']);
+    expect(named.notes).toContain(
+      'package.json has no test, lint yet: agents may run them once a build adds them.',
+    );
+    expect((await projectView(db, named.project)).gaps).toEqual([]);
+    // A name that is no script name at all is still refused.
+    await expect(
+      saveProject(db, project.id, { ...editOf(project), scripts: 'rm -rf' }),
+    ).rejects.toThrow('is not a script name');
+    // Back to none, as the tests after this one expect.
+    await saveProject(db, project.id, { ...editOf(project), scripts: '' });
 
     // Its Linear project is now taken: a same-named one is not used for another project.
     await expect(

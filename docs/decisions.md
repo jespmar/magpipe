@@ -1330,3 +1330,24 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
   a project. Every template run, a refly included, needs a project that is still there
   (`templatePlan`). Settings says nothing about the agents when the database cannot be read, and
   the Factory screen and Settings ask the same question (`factoryInstalled`).
+
+## D51 · Scripts named ahead of package.json
+
+- **Why.** D49 let a project have no scripts and made its builds wait until it named some. A new
+  repository has no package.json, and its first goal is usually the one that writes it, so the
+  first build waited on its own output and nothing ever built: approved goals sat in Approved
+  with no run and no word why.
+- **A project names the scripts agents may run, whether package.json has them yet or not.**
+  Saving keeps a name package.json lacks and says so in its notes ("package.json has no test
+  yet: agents may run it once a build adds it"); a name that is no script name is still refused.
+  The roster loaders (the flock, `loadFactory`) still refuse a name the folder lacks: their tools
+  are bound to that folder as it is.
+- **The wizard offers the usual names for a new repository.** With no package.json, or one with
+  no scripts, Details offers test, lint and typecheck, ticked, and the review says they run once
+  a build adds them.
+- **`run` says when a script is not there yet.** An allowed script that the work tree's
+  package.json does not have is answered plainly, with nothing run, so the Test Agent reports it
+  rather than reading npm's error. The scaffold goal's Code Agent writes package.json with its
+  scripts, and its Test Agent runs them in the same build.
+- **Builds still wait for a project that allows no script at all**, and now the board says so
+  above the approved goals, not only the notice at the top of the page.

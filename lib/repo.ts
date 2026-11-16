@@ -494,6 +494,17 @@ export async function repoRun(
       isError: true,
     };
   }
+  // Allowed by name before package.json had it (D51): said plainly rather than left to npm.
+  const pkg = await fs
+    .readFile(path.join(config.path, 'package.json'), 'utf8')
+    .then((text) => JSON.parse(text) as { scripts?: Record<string, unknown> })
+    .catch(() => null);
+  if (typeof pkg?.scripts?.[script] !== 'string') {
+    return {
+      text: `package.json has no script named "${script}" yet${pkg ? '' : ' (there is no package.json)'}. It is allowed, so once the change adds it, it can run.`,
+      isError: true,
+    };
+  }
   const pm = await packageManagerOf(config.path, config.path);
   const file = process.platform === 'win32' ? `${pm}.cmd` : pm;
   const started = Date.now();

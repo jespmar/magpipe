@@ -267,19 +267,25 @@ export async function saveProject(
   if (!id) await ensureDefaultProject(db);
   const notes: string[] = [];
 
-  let found: { path: string; scripts: string[] };
+  let found: { path: string; scripts: string[]; missing: string[] };
   try {
     found = await checkRepository({
       path: input.repoPath,
-      // None is allowed: a new repository has no package.json yet (D49). The project page says
-      // the Test Agent has nothing to run until it names some.
+      // None is allowed: the project page says builds wait until it names some (D49). Names
+      // package.json does not have yet are kept: a build may add them (D51).
       scripts: parseScripts(input.scripts),
+      allowMissing: true,
     });
   } catch (err) {
     if (err instanceof RosterValidationError) {
       throw new ProjectError(err.message, err.field === 'path' ? 'repoPath' : 'scripts');
     }
     throw err;
+  }
+  if (found.missing.length) {
+    notes.push(
+      `package.json has no ${found.missing.join(', ')} yet: agents may run ${found.missing.length === 1 ? 'it' : 'them'} once a build adds ${found.missing.length === 1 ? 'it' : 'them'}.`,
+    );
   }
 
   const others = (await listProjects(db)).filter((p) => p.id !== current?.id);

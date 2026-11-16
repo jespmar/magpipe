@@ -65,7 +65,12 @@ export async function checkRepository(opts: {
   scripts: string[];
   /** Said when no script is named; without it, none is allowed (a new project's repository, D49). */
   noScripts?: string;
-}): Promise<{ path: string; scripts: string[] }> {
+  /**
+   * Names package.json does not have yet are kept and returned as `missing`, not refused: a
+   * project names the scripts its builds will add (D51).
+   */
+  allowMissing?: boolean;
+}): Promise<{ path: string; scripts: string[]; missing: string[] }> {
   const scripts = Array.from(new Set(opts.scripts.map((s) => s.trim()).filter(Boolean)));
   if (scripts.length === 0 && opts.noScripts) {
     throw new RosterValidationError(opts.noScripts, 'scripts');
@@ -79,13 +84,13 @@ export async function checkRepository(opts: {
     throw new RosterValidationError(message, 'path');
   }
   const missing = scripts.filter((s) => !found.scripts.includes(s));
-  if (missing.length > 0) {
+  if (missing.length > 0 && !opts.allowMissing) {
     throw new RosterValidationError(
       `package.json has no script named ${missing.join(', ')}. It has ${found.scripts.join(', ') || 'none'}.`,
       'scripts',
     );
   }
-  return { path: found.path, scripts };
+  return { path: found.path, scripts, missing };
 }
 
 async function samePath(a: string, b: string): Promise<boolean> {

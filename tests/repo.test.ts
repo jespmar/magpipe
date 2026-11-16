@@ -152,6 +152,11 @@ describe('scripts', () => {
         isError: true,
         text: expect.stringContaining('not a script this repository allows'),
       });
+      // Allowed before package.json has it (D51): said plainly, nothing is run.
+      expect(await repoRun({ ...config, scripts: ['typecheck'] }, 'typecheck')).toEqual({
+        isError: true,
+        text: 'package.json has no script named "typecheck" yet. It is allowed, so once the change adds it, it can run.',
+      });
     } finally {
       delete process.env.ANTHROPIC_API_KEY;
     }
