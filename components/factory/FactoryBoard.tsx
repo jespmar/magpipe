@@ -132,7 +132,7 @@ export function FactoryBoard({
             {PIPELINE_LABELS[col.stage]}
             <span className="font-mono text-code text-mute">{col.cards.length}</span>
           </h2>
-          {col.stage === 'approved' && approvedWaits && col.cards.length > 0 ? (
+          {col.stage === 'approved' && approvedWaits && col.cards.some((c) => c.kind === 'goal') ? (
             <p className="text-caption text-warn">{approvedWaits}</p>
           ) : null}
           {col.cards.length > 0 ? (

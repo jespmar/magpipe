@@ -306,8 +306,10 @@ describe('factory projects', () => {
     await expect(saveProject(db, null, input({ repoPath: '/no/such/folder' }))).rejects.toThrow(
       ProjectError,
     );
+    // A script package.json lacks is kept for a build to add (D51); a name that is no script
+    // name is still refused.
     await expect(
-      saveProject(db, null, input({ repoPath: second, scripts: 'deploy' })),
+      saveProject(db, null, input({ repoPath: second, scripts: 'test; rm' })),
     ).rejects.toMatchObject({ field: 'scripts' });
     await expect(
       saveProject(

@@ -14,7 +14,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { dataDir } from './db';
-import { inspectRepository } from './repo';
+import { excludeNodeModules, inspectRepository } from './repo';
 
 type GitResult = { code: number; out: string };
 
@@ -74,24 +74,6 @@ async function exists(p: string): Promise<boolean> {
     .catch(() => false);
 }
 
-/** Keeps the linked `node_modules` out of git in every worktree of the repository. */
-async function excludeNodeModules(repoRoot: string): Promise<void> {
-  const common = await git(repoRoot, ['rev-parse', '--git-common-dir']);
-  if (common.code !== 0) return;
-  const file = path.join(path.resolve(repoRoot, common.out), 'info', 'exclude');
-  const current = await fs.readFile(file, 'utf8').catch(() => '');
-  if (
-    current.split('\n').some((l) => l.trim() === 'node_modules' || l.trim() === '/node_modules')
-  ) {
-    return;
-  }
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(
-    file,
-    `${current}${current && !current.endsWith('\n') ? '\n' : ''}# Linked into goal worktrees by Magpipe\n/node_modules\n`,
-  );
-}
-
 export type Worktree = { path: string; branch: string; base: string; created: boolean };
 
 /**
@@ -121,9 +103,16 @@ export async function ensureWorktree(
   await fs.mkdir(path.dirname(dir), { recursive: true });
   const hasBranch =
     (await git(root, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])).code === 0;
+  // A new goal branches from the base as it is on origin, when there is one: goals merge there
+  // (D42), and the local base is not moved, so a goal that depends on another sees its work.
+  let start = from;
+  if (!hasBranch && (await hasOrigin(root))) {
+    const fetched = await git(root, ['fetch', 'origin', from]);
+    if (fetched.code === 0) start = `origin/${from}`;
+  }
   const res = hasBranch
     ? await git(root, ['worktree', 'add', dir, branch])
-    : await git(root, ['worktree', 'add', '-b', branch, dir, from]);
+    : await git(root, ['worktree', 'add', '--no-track', '-b', branch, dir, start]);
   if (res.code !== 0) {
     throw new WorktreeError(`The worktree for ${branch} could not be made: ${res.out}`);
   }
