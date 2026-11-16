@@ -282,9 +282,25 @@ test('settings connects Linear, a passing spec is filed, Home approves it, its g
   // runs, reviews and tries to break it, then pushes, opens the pull request and asks to merge.
   const linear = page.getByRole('region', { name: 'Linear' });
   await linear.getByRole('button', { name: 'Check now' }).click();
-  const started = linear.getByText(/Started MAG-\d+ → flight_[0-9a-z]+/);
-  await expect(started).toBeVisible({ timeout: 30_000 });
-  const buildId = /flight_[0-9a-z]+/.exec((await started.textContent()) ?? '')![0];
+  // Check now starts the build, unless the watcher's own check got there first on a slow run:
+  // either way, the build is found.
+  let buildId = '';
+  await expect(async () => {
+    const said = await linear
+      .getByText(/Started MAG-\d+ → flight_[0-9a-z]+/)
+      .textContent({ timeout: 1_000 })
+      .catch(() => null);
+    if (said) {
+      buildId = /flight_[0-9a-z]+/.exec(said)![0];
+      return;
+    }
+    const { runs } = (await (await request.get('/api/runs?limit=50')).json()) as {
+      runs: { displayId: string; input: { text: string } }[];
+    };
+    const build = runs.find((r) => /^Build MAG-\d+/.test(r.input.text));
+    expect(build, 'a build run for the goal').toBeTruthy();
+    buildId = build!.displayId;
+  }).toPass({ timeout: 60_000 });
   await page.goto(`/runs/${buildId}`);
   await expect(page.getByRole('heading', { level: 1, name: /^Build MAG-\d+/ })).toBeVisible({
     timeout: 30_000,
