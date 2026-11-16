@@ -390,7 +390,7 @@ describe('building one goal', () => {
     expect((await nextGoal(db))!.id).toBe(goals.button!.id);
   });
 
-  it('a failing test run skips the review and the skeptic, and the goal needs you', async () => {
+  it('a failing test run skips the review and the skeptic, and the goal is built again with the findings (D52)', async () => {
     const calls = freshCalls();
     const engine = new Engine({
       client: buildModel({ run: 'Verdict: fail\n\nRuns: test exited 1.', calls }),
@@ -405,13 +405,41 @@ describe('building one goal', () => {
     expect(done.plan.find((s) => s.id === 'review')!.status).toBe('skipped');
     const finish = done.plan.find((s) => s.id === 'finish')!;
     expect(finish.result!.summary).toContain('“Run the tests” said fail');
+    expect(finish.result!.summary).toContain('Building it again (rebuild 1 of 3)');
+    // Back in Approved with its findings, not at Needs you: the next check builds it again.
+    expect(remoteOf(goals.button!).state.id).toBe('st_todo');
+    expect(remoteOf(goals.button!).comments.at(-1)).toContain('rebuild 1 of 3');
+    const after = (await getIssue(db, goals.button!.id))!;
+    expect(after).toMatchObject({ stage: 'approved', buildRunId: null, buildAttempts: 1 });
+    expect(after.rebuildNote).toContain('Runs: test exited 1.');
+
+    // The next build hands the Code Agent what the last one found.
+    const again = (await startBuildRun(db, goals.button!, (id) => engine.enqueue(id)))!;
+    expect(again.plan.find((s) => s.id === 'build')!.feedback).toContain(
+      'An earlier build of this goal did not pass',
+    );
+    await engine.whenIdle();
+    expect((await getIssue(db, goals.button!.id))!.buildAttempts).toBe(2);
+
+    // With the rebuilds used up, it is handed to the operator, and the count starts again.
+    await db
+      .update(t.trackerIssues)
+      .set({ buildAttempts: 3 })
+      .where(eq(t.trackerIssues.id, goals.button!.id));
+    const last = (await startBuildRun(db, goals.button!, (id) => engine.enqueue(id)))!;
+    await engine.whenIdle();
+    expect(
+      (await getRun(db, last.id))!.plan.find((s) => s.id === 'finish')!.result!.summary,
+    ).toContain('after 3 rebuilds');
     expect(remoteOf(goals.button!).state.id).toBe('st_blocked');
     expect(remoteOf(goals.button!).comments.at(-1)).toContain('move this issue back to Approved');
     expect(await getIssue(db, goals.button!.id)).toMatchObject({
       stage: 'needs_you',
       buildRunId: null,
+      buildAttempts: 0,
+      rebuildNote: null,
     });
-  }, 30_000);
+  }, 60_000);
 
   it('a failed step is still reported: the finish runs after it, and the run fails', async () => {
     scriptedTracker('k', store).move(goals.button!.identifier, 'Approved');
@@ -430,9 +458,11 @@ describe('building one goal', () => {
     expect(done.plan.find((s) => s.id === 'finish')!.result!.summary).toContain(
       '“Build the goal” failed',
     );
+    // An agent's step that failed is the code's to fix: built again (D52).
     expect(await getIssue(db, goals.button!.id)).toMatchObject({
-      stage: 'needs_you',
+      stage: 'approved',
       buildRunId: null,
+      buildAttempts: 1,
     });
   }, 30_000);
 

@@ -761,6 +761,10 @@ export const trackerIssue = z.object({
   mergedAt: z.date().nullable(),
   /** What the operator said when sending the goal back from the merge question (D42). */
   operatorNote: z.string().max(4000).nullable(),
+  /** Builds Magpipe started again on its own after one did not pass (D52); back to 0 at Needs you. */
+  buildAttempts: z.number().int().nonnegative(),
+  /** What the last build that did not pass found, handed to the next one (D52). */
+  rebuildNote: z.string().nullable(),
   /** When gate G1 opened, and through which door. */
   approvedAt: z.date().nullable(),
   approvedVia: z.enum(['linear', 'magpipe']).nullable(),
@@ -818,8 +822,8 @@ export const forgeSettings = z.object({
    * goal at the merge question, the question answers itself; the land still re-tests it.
    */
   autoMerge: z.boolean(),
-  /** The Linear label the goal or its spec must carry for the rule to hold. */
-  autoMergeLabel: z.string().min(1).max(80),
+  /** The Linear label the goal or its spec must carry for the rule to hold; empty, none (D52). */
+  autoMergeLabel: z.string().max(80),
   /** The rule holds only when every judge passed on the first try, nothing sent back. */
   autoMergeFirstPass: z.boolean(),
   /** The rule holds only when the pull request's checks are green. */
@@ -859,7 +863,7 @@ export const projectGithub = z.object({
   repo: z.string().nullable(),
   mergeMethod: z.enum(mergeMethods),
   autoMerge: z.boolean(),
-  autoMergeLabel: z.string().min(1).max(80),
+  autoMergeLabel: z.string().max(80),
   autoMergeFirstPass: z.boolean(),
   autoMergeChecks: z.boolean(),
 });
@@ -912,7 +916,8 @@ export const projectInput = z.object({
       .regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, 'Give the GitHub repository as owner/name.'),
     mergeMethod: z.enum(mergeMethods),
     autoMerge: z.boolean(),
-    autoMergeLabel: z.string().trim().min(1, 'Name the label that allows it.').max(80),
+    // Empty: no label is needed (D52).
+    autoMergeLabel: z.string().trim().max(80),
     autoMergeFirstPass: z.boolean(),
     autoMergeChecks: z.boolean(),
   }),

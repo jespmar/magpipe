@@ -426,7 +426,7 @@ export function ProjectForm({ initial, agents, models, workspace }: Props) {
           />
           <Checkbox
             label="Merge without asking when the rule holds"
-            description="Off unless you turn it on. The goal is still brought up to date, tested again and checked before it merges."
+            description="On for a project made with the wizard. The goal is still brought up to date, tested again and checked before it merges."
             checked={auto}
             onCheckedChange={(on) => setAuto(on === true)}
           />
@@ -434,7 +434,7 @@ export function ProjectForm({ initial, agents, models, workspace }: Props) {
             <Input
               id={`${ids}-auto-label`}
               label="Label it needs"
-              description="On the goal or its spec in Linear."
+              description="On the goal or its spec in Linear. Empty: any goal that passes merges."
               autoComplete="off"
               spellCheck={false}
               value={autoLabel}

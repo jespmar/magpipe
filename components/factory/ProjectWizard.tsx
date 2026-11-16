@@ -495,9 +495,11 @@ export function ProjectWizard({
             github: {
               repo,
               mergeMethod: 'squash',
-              autoMerge: false,
-              autoMergeLabel: 'auto-merge',
-              autoMergeFirstPass: true,
+              // Merges on its own once everything passed (D52); the project's settings turn it off.
+              autoMerge: true,
+              autoMergeLabel: '',
+              // A goal built again after its findings (D52) is as good as one that passed at once.
+              autoMergeFirstPass: false,
               autoMergeChecks: true,
             },
             maxRuns: null,
@@ -1010,8 +1012,9 @@ export function ProjectWizard({
         ))}
       </dl>
       <p className="max-w-[31rem] text-body-sm text-body">
-        Limits and models start as the workspace’s, and pull requests squash and merge when you say
-        so. Change any of it on the project’s settings.
+        Limits and models start as the workspace’s. A goal that does not pass is built again up to
+        three times before it asks you, and one that passes every check squashes and merges on its
+        own. Change any of it on the project’s settings.
         {factoryInstalled ? '' : ' The factory’s nine agents are installed with it.'}
       </p>
       {tasks ? (

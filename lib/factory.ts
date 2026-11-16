@@ -529,7 +529,7 @@ export const FACTORY_TEMPLATES = {
         action: 'finish_goal',
         title: 'Report on the goal',
         instructions:
-          'When every judge passed, move the goal to the merge question with its pull request or branch named; otherwise move it to needs you with the findings. Runs however the steps before it ended.',
+          'When every judge passed, move the goal to the merge question with its pull request or branch named; otherwise build it again with the findings, up to three times, and move it to needs you with them when a person is needed or the rebuilds are used up. Runs however the steps before it ended.',
         dependsOn: ['run', 'review', 'skeptic', 'pr'],
         always: true,
       },
@@ -793,12 +793,13 @@ export async function startBuildRun(
       vars: { branch },
       projectId: current.projectId,
     });
-    // Sent back from the merge question (D42): the operator's note reaches the Code Agent.
-    if (current.operatorNote) {
-      const build = preset.plan.find((s) => s.id === 'build');
-      if (build) {
-        build.feedback = `The operator sent this goal back from the merge question: ${current.operatorNote}`;
-      }
+    // Sent back from the merge question (D42): the operator's note reaches the Code Agent. Built
+    // again after a build that did not pass (D52): what that build found does.
+    const build = preset.plan.find((s) => s.id === 'build');
+    if (build && current.operatorNote) {
+      build.feedback = `The operator sent this goal back from the merge question: ${current.operatorNote}`;
+    } else if (build && current.rebuildNote) {
+      build.feedback = `An earlier build of this goal did not pass. Fix what it found, keeping the tests the Test Agent committed: ${current.rebuildNote}`;
     }
     // Each goal builds in its own worktree (D41), so goals go side by side.
     const repo = await projectRepository(db, current.projectId);
@@ -1163,10 +1164,13 @@ export function ruleVerdict(input: {
   if (!rule.autoMerge) return { holds: false, waiting: false, reasons: ['the rule is off'] };
   const reasons: string[] = [];
   const missing: string[] = [];
-  const label = rule.autoMergeLabel.toLowerCase();
-  if (input.labels.some((l) => l.toLowerCase() === label))
-    reasons.push(`it carries ${rule.autoMergeLabel}`);
-  else missing.push(`neither the goal nor its spec carries ${rule.autoMergeLabel}`);
+  // An empty label asks for none (D52): every goal that passes may merge.
+  const label = rule.autoMergeLabel.trim().toLowerCase();
+  if (label) {
+    if (input.labels.some((l) => l.toLowerCase() === label))
+      reasons.push(`it carries ${rule.autoMergeLabel}`);
+    else missing.push(`neither the goal nor its spec carries ${rule.autoMergeLabel}`);
+  }
   const judges = input.build?.plan.filter((s) => s.judges) ?? [];
   const allPass =
     judges.length > 0 && judges.every((s) => s.status === 'done' && s.verdict === 'pass');
@@ -1185,7 +1189,9 @@ export function ruleVerdict(input: {
       waiting = true;
       missing.push('its checks are still running');
     } else if (input.checks === 'failure') missing.push('its checks failed');
-    else missing.push('its pull request has no checks to read');
+    // A repository that runs no checks on pull requests has none to fail (D52); the land still
+    // runs the tests again after bringing the branch up to date.
+    else reasons.push('its repository runs no checks on pull requests');
   }
   return missing.length === 0
     ? { holds: true, reasons }

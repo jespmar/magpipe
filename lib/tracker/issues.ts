@@ -6,7 +6,7 @@
  * what the next check compares with.
  */
 import 'server-only';
-import { and, asc, desc, eq, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import type { Db } from '../db';
 import * as t from '../db/schema';
 import { emitEvent } from '../engine/events';
@@ -123,6 +123,8 @@ export async function recordFiledIssue(
     landRunId: null,
     mergedAt: null,
     operatorNote: null,
+    buildAttempts: 0,
+    rebuildNote: null,
     approvedAt: null,
     approvedVia: null,
     createdAt: now,
@@ -197,6 +199,35 @@ export async function releaseBuildRun(db: Db, id: string): Promise<void> {
   await db
     .update(t.trackerIssues)
     .set({ buildRunId: null, updatedAt: new Date() })
+    .where(eq(t.trackerIssues.id, id));
+}
+
+/**
+ * A build that did not pass is built again by Magpipe (D52): the attempt is counted, what it
+ * found is kept for the next build, and the goal is free to start again. Returns the count.
+ */
+export async function recordRebuild(db: Db, id: string, note: string): Promise<number> {
+  const [row] = await db
+    .update(t.trackerIssues)
+    .set({
+      buildRunId: null,
+      buildAttempts: sql`${t.trackerIssues.buildAttempts} + 1`,
+      rebuildNote: note,
+      updatedAt: new Date(),
+    })
+    .where(eq(t.trackerIssues.id, id))
+    .returning({ attempts: t.trackerIssues.buildAttempts });
+  return row?.attempts ?? 0;
+}
+
+/**
+ * The rebuild count starts again (D52): when a goal passes, or when it is handed to the operator,
+ * whose move back to Approved gives it a fresh budget.
+ */
+export async function clearRebuilds(db: Db, id: string): Promise<void> {
+  await db
+    .update(t.trackerIssues)
+    .set({ buildAttempts: 0, rebuildNote: null, updatedAt: new Date() })
     .where(eq(t.trackerIssues.id, id));
 }
 
@@ -510,6 +541,8 @@ async function applyRemote(
       landRunId: null,
       mergedAt: null,
       operatorNote: null,
+      buildAttempts: 0,
+      rebuildNote: null,
       approvedAt: stage === 'approved' ? now : null,
       approvedVia: stage === 'approved' ? 'linear' : null,
       createdAt: now,

@@ -411,7 +411,9 @@ skips the agent steps after it.
 
 The last step runs however the steps before it ended. When every verdict passed, the goal moves
 to the merge question with its branch named, and the operator merges it and moves the goal to
-done; phase 6 replaces that with a pull request. Otherwise the goal moves to needs you with the
+done; phase 6 replaces that with a pull request. Otherwise it is built again with what the run
+found, up to three times (D52), and then, or at once when a person is needed (the spend cap, a
+missing key or command, a step of Magpipe's own that failed), it moves to needs you with the
 findings, and moving it back to approved builds it again. A build run that ends without
 reporting (cancelled, or stopped before its last step) is caught at the next check the same
 way. When every goal of a spec is done, the spec is done.
@@ -425,7 +427,7 @@ way. When every goal of a spec is done, the spec is done.
 | `review`  | Code Review  | Review the code         | `read`, `build`, `run`             | no                  | yes    | always           | Review the diff of {branch} against the default branch, with the test results, against the goal. Give the verdict, and send it back with the blocking findings if it does not pass.                                                                                                                        |
 | `skeptic` | Code Skeptic | Try to break it         | `read`, `build`, `run`, `review`   | no                  | yes    | always           | Try to break the code on {branch} with one test file. Commit a test only when it fails on the branch, send it back with it, and give the verdict.                                                                                                                                                          |
 | `pr`      | Magpipe      | Open the pull request   | `read`, `run`, `review`, `skeptic` | no                  | no     | GitHub is set up | When every judge passed, push {branch} to origin, never forced, and open its pull request against the default branch.                                                                                                                                                                                      |
-| `finish`  | Magpipe      | Report on the goal      | `run`, `review`, `skeptic`, `pr`   | no                  | no     | always           | When every judge passed, move the goal to the merge question with its pull request or branch named; otherwise move it to needs you with the findings. Runs however the steps before it ended.                                                                                                              |
+| `finish`  | Magpipe      | Report on the goal      | `run`, `review`, `skeptic`, `pr`   | no                  | no     | always           | When every judge passed, move the goal to the merge question with its pull request or branch named; otherwise build it again with the findings, up to three times, and move it to needs you with them when a person is needed or the rebuilds are used up. Runs however the steps before it ended.         |
 
 The hand-over step is titled "Hand over the goal".
 
@@ -543,8 +545,8 @@ build runs that ended without reporting and closes finished specs (D40). Phase 5
 locks that follow a run's worktree, and the run limit as a setting (D41). Phase 6 added the GitHub seam
 (`lib/forge`) and its Settings section, Magpipe's guarded push and branch update, the pull
 request step, the land template, and the merge question's three doors (D42). Phase 7 added the
-factory screen (D43). Phase 8 added unattended merges under the operator's own rule, off by default
-(D44).
+factory screen (D43). Phase 8 added unattended merges under the operator's own rule (D44), on for
+projects made with the wizard (D52).
 
 Needed, smallest first:
 
@@ -574,9 +576,10 @@ Each phase is one pull request, useful on its own, and testable with the scripte
    merge.
 7. **The factory screen.** Built (D43). The board, replacing the lists phases 1 to 6 get by
    with.
-8. **Earning unattended merges.** Built (D44), off by default. A rule the operator sets (a
-   label, every judge passing on the first try, green checks) under which G2 answers itself;
-   the land still re-tests and checks before merging.
+8. **Earning unattended merges.** Built (D44). A rule the operator sets (a label or none, every
+   judge passing, on the first try or not, green checks or none to run) under which G2 answers
+   itself; the land still re-tests and checks before merging. A project made with the wizard
+   has it on, with no label, from D52.
 
 ## Settled before building
 

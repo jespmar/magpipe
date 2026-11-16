@@ -1380,3 +1380,27 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
   operator made in their own checkout is left. Only a plain branch name is taken against its
   copy on origin (`main~1` means the local one), and the commit list since a base agrees with the
   diff. A build or land of a project that allows no scripts is refused whoever starts it.
+
+## D52 · The factory asks a person only when a person is needed
+
+- **Why.** A goal whose build did not pass went straight to Needs you, and the operator had to
+  read the findings in Linear and move it back to Approved by hand; every goal that passed then
+  waited at the merge question. The operator wants the factory to run on its own and ask only
+  about what an agent could not test or review.
+- **A build that does not pass is built again, up to three times.** `finish_goal` comments what
+  did not pass on the goal, moves it back to Approved and counts the rebuild
+  (`buildAttempts`, `MAX_REBUILDS`); what the build found (`rebuildNote`) is given to the next
+  build's Code Agent, which works on the same branch, keeping the tests the Test Agent committed.
+  The next check starts it as any approved goal. A passing build clears the count.
+- **It asks a person when a rebuild would not help**: the spend cap, a missing API key or
+  `claude` command, a refusal, a cancel, a step's token budget spent, or a step of Magpipe's own
+  that failed (pushing, opening the pull request: a key or GitHub). Those, and a goal still not
+  passing after three rebuilds, go to Needs you as before, with the reason; the operator's move
+  back to Approved starts a fresh count. A build run that ends without reporting is still caught
+  at the next check and handed over as before.
+- **A project made with the wizard merges on its own once everything passed.** Its rule (D44) is
+  on, with no label needed, and a goal that passed after a send-back or a rebuild counts as
+  passed; its pull request's checks must be green, and a repository that runs no checks on pull
+  requests has none to fail. Anything short of that still stops at the merge question, and the
+  land still brings the branch up to date, runs the tests again and checks before merging. A
+  project's settings turn it off; projects made before keep the rule they had.
