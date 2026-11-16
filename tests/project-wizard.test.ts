@@ -125,6 +125,31 @@ describe('GitHub for the wizard', () => {
     });
   });
 
+  it('says why GitHub refused a new repository', async () => {
+    const f = fakeFetch((c) =>
+      c.method === 'GET'
+        ? { json: { login: 'ada' } }
+        : {
+            status: 422,
+            json: {
+              message: 'Repository creation failed.',
+              errors: [
+                {
+                  resource: 'Repository',
+                  code: 'custom',
+                  message: 'name already exists on this account',
+                },
+              ],
+            },
+          },
+    );
+    await expect(
+      githubForge('t', f.impl).createRepository({ owner: 'ada', name: 'x', private: true }),
+    ).rejects.toThrow(
+      'GitHub answered: Repository creation failed. (name already exists on this account).',
+    );
+  });
+
   it('reads the scripts from package.json, and none when there is no package.json', async () => {
     const content = Buffer.from(
       JSON.stringify({ scripts: { test: 'vitest', lint: 'eslint', 'bad name': 'x' } }),
@@ -204,6 +229,43 @@ describe('cloning a project’s repository', () => {
     );
     const again = await cloneRepository({ repo: 'o/r', source, token: null, parent, folder: 'r' });
     expect(again).toEqual({ path: first.path, reused: true });
+  });
+
+  it('does not take a folder inside a clone, or a clone that did not finish, for the repository', async () => {
+    const parent = path.join(root, 'into');
+    // A subfolder of a clone of o/r reads o/r's origin, but is not a clone of its own.
+    const outer = path.join(root, 'outer');
+    git(root, 'clone', '-q', bare, outer);
+    git(outer, 'remote', 'set-url', 'origin', 'https://github.com/o/r.git');
+    fs.mkdirSync(path.join(outer, 'r'));
+    fs.writeFileSync(path.join(outer, 'r', 'page.tsx'), '');
+    await expect(checkCloneTarget({ parent: outer, folder: 'r', repo: 'o/r' })).rejects.toThrow(
+      'already has files in it',
+    );
+    // A clone cut off before its first checkout: origin set, nothing checked out.
+    const half = path.join(parent, 'half');
+    fs.mkdirSync(half);
+    git(half, 'init', '-q');
+    git(half, 'remote', 'add', 'origin', 'https://github.com/o/r.git');
+    await expect(checkCloneTarget({ parent, folder: 'half', repo: 'o/r' })).rejects.toThrow(
+      'holds a clone of o/r that did not finish',
+    );
+  });
+
+  it('undoes a clone of a repository with no commits yet', async () => {
+    const parent = path.join(root, 'into');
+    const empty = path.join(root, 'empty.git');
+    git(root, 'init', '-q', '--bare', empty);
+    await expect(
+      cloneRepository({
+        repo: 'o/empty',
+        source: { url: empty, auth: false },
+        token: null,
+        parent,
+        folder: 'fresh-empty',
+      }),
+    ).rejects.toThrow('o/empty has no commits yet');
+    expect(fs.existsSync(path.join(parent, 'fresh-empty'))).toBe(false);
   });
 
   it('leaves nothing behind when the clone fails, and never repeats the token', async () => {
@@ -366,6 +428,45 @@ describe('the New project wizard', () => {
     await expect(
       wizardCheckFolder({ mode: 'existing', repo: 'magpipe-e2e/website', path: cloned.path }),
     ).rejects.toThrow('The folder’s origin is someone/else, not magpipe-e2e/website.');
+  });
+
+  it('refuses a repository another project lands in, and one the token cannot push to', async () => {
+    await expect(
+      wizardEnsureRepository(db, {
+        owner: 'magpipe-e2e',
+        name: 'SHOP',
+        private: true,
+        description: '',
+      }),
+    ).rejects.toThrow('Shop already lands in magpipe-e2e/shop.');
+    const parent = path.join(root, 'code');
+    const site = path.join(parent, 'site');
+    git(site, 'remote', 'set-url', 'origin', 'https://github.com/readonly/site.git');
+    await expect(
+      saveProject(db, null, {
+        name: 'Read only',
+        repoPath: site,
+        scripts: 'test',
+        context: '',
+        linear: {
+          teamId: SCRIPTED_TEAM.id,
+          projectId: 'lp_mobile',
+          label: 'magpipe',
+          states: SCRIPTED_MAPPING,
+        },
+        github: {
+          repo: 'readonly/site',
+          mergeMethod: 'squash',
+          autoMerge: false,
+          autoMergeLabel: 'auto-merge',
+          autoMergeFirstPass: true,
+          autoMergeChecks: true,
+        },
+        maxRuns: null,
+        spendCapUsd: null,
+        models: {},
+      }),
+    ).rejects.toThrow('The token can read readonly/site but not push to it.');
   });
 
   it('refuses a repository name GitHub would not take', async () => {

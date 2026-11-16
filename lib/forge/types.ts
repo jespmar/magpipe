@@ -35,8 +35,12 @@ export interface Forge {
   readonly name: 'github' | 'scripted';
   /** Who the token belongs to: proves the token works. */
   viewer(signal?: AbortSignal): Promise<{ login: string }>;
-  /** The repository, with its default branch: proves the token can reach it. */
-  repository(repo: string, signal?: AbortSignal): Promise<{ defaultBranch: string }>;
+  /** The repository, with its default branch: proves the token can reach it. `canPush` says
+   * whether the token may push to it. */
+  repository(
+    repo: string,
+    signal?: AbortSignal,
+  ): Promise<{ defaultBranch: string; canPush: boolean }>;
   /** Opens a pull request from `head` to `base`, or returns the open one that already exists. */
   openPullRequest(
     repo: string,

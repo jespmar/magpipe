@@ -387,7 +387,7 @@ test('factory projects: the Default project, a second one made with the wizard, 
 
   // 1. The repositories the account can push to, grouped by owner; Default's is taken (D49).
   const repos = page.getByRole('radiogroup', { name: 'Repositories' });
-  await expect(repos.getByRole('radio', { name: /^app\b/ })).toBeDisabled({ timeout: 30_000 });
+  await expect(repos.getByRole('radio', { name: /^magpipe-e2e\/app\b/ })).toBeDisabled({ timeout: 30_000 });
   await expect(repos.getByText('used by Default')).toBeVisible();
   await page.getByRole('searchbox', { name: 'Search repositories' }).fill('dotfiles');
   await expect(repos.getByRole('radio')).toHaveCount(1);
@@ -444,7 +444,7 @@ test('factory projects: the Default project, a second one made with the wizard, 
   await expect(page.getByText(`lands in magpipe-e2e/${repoName}`)).toBeVisible();
   await expect(page.getByText('No scripts yet')).toBeVisible();
   await expect(page.getByRole('form', { name: 'Write a spec' })).toBeVisible();
-  await expect(page.getByRole('heading', { level: 2, name: 'Factory' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: 'Factory', exact: true })).toBeVisible();
 
   await page.goto('/factory');
   await expect(page.getByText('2 projects')).toBeVisible();

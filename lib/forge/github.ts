@@ -67,9 +67,16 @@ export function githubForge(
       if ((err as Error).name === 'AbortError') throw err;
       throw new ForgeError(`GitHub could not be reached: ${(err as Error).message}`, 'network');
     }
-    const json = (await res.json().catch(() => ({}))) as { message?: string } & T;
+    const json = (await res.json().catch(() => ({}))) as {
+      message?: string;
+      errors?: ({ message?: string; code?: string } | string)[];
+    } & T;
     if (res.ok) return json;
-    const said = json.message ? `: ${json.message}` : '';
+    // A 422 says why in its errors: "name already exists on this account", say.
+    const why = (json.errors ?? [])
+      .map((e) => (typeof e === 'string' ? e : (e.message ?? e.code)))
+      .filter(Boolean);
+    const said = json.message ? `: ${json.message}${why.length ? ` (${why.join('; ')})` : ''}` : '';
     if (res.status === 401) {
       throw new ForgeError(
         'GitHub did not accept the token. Check it is not expired or revoked.',
@@ -130,8 +137,13 @@ export function githubForge(
       return { login: me.login };
     },
     async repository(repo, signal) {
-      const r = await call<{ default_branch: string }>('GET', `/repos/${repo}`, undefined, signal);
-      return { defaultBranch: r.default_branch };
+      const r = await call<{ default_branch: string; permissions?: { push?: boolean } }>(
+        'GET',
+        `/repos/${repo}`,
+        undefined,
+        signal,
+      );
+      return { defaultBranch: r.default_branch, canPush: r.permissions?.push !== false };
     },
     async openPullRequest(repo, input, signal) {
       const owner = repo.split('/')[0]!;

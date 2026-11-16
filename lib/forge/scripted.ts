@@ -127,7 +127,8 @@ export function scriptedForge(
       authed();
       if (repo.startsWith('nobody/'))
         throw new ForgeError(`GitHub found nothing at /repos/${repo}.`, 'not_found');
-      return { defaultBranch: 'main' };
+      // Others' repositories can be read, not pushed to.
+      return { defaultBranch: 'main', canPush: !repo.startsWith('readonly/') };
     },
     async openPullRequest(repo, input) {
       authed();
