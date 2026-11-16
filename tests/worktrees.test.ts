@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { gitDiff, repoRun } from '@/lib/repo';
+import { gitDiff, gitLog, repoRun } from '@/lib/repo';
 import { baseBranch, ensureWorktree, removeWorktree, worktreesRoot } from '@/lib/worktrees';
 
 const git = (cwd: string, ...args: string[]) =>
@@ -105,7 +105,40 @@ describe('worktrees', () => {
     const diff = await gitDiff(wt.path, 'main');
     expect(diff.text).toContain('goal.txt');
     expect(diff.text).not.toContain('scaffold.txt');
+    // The commit list agrees with the diff.
+    const log = await gitLog(wt.path, { since: 'main' });
+    expect(log.text).toContain('goal');
+    expect(log.text).not.toContain('scaffold');
+    // A revision expression means what it says: main~0 is the local main, stale as it is.
+    expect((await gitDiff(wt.path, 'main~0')).text).toContain('scaffold.txt');
   });
+
+  it('installs into a goal whose link to the bound folder’s node_modules is broken', async () => {
+    const wt = await ensureWorktree(repo, 'magpipe/dangling', data);
+    fs.mkdirSync(path.join(wt.path, 'dep'));
+    fs.writeFileSync(
+      path.join(wt.path, 'dep', 'package.json'),
+      JSON.stringify({ name: 'dep', version: '1.0.0', main: 'index.js' }),
+    );
+    fs.writeFileSync(path.join(wt.path, 'dep', 'index.js'), "module.exports = 'dep ok';");
+    fs.writeFileSync(
+      path.join(wt.path, 'package.json'),
+      JSON.stringify({
+        scripts: { test: 'node -e "console.log(require(\'dep\'))"' },
+        dependencies: { dep: 'file:./dep' },
+      }),
+    );
+    // The operator removed the bound folder's node_modules: the link points at nothing.
+    fs.renameSync(path.join(repo, 'node_modules'), path.join(dir, 'nm-aside'));
+    try {
+      const ran = await repoRun({ path: wt.path, scripts: ['test'], timeoutSec: 120 }, 'test');
+      expect(ran.isError).toBe(false);
+      expect(ran.text).toContain('dep ok');
+      expect(fs.lstatSync(path.join(wt.path, 'node_modules')).isSymbolicLink()).toBe(false);
+    } finally {
+      fs.renameSync(path.join(dir, 'nm-aside'), path.join(repo, 'node_modules'));
+    }
+  }, 120_000);
 
   it('installs a goal of its own when it changes the dependencies of a linked node_modules', async () => {
     const wt = await ensureWorktree(repo, 'magpipe/new-dep', data);

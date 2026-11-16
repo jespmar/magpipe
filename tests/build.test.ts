@@ -15,7 +15,14 @@ import { openDb, type Db } from '@/lib/db';
 import * as t from '@/lib/db/schema';
 import { Engine } from '@/lib/engine';
 import type { ModelClient, ModelMessage, ModelParams } from '@/lib/engine/model';
-import { factoryTick, loadFactory, nextGoal, readyGoals, startBuildRun } from '@/lib/factory';
+import {
+  factoryTick,
+  loadFactory,
+  nextGoal,
+  readyGoals,
+  startBuildRun,
+  templatePlan,
+} from '@/lib/factory';
 import { createRun, getRun } from '@/lib/runs';
 import { sendBackSet } from '@/lib/runs-util';
 import type { Goal, Step, TrackerIssue } from '@/lib/schemas';
@@ -269,6 +276,10 @@ describe('building one goal', () => {
       .set({ scripts: [] })
       .where(eq(t.factoryProjects.id, own!.id));
     expect(await startBuildRun(db, goals.header!, () => undefined)).toBeNull();
+    // Whoever starts one, a refly included, the plan says why it waits.
+    await expect(templatePlan(db, 'build', { projectId: own!.id })).rejects.toThrow(
+      'allows no scripts, so its builds wait',
+    );
     await db
       .update(t.factoryProjects)
       .set({ scripts: own!.scripts })

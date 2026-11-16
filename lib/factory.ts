@@ -633,6 +633,13 @@ export async function templatePlan(
   if (opts.projectId && !project) {
     throw new FactoryNotReadyError('That project no longer exists, so its run cannot start again.');
   }
+  // A build or land with no script to run would pass a test step that ran nothing (D49): it
+  // waits, whoever starts it, a refly included.
+  if ((id === 'build' || id === 'land') && project && project.scripts.length === 0) {
+    throw new FactoryNotReadyError(
+      `${project.name} allows no scripts, so its builds wait. Name the scripts agents may run on its settings.`,
+    );
+  }
   if (!project) {
     const held = await factoryRepository(db).catch(() => null);
     if (held && (await isStandInRepository(held.path))) {

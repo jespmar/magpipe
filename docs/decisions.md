@@ -1373,4 +1373,10 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
 - **After review.** A package.json the wizard could not read from GitHub is said as such, with
   nothing ticked, rather than taken for a repository with none. A script that did not run is
   recorded as such (why, too), apart from one that ran and was killed. A refly of a build or land
-  names the goal's branch and the project's scripts again.
+  names the goal's branch and the project's scripts again. Only an install Magpipe made from
+  nothing is thrown away when it fails; a failed update over a working node_modules leaves it as
+  it was. The lockfiles are saved in the git folder before an install, so one cut off by a crash
+  is put back too. A broken link to the bound folder's node_modules is replaced, and a link the
+  operator made in their own checkout is left. Only a plain branch name is taken against its
+  copy on origin (`main~1` means the local one), and the commit list since a base agrees with the
+  diff. A build or land of a project that allows no scripts is refused whoever starts it.

@@ -206,6 +206,60 @@ describe('scripts ahead of package.json (D51)', () => {
     expect(ran.text).toMatch(/^\$ npm run test/);
   }, 60_000);
 
+  it('keeps a working node_modules when an update over it fails', async () => {
+    // One Magpipe installs, from nothing.
+    fs.rmSync(path.join(dir, 'node_modules'), { recursive: true, force: true });
+    fs.rmSync(stateFile(), { force: true });
+    writePackage({ dep: 'file:./dep' });
+    expect((await repoRun(config(), 'test')).isError).toBe(false);
+    // Magpipe installed it; now the dependencies change and the update fails.
+    writePackage({ dep: 'file:./dep', gone: 'file:./missing.tgz' });
+    const ran = await repoRun(config(), 'test');
+    expect(ran.work).toMatchObject({ skipped: 'install' });
+    expect(fs.existsSync(path.join(dir, 'node_modules', 'dep'))).toBe(true);
+    expect(JSON.parse(fs.readFileSync(stateFile(), 'utf8')).state).toBe('done');
+  }, 120_000);
+
+  it('puts back the lockfiles an install cut off by a crash had written', async () => {
+    writePackage({ dep: 'file:./dep' });
+    // As a crashed install leaves it: "installing", the lockfiles saved before, and a stray one.
+    const saved = path.join(dir, '.git', 'magpipe-install-locks');
+    fs.mkdirSync(saved, { recursive: true });
+    fs.writeFileSync(
+      path.join(saved, 'absent.json'),
+      JSON.stringify([
+        'package-lock.json',
+        'npm-shrinkwrap.json',
+        'pnpm-lock.yaml',
+        'yarn.lock',
+        'bun.lockb',
+        'bun.lock',
+      ]),
+    );
+    fs.writeFileSync(stateFile(), JSON.stringify({ state: 'installing', key: 'x' }));
+    fs.writeFileSync(path.join(dir, 'package-lock.json'), '{"stray": true}');
+    const ran = await repoRun(config(), 'test');
+    expect(ran.isError).toBe(false);
+    expect(fs.existsSync(path.join(dir, 'package-lock.json'))).toBe(false);
+    expect(fs.existsSync(saved)).toBe(false);
+  }, 120_000);
+
+  it('leaves a node_modules link the operator made in their own checkout', async () => {
+    const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'magpipe-nm-'));
+    try {
+      fs.rmSync(path.join(dir, 'node_modules'), { recursive: true, force: true });
+      fs.cpSync(path.join(dir, 'dep'), path.join(elsewhere, 'dep'), { recursive: true });
+      fs.symlinkSync(elsewhere, path.join(dir, 'node_modules'), 'dir');
+      writePackage({ dep: 'file:./dep', another: 'file:./dep' });
+      const ran = await repoRun(config(), 'test');
+      expect(ran.text).toMatch(/^\$ npm run test/);
+      expect(fs.lstatSync(path.join(dir, 'node_modules')).isSymbolicLink()).toBe(true);
+    } finally {
+      fs.rmSync(path.join(dir, 'node_modules'), { force: true });
+      fs.rmSync(elsewhere, { recursive: true, force: true });
+    }
+  }, 60_000);
+
   it('records an install that failed as a script that did not run', async () => {
     fs.rmSync(path.join(dir, 'node_modules'), { recursive: true, force: true });
     fs.rmSync(stateFile(), { force: true });
