@@ -152,6 +152,7 @@ test('settings connects Linear, a passing spec is filed, Home approves it, its g
   // The approve route compiles on its first request on the development server; have it ready
   // before the click that needs it (an unknown issue is simply not found).
   await request.post('/api/issues/iss_warmup/approve').catch(() => undefined);
+  await request.post('/api/issues/iss_warmup/merge').catch(() => undefined);
   await page.goto('/settings');
   const section = page.getByRole('region', { name: 'Linear' });
   const key = section.getByLabel('Personal API key');
@@ -300,9 +301,13 @@ test('settings connects Linear, a passing spec is filed, Home approves it, its g
   );
 
   // Gate G2 from Magpipe: Merge lands it, bringing the branch up to date and testing it again.
-  await goalBar.getByRole('button', { name: 'Merge' }).click();
+  // The page was just opened: a click before it hydrates is lost, so try until it lands.
+  await expect(async () => {
+    const merge = goalBar.getByRole('button', { name: 'Merge' });
+    if (await merge.isVisible()) await merge.click();
+    await expect(goalBar).toContainText('Merge: landing in', { timeout: 10_000 });
+  }).toPass({ timeout: 60_000 });
   const landing = goalBar.getByRole('link', { name: /^flight_[0-9a-z]+$/ });
-  await expect(goalBar).toContainText('Merge: landing in');
   await landing.click();
   await expect(page.getByRole('heading', { level: 1, name: /^Land MAG-\d+/ })).toBeVisible({
     timeout: 30_000,
