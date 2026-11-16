@@ -122,7 +122,9 @@ engine and no sign-in on desktop.
   inherits nothing but the keys (D46); the workspace rows hold the keys and the watcher. Reach
   Linear through `getTracker` and GitHub through `getForge` / `forgeToken`, never `readSecret`
   on a key ref: the key may be a Sign in with Linear token due for renewal, or the GitHub CLI's
-  sign-in, which is never stored (D47).
+  sign-in, which is never stored (D47). A new project is made by the wizard's tasks in
+  `lib/project-wizard.ts` (D49), each safe to run again; a clone goes through `lib/clone.ts`,
+  which hands git the token through its environment, never in a URL or the repository's config.
 - **Tests never need model credentials.** Unit tests script `ModelClient`; the Playwright
   server runs with `MAGPIPE_MODEL_STUB=scripted` (`lib/engine/stub-model.ts`), which the engine
   ignores in production builds.

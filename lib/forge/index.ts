@@ -17,7 +17,7 @@ import { ForgeError, type Forge } from './types';
 
 export { ForgeError } from './types';
 export { GhCliError, findGh } from './gh-cli';
-export type { Forge, PullRequest } from './types';
+export type { CloneSource, Forge, ForgeOwner, ForgeRepo, PullRequest } from './types';
 
 const DEFAULTS: Omit<ForgeSettings, 'updatedAt'> = {
   id: 'github',
@@ -104,6 +104,18 @@ export async function getForge(
     repo: s.repo,
     settings: s,
   };
+}
+
+/**
+ * The forge for the shared token alone, with no repository: what the New project wizard lists
+ * repositories and makes new ones with (D49). Null when Settings has no token.
+ */
+export async function accountForge(db: Db): Promise<{ forge: Forge; token: string } | null> {
+  const s = await getForgeSettings(db);
+  const token = await forgeToken(db, s);
+  if (!token) return null;
+  const fromCli = !s.keyRef && s.keySource === 'gh';
+  return { forge: fromCli ? askAgainWhenRefused(forgeFor(token)) : forgeFor(token), token };
 }
 
 /** A forge whose calls, refused for the token, ask the GitHub CLI for a fresh one and go again. */

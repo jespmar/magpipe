@@ -14,6 +14,23 @@ export type PullRequest = {
   checks: 'success' | 'failure' | 'pending' | 'none';
 };
 
+/** A repository the token can push to, as the New project wizard lists it (D49). */
+export type ForgeRepo = {
+  /** `owner/name`. */
+  fullName: string;
+  owner: string;
+  name: string;
+  private: boolean;
+  description: string | null;
+  pushedAt: string | null;
+};
+
+/** An account a repository can be made under: the token's own, or an organization it is in. */
+export type ForgeOwner = { login: string; kind: 'user' | 'org' };
+
+/** Where a repository is cloned from, and whether the clone needs the token (D49). */
+export type CloneSource = { url: string; auth: boolean };
+
 export interface Forge {
   readonly name: 'github' | 'scripted';
   /** Who the token belongs to: proves the token works. */
@@ -33,6 +50,18 @@ export interface Forge {
     method: 'squash' | 'merge' | 'rebase',
     signal?: AbortSignal,
   ): Promise<{ sha: string }>;
+  /** Every repository the token can push to: its own, its collaborations, its organizations'. */
+  repositories(signal?: AbortSignal): Promise<ForgeRepo[]>;
+  /** The token's own account and the organizations it is in. */
+  owners(signal?: AbortSignal): Promise<ForgeOwner[]>;
+  /** Makes a repository with a first commit, so it has a default branch to build on. */
+  createRepository(
+    input: { owner: string; name: string; private: boolean; description?: string },
+    signal?: AbortSignal,
+  ): Promise<ForgeRepo>;
+  /** The scripts in the repository's package.json on its default branch; null when it has none. */
+  packageScripts(repo: string, signal?: AbortSignal): Promise<string[] | null>;
+  cloneSource(repo: string): Promise<CloneSource>;
 }
 
 /** The forge refused or could not be reached. `auth` means the token is wrong or revoked. */

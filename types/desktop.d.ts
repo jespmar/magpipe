@@ -10,6 +10,12 @@ declare global {
       restart(): Promise<boolean>;
       /** Opens magpipe.env in the operator's own editor (D48). */
       openConfigFile(): Promise<boolean>;
+      /** The system's folder picker; null when the operator cancels it (D49). */
+      pickFolder(options?: {
+        title?: string;
+        defaultPath?: string;
+        buttonLabel?: string;
+      }): Promise<string | null>;
     };
   }
 }

@@ -2,9 +2,32 @@
  * The GitHub forge (D42): GitHub's REST API with a token (a fine-grained token with read and
  * write access to pull requests and contents on the one repository is enough).
  */
-import { ForgeError, type Forge, type PullRequest } from './types';
+import { isScriptName } from '../repo';
+import { ForgeError, type Forge, type ForgeRepo, type PullRequest } from './types';
 
 export const GITHUB_API = 'https://api.github.com';
+
+type RawRepo = {
+  full_name: string;
+  name: string;
+  owner: { login: string };
+  private: boolean;
+  description: string | null;
+  pushed_at: string | null;
+  permissions?: { push?: boolean; admin?: boolean };
+};
+
+const repoOf = (r: RawRepo): ForgeRepo => ({
+  fullName: r.full_name,
+  owner: r.owner.login,
+  name: r.name,
+  private: r.private,
+  description: r.description || null,
+  pushedAt: r.pushed_at,
+});
+
+/** More than anyone picks from: 1000 repositories, most recently pushed first. */
+const MAX_REPO_PAGES = 10;
 
 type RawPull = {
   number: number;
@@ -138,6 +161,78 @@ export function githubForge(
       );
       if (!res.merged) throw new ForgeError('GitHub did not merge the pull request.', 'conflict');
       return { sha: res.sha };
+    },
+    async repositories(signal) {
+      const out: ForgeRepo[] = [];
+      for (let page = 1; page <= MAX_REPO_PAGES; page++) {
+        const batch = await call<RawRepo[]>(
+          'GET',
+          `/user/repos?affiliation=owner,collaborator,organization_member&sort=pushed&per_page=100&page=${page}`,
+          undefined,
+          signal,
+        );
+        out.push(...batch.filter((r) => r.permissions?.push !== false).map(repoOf));
+        if (batch.length < 100) break;
+      }
+      return out;
+    },
+    async owners(signal) {
+      const [me, orgs] = await Promise.all([
+        call<{ login: string }>('GET', '/user', undefined, signal),
+        call<{ login: string }[]>('GET', '/user/orgs?per_page=100', undefined, signal).catch(
+          // A fine-grained token may not read organizations: its own account is still there.
+          (err: unknown) => {
+            if (err instanceof ForgeError && (err.code === 'auth' || err.code === 'not_found'))
+              return [];
+            throw err;
+          },
+        ),
+      ]);
+      return [
+        { login: me.login, kind: 'user' as const },
+        ...orgs.map((o) => ({ login: o.login, kind: 'org' as const })),
+      ];
+    },
+    async createRepository(input, signal) {
+      const me = await call<{ login: string }>('GET', '/user', undefined, signal);
+      const route =
+        me.login.toLowerCase() === input.owner.toLowerCase()
+          ? '/user/repos'
+          : `/orgs/${encodeURIComponent(input.owner)}/repos`;
+      const made = await call<RawRepo>(
+        'POST',
+        route,
+        {
+          name: input.name,
+          private: input.private,
+          description: input.description || undefined,
+          // A first commit, so the repository has a default branch goals can branch from.
+          auto_init: true,
+        },
+        signal,
+      );
+      return repoOf(made);
+    },
+    async packageScripts(repo, signal) {
+      let file: { content?: string; encoding?: string };
+      try {
+        file = await call('GET', `/repos/${repo}/contents/package.json`, undefined, signal);
+      } catch (err) {
+        if (err instanceof ForgeError && err.code === 'not_found') return null;
+        throw err;
+      }
+      if (file.encoding !== 'base64' || !file.content) return null;
+      try {
+        const pkg = JSON.parse(Buffer.from(file.content, 'base64').toString('utf8')) as {
+          scripts?: Record<string, unknown>;
+        };
+        return Object.keys(pkg.scripts ?? {}).filter(isScriptName);
+      } catch {
+        return null;
+      }
+    },
+    async cloneSource(repo) {
+      return { url: `https://github.com/${repo}.git`, auth: true };
     },
   };
 }

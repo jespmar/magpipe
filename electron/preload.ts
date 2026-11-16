@@ -12,4 +12,10 @@ contextBridge.exposeInMainWorld('magpipeDesktop', {
   restart: (): Promise<boolean> => ipcRenderer.invoke('magpipe:restart'),
   /** Opens magpipe.env in the operator's own editor (D48). */
   openConfigFile: (): Promise<boolean> => ipcRenderer.invoke('magpipe:open-config'),
+  /** The system's folder picker; null when the operator cancels it (D49). */
+  pickFolder: (options?: {
+    title?: string;
+    defaultPath?: string;
+    buttonLabel?: string;
+  }): Promise<string | null> => ipcRenderer.invoke('magpipe:pick-folder', options ?? {}),
 });

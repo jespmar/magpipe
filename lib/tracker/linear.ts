@@ -118,6 +118,21 @@ export function linearTracker(
       return data.team.projects.nodes;
     },
 
+    async createProject(teamId, name, signal) {
+      const data = await call<{
+        projectCreate: { success: boolean; project: TrackerRef | null };
+      }>(
+        'mutation ($input: ProjectCreateInput!) { projectCreate(input: $input) { success project { id name } } }',
+        { input: { name, teamIds: [teamId] } },
+        signal,
+      );
+      const project = data.projectCreate.project;
+      if (!data.projectCreate.success || !project) {
+        throw new TrackerError(`Linear did not create the project ${name}.`, 'unknown');
+      }
+      return project;
+    },
+
     async states(teamId, signal) {
       const data = await call<{
         team: { states: { nodes: (TrackerState & { position: number })[] } } | null;

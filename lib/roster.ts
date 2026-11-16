@@ -57,16 +57,19 @@ export function parseScripts(text: string): string[] {
 
 /**
  * The repository folder and scripts a roster is loaded with, checked before anything is written:
- * at least one script, each a script name `package.json` has, in a git work tree.
- * `noScripts` is the refusal when none is named, in the roster's own words.
+ * each script a script name `package.json` has, in a git work tree. With `noScripts`, at least
+ * one script, and `noScripts` is the refusal when none is named, in the roster's own words.
  */
 export async function checkRepository(opts: {
   path: string;
   scripts: string[];
-  noScripts: string;
+  /** Said when no script is named; without it, none is allowed (a new project's repository, D49). */
+  noScripts?: string;
 }): Promise<{ path: string; scripts: string[] }> {
   const scripts = Array.from(new Set(opts.scripts.map((s) => s.trim()).filter(Boolean)));
-  if (scripts.length === 0) throw new RosterValidationError(opts.noScripts, 'scripts');
+  if (scripts.length === 0 && opts.noScripts) {
+    throw new RosterValidationError(opts.noScripts, 'scripts');
+  }
   const badName = scripts.find((s) => !isScriptName(s));
   if (badName) throw new RosterValidationError(`“${badName}” is not a script name.`, 'scripts');
 
