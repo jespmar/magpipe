@@ -45,6 +45,8 @@ const REPO_NAME = /^[A-Za-z0-9_.-]{1,100}$/;
 type Props = {
   /** Where a clone goes unless the operator picks elsewhere. */
   parentFolder: string;
+  /** The factory's agents are there; else they are installed with this project (D50). */
+  factoryInstalled: boolean;
   /** The shared keys in Settings: the wizard reads GitHub and Linear with them. */
   hasGithubKey: boolean;
   hasLinearKey: boolean;
@@ -148,6 +150,7 @@ function FolderField({
  */
 export function ProjectWizard({
   parentFolder,
+  factoryInstalled,
   hasGithubKey,
   hasLinearKey,
   takenRepos,
@@ -421,7 +424,13 @@ export function ProjectWizard({
             ),
           ]
         : []),
-      task('save', 'Save the project and read it back', null),
+      task(
+        'save',
+        factoryInstalled
+          ? 'Save the project and read it back'
+          : 'Save the project, read it back and install the factory’s agents',
+        null,
+      ),
     ];
   }
 
@@ -982,6 +991,7 @@ export function ProjectWizard({
       <p className="max-w-[31rem] text-body-sm text-body">
         Limits and models start as the workspace’s, and pull requests squash and merge when you say
         so. Change any of it on the project’s settings.
+        {factoryInstalled ? '' : ' The factory’s nine agents are installed with it.'}
       </p>
       {tasks ? (
         <ol aria-label="Progress" aria-live="polite" className="flex flex-col gap-2">

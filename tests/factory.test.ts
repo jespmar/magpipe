@@ -224,7 +224,7 @@ describe('loadFactory', () => {
     const err = await templatePlan(db, 'spec').catch((e: unknown) => e);
     expect(err).toBeInstanceOf(FactoryNotReadyError);
     expect((err as Error).message).toBe(
-      'The software factory is not loaded: Spec Builder and Spec Review are missing. Load it in Settings, then send it again.',
+      'The software factory is not installed: Spec Builder and Spec Review are missing. Its agents are installed with the first project in Factory, or from Settings.',
     );
   });
 

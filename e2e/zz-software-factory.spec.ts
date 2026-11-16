@@ -4,16 +4,16 @@ import os from 'node:os';
 import path from 'node:path';
 import { expect, test } from '@playwright/test';
 
-// The software factory, phase 1 (D37): load its nine agents from Settings onto a temp git
-// repository, then "Send to the factory" on Home runs the spec template with the scripted model
-// and hands over the spec with its review.
+// The software factory (D37, D50): its nine agents come with the first project the New project
+// wizard makes, no folder asked for; then "Send to the factory" on Home runs the spec template
+// with the scripted model and hands over the spec with its review.
 //
 // Runs after the development flock (the name sorts after it): it adds nine agents, and the
 // shell smoke tests expect a fresh workspace.
 
 let dir: string;
-/** The repository the factory is loaded onto; its tool is removed after the last test. */
-let factoryRepo = '';
+/** The first project's folder: a git repository with a bare origin, made in the first test. */
+let mill = '';
 
 test.beforeAll(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'magpipe-e2e-factory-'));
@@ -23,16 +23,16 @@ test.afterAll(() => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('settings loads the software factory, and Home sends a task to its spec template', async ({
+test('before any project, the factory is not installed and Home does not offer it', async ({
   page,
 }) => {
-  const repo = path.join(dir, `mill-${Date.now().toString(36)}`);
-  fs.mkdirSync(repo);
+  mill = path.join(dir, `mill-${Date.now().toString(36)}`);
+  fs.mkdirSync(mill);
   fs.writeFileSync(
-    path.join(repo, 'package.json'),
+    path.join(mill, 'package.json'),
     JSON.stringify({ scripts: { typecheck: 'node -e 0', lint: 'node -e 0', test: 'node -e 0' } }),
   );
-  execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: repo });
+  execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: mill });
   // A first commit: goal worktrees branch from it (D41).
   execFileSync(
     'git',
@@ -47,52 +47,27 @@ test('settings loads the software factory, and Home sends a task to its spec tem
       '-m',
       'init',
     ],
-    { cwd: repo },
+    { cwd: mill },
   );
   // A bare origin: the factory pushes goal branches there before opening pull requests (D42).
-  const origin = path.join(dir, `${path.basename(repo)}-origin.git`);
+  const origin = path.join(dir, `${path.basename(mill)}-origin.git`);
   execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-  execFileSync('git', ['remote', 'add', 'origin', origin], { cwd: repo });
-  execFileSync('git', ['push', '-q', 'origin', 'main'], { cwd: repo });
-  factoryRepo = path.basename(repo);
-  const name = factoryRepo;
+  execFileSync('git', ['remote', 'add', 'origin', origin], { cwd: mill });
+  execFileSync('git', ['push', '-q', 'origin', 'main'], { cwd: mill });
 
+  // No folder is asked for: the agents come with the first project (D50).
   await page.goto('/settings');
   const section = page.getByRole('region', { name: 'Software factory' });
-  await expect(section.getByLabel('Scripts agents may run')).toHaveValue('typecheck, lint, test');
-  await section.getByLabel('Repository folder').fill(repo);
-  await section.getByRole('button', { name: 'Load the software factory' }).click();
-  await expect(
-    section.getByText(new RegExp(`This binds ${name} as a repository tool`)),
-  ).toBeVisible();
-  await section.getByRole('button', { name: 'Load the factory' }).click();
-  const status = section.getByRole('status');
-  await expect(status).toContainText('Done.', { timeout: 30_000 });
-  await expect(status).toContainText(
-    'Created Spec Builder, Spec Review, Goal Builder, Goal Review, Test Agent, Code Agent, Code Review, Code Skeptic and Merge Agent.',
-  );
-  await expect(status).toContainText(`Bound ${name} as a repository tool.`);
+  await expect(section.getByText(/^Not installed yet\./)).toBeVisible({ timeout: 30_000 });
+  await expect(section.getByLabel('Repository folder')).toHaveCount(0);
 
-  // Home now offers the factory beside Run.
+  await page.goto('/factory');
+  await expect(page.getByText('factory agents not installed yet')).toBeVisible({ timeout: 30_000 });
+
   await page.goto('/');
   const composer = page.getByRole('region', { name: 'Ask Magpipe' });
-  // Earlier specs leave a flight selected; ask a fresh question rather than follow it up.
-  const fresh = composer.getByRole('button', { name: 'New question' });
-  if (await fresh.isVisible()) await fresh.click();
-  const task = `Let operators export runs as CSV ${Date.now().toString(36)}`;
-  await composer.getByLabel('Ask Magpipe').fill(task);
-  await composer.getByRole('button', { name: 'Send to the factory' }).click();
-
-  const panel = page.getByRole('region', { name: /^flight_[0-9a-z]+$/ });
-  await expect(panel).toContainText(task, { timeout: 30_000 });
-  await expect(panel.getByRole('log')).toContainText('From the spec template', {
-    timeout: 20_000,
-  });
-  await expect(panel.getByText('done', { exact: true }).first()).toBeVisible({ timeout: 30_000 });
-  const result = panel.getByRole('region', { name: 'Result' });
-  await expect(result).toContainText('Scripted spec');
-  await expect(result).toContainText('Acceptance criteria');
-  await expect(result).toContainText('Review the spec');
+  await expect(composer.getByLabel('Ask Magpipe')).toBeVisible({ timeout: 30_000 });
+  await expect(composer.getByRole('button', { name: 'Send to the factory' })).toHaveCount(0);
 });
 
 // Linear (D38), against the scripted tracker the e2e server runs with: a refused key is named on
@@ -148,7 +123,7 @@ test('settings connects Linear, a passing spec is filed, Home approves it, its g
   request,
 }) => {
   // Spec, goals and a build, end to end: longer than the default 30 s.
-  test.setTimeout(180_000);
+  test.setTimeout(240_000);
   // The approve route compiles on its first request on the development server; have it ready
   // before the click that needs it (an unknown issue is simply not found).
   await request.post('/api/issues/iss_warmup/approve').catch(() => undefined);
@@ -181,53 +156,82 @@ test('settings connects Linear, a passing spec is filed, Home approves it, its g
   await github.getByRole('button', { name: 'Save token' }).click();
   await expect(github.getByText('ends in 9d1f')).toBeVisible({ timeout: 30_000 });
 
-  // The Default project (D46) owns its Linear project and repository: map them in its settings.
-  await page.goto('/factory');
-  await page.getByRole('link', { name: 'Default' }).click();
-  await expect(page.getByRole('heading', { level: 1, name: 'Default' })).toBeVisible({
+  // The first project, made with the wizard (D49): magpipe-e2e/app, the folder that holds it,
+  // and the Web app Linear project. The factory's agents are installed with it (D50).
+  await page.goto('/factory/new');
+  await expect(page.getByRole('heading', { level: 1, name: 'New project' })).toBeVisible({
     timeout: 30_000,
   });
-  await expect(page.getByRole('region', { name: 'What this project needs' })).toContainText(
-    'No Linear project yet',
-  );
-  await page.getByRole('main').getByRole('link', { name: 'Settings', exact: true }).click();
-  // The project settings page compiles on its first visit.
-  await expect(page.getByRole('heading', { level: 1, name: 'Default settings' })).toBeVisible({
+  const repos = page.getByRole('radiogroup', { name: 'Repositories' });
+  await repos
+    .getByRole('radio', { name: /^magpipe-e2e\/app\b/ })
+    .check({ force: true, timeout: 30_000 });
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('button', { name: 'Use a folder that has it' }).click();
+  await page.getByLabel('Folder', { exact: true }).fill(mill);
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByRole('combobox', { name: 'Team' })).toContainText('Magpipe (MAG)', {
     timeout: 30_000,
   });
-  const linearPart = page.getByRole('region', { name: 'Linear' });
-  await linearPart.getByRole('button', { name: 'Read the teams from Linear' }).click();
-  await linearPart.getByRole('combobox', { name: 'Team' }).click();
-  await page.getByRole('option', { name: 'Magpipe (MAG)' }).click();
   // The first guess fills every state from the team's own status names.
-  await expect(linearPart.getByRole('combobox', { name: 'Spec ready' })).toContainText(
-    'Spec ready',
-  );
-  await expect(linearPart.getByRole('combobox', { name: 'Needs you' })).toContainText('Blocked');
-  await linearPart.getByRole('combobox', { name: 'Linear project' }).click();
+  await expect(page.getByText('Needs you is Blocked')).toBeVisible();
+  await page.getByRole('combobox', { name: 'Linear project' }).click();
   await page.getByRole('option', { name: 'Web app' }).click();
-  const githubPart = page.getByRole('region', { name: 'GitHub' });
-  await githubPart.getByLabel('Repository').fill('magpipe-e2e/app');
-  // Unattended merges (D44) are off until turned on.
-  await expect(
-    githubPart.getByRole('checkbox', { name: 'Merge without asking when the rule holds' }),
-  ).not.toBeChecked();
-  await page.getByRole('button', { name: 'Save and read back' }).click();
-  const saved = page.getByRole('status').filter({ hasText: 'Saved.' });
-  await expect(saved).toContainText(
-    /Read back from Linear: 7 statuses in Magpipe, project Web app, and the label magpipe, made just now\./,
-    { timeout: 30_000 },
-  );
-  await expect(saved).toContainText('Read back from GitHub: magpipe-e2e/app, default branch main.');
-
-  // The project's own Specification Agent (D46): a spec written on its page.
-  await page.getByRole('link', { name: 'Back to Default' }).click();
-  await expect(page.getByRole('heading', { level: 1, name: 'Default' })).toBeVisible({
-    timeout: 30_000,
+  await page.getByRole('button', { name: 'Continue' }).click();
+  // The scripts come from the folder's package.json, the usual ones ticked.
+  await expect(page.getByRole('checkbox', { name: 'typecheck' })).toBeChecked({ timeout: 30_000 });
+  await expect(page.getByRole('checkbox', { name: 'test' })).toBeChecked();
+  await page.getByLabel('Project name').fill('Mill');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByText('The factory’s nine agents are installed with it.')).toBeVisible();
+  await page.getByRole('button', { name: 'Create project' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Mill' })).toBeVisible({
+    timeout: 60_000,
   });
   await expect(page.getByRole('region', { name: 'What this project needs' })).toBeHidden();
+  await expect(page.getByText('files into Web app')).toBeVisible();
+  await expect(page.getByText('lands in magpipe-e2e/app')).toBeVisible();
+
+  // Settings says the agents are there, and brings them up to date without a folder.
+  await page.goto('/settings');
+  const factory = page.getByRole('region', { name: 'Software factory' });
+  await expect(factory.getByText(/^Installed\./)).toBeVisible({ timeout: 30_000 });
+  await expect(async () => {
+    await factory.getByRole('button', { name: 'Bring the agents up to date' }).click();
+    await expect(factory.getByRole('status')).toContainText('Done.', { timeout: 10_000 });
+  }).toPass({ timeout: 60_000 });
+  await expect(factory.getByRole('status')).toContainText(
+    'Spec Builder, Spec Review, Goal Builder, Goal Review, Test Agent, Code Agent, Code Review, Code Skeptic and Merge Agent',
+  );
+
+  // Home now offers the factory beside Run, for the one project there is.
+  await page.goto('/');
+  const composer = page.getByRole('region', { name: 'Ask Magpipe' });
+  const fresh = composer.getByRole('button', { name: 'New question' });
+  if (await fresh.isVisible()) await fresh.click();
+  const task = `Let operators export runs as CSV ${Date.now().toString(36)}`;
+  await composer.getByLabel('Ask Magpipe').fill(task);
+  await composer.getByRole('button', { name: 'Send to the factory' }).click();
+  const homePanel = page.getByRole('region', { name: /^flight_[0-9a-z]+$/ });
+  await expect(homePanel).toContainText(task, { timeout: 30_000 });
+  await expect(homePanel.getByRole('log')).toContainText('From the spec template', {
+    timeout: 20_000,
+  });
+  await expect(homePanel.getByText('done', { exact: true }).first()).toBeVisible({
+    timeout: 30_000,
+  });
+  const result = homePanel.getByRole('region', { name: 'Result' });
+  await expect(result).toContainText('Scripted spec');
+  await expect(result).toContainText('Review the spec');
+
+  // The project's own Specification Agent (D46): a spec written on its page.
+  await page.goto('/factory');
+  await page.getByRole('link', { name: 'Mill' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Mill' })).toBeVisible({
+    timeout: 30_000,
+  });
   const specBox = page.getByRole('form', { name: 'Write a spec' });
-  await specBox.getByLabel('An idea for Default').fill(`Filed spec ${Date.now().toString(36)}`);
+  await specBox.getByLabel('An idea for Mill').fill(`Filed spec ${Date.now().toString(36)}`);
   await specBox.getByRole('button', { name: 'Write the spec' }).click();
   const specRun = specBox.getByRole('link', { name: /^flight_[0-9a-z]+$/ });
   await expect(specRun).toBeVisible({ timeout: 30_000 });
@@ -345,8 +349,8 @@ test('settings connects Linear, a passing spec is filed, Home approves it, its g
     timeout: 30_000,
   });
   // Each project's board is on its page (D46).
-  await page.getByRole('link', { name: 'Default' }).click();
-  await expect(page.getByRole('heading', { level: 1, name: 'Default' })).toBeVisible({
+  await page.getByRole('link', { name: 'Mill' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Mill' })).toBeVisible({
     timeout: 30_000,
   });
   await expect(page.getByRole('region', { name: 'Runs' })).toContainText(/Land MAG-\d+/);
@@ -356,17 +360,9 @@ test('settings connects Linear, a passing spec is filed, Home approves it, its g
   await expect(doneColumn.getByRole('list', { name: /MAG-\d+ checks/ })).toContainText('pass');
   // Its spec counts the goal; the watcher may already have moved the spec to Done.
   await expect(page.getByText('1 of 1 goals done')).toBeVisible();
-
-  // Leave no tool card behind for a folder that is about to be deleted.
-  const { tools } = (await (await request.get('/api/tools')).json()) as {
-    tools: { id: string; name: string }[];
-  };
-  for (const tool of tools.filter((x) => x.name === factoryRepo)) {
-    expect((await request.delete(`/api/tools/${tool.id}`)).ok()).toBe(true);
-  }
 });
 
-test('factory projects: the Default project, a second one made with the wizard, and the Home picker', async ({
+test('factory projects: a second one made with the wizard, beside the first, and the Home picker', async ({
   page,
 }) => {
   // New project pages compile on their first visit; the wizard clones a repository.
@@ -376,8 +372,8 @@ test('factory projects: the Default project, a second one made with the wizard, 
 
   await page.goto('/factory');
   await expect(page.getByRole('heading', { level: 1, name: 'Factory' })).toBeVisible();
-  // The factory as it was is the Default project, on its own Linear project (D46).
-  await expect(page.getByRole('link', { name: 'Default' })).toBeVisible();
+  // The first project, on its own Linear project (D46).
+  await expect(page.getByRole('link', { name: 'Mill' })).toBeVisible();
   await expect(page.getByText('Web app (MAG)')).toBeVisible();
 
   await page.getByRole('link', { name: 'New project' }).click();
@@ -385,10 +381,12 @@ test('factory projects: the Default project, a second one made with the wizard, 
     timeout: 30_000,
   });
 
-  // 1. The repositories the account can push to, grouped by owner; Default's is taken (D49).
+  // 1. The repositories the account can push to, grouped by owner; Mill's is taken (D49).
   const repos = page.getByRole('radiogroup', { name: 'Repositories' });
-  await expect(repos.getByRole('radio', { name: /^magpipe-e2e\/app\b/ })).toBeDisabled({ timeout: 30_000 });
-  await expect(repos.getByText('used by Default')).toBeVisible();
+  await expect(repos.getByRole('radio', { name: /^magpipe-e2e\/app\b/ })).toBeDisabled({
+    timeout: 30_000,
+  });
+  await expect(repos.getByText('used by Mill')).toBeVisible();
   await page.getByRole('searchbox', { name: 'Search repositories' }).fill('dotfiles');
   await expect(repos.getByRole('radio')).toHaveCount(1);
   // A new one instead, made at the last step.
@@ -406,7 +404,7 @@ test('factory projects: the Default project, a second one made with the wizard, 
   await expect(page.getByLabel('New folder’s name')).toHaveValue(repoName);
   await page.getByRole('button', { name: 'Continue' }).click();
 
-  // 3. The only team is chosen; Web app belongs to Default, so a new Linear project.
+  // 3. The only team is chosen; Web app belongs to Mill, so a new Linear project.
   await expect(page.getByRole('heading', { name: 'Where are its specs filed?' })).toBeVisible({
     timeout: 30_000,
   });
@@ -414,7 +412,7 @@ test('factory projects: the Default project, a second one made with the wizard, 
     timeout: 30_000,
   });
   await page.getByRole('combobox', { name: 'Linear project' }).click();
-  await expect(page.getByRole('option', { name: 'Web app (used by Default)' })).toHaveAttribute(
+  await expect(page.getByRole('option', { name: 'Web app (used by Mill)' })).toHaveAttribute(
     'aria-disabled',
     'true',
   );
@@ -456,9 +454,7 @@ test('factory projects: the Default project, a second one made with the wizard, 
   // A follow-up keeps its thread's project; a new question picks one.
   const fresh = composer.getByRole('button', { name: 'New question' });
   if (await fresh.isVisible()) await fresh.click();
-  await expect(composer.getByRole('combobox', { name: 'Factory project' })).toContainText(
-    'Default',
-  );
+  await expect(composer.getByRole('combobox', { name: 'Factory project' })).toContainText('Mill');
 
   // Leave one project, as the workspace had before.
   await page.goto('/factory');

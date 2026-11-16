@@ -84,11 +84,14 @@ export default async function FactoryPage() {
           icon={<FolderGit2 size={24} strokeWidth={1.75} />}
           label="Factory"
           title="No projects yet"
-          description="A project is a repository with its own Linear project and GitHub repository. Load the factory's agents in Settings, then add a project here; specs you write in it are filed in its Linear project and built in its repository."
-          facts={[loaded ? 'factory agents loaded' : 'factory agents not loaded', 'no projects']}
+          description="A project is a repository with its own Linear project and GitHub repository. Specs you write in it are filed in its Linear project and built in its repository. The factory's nine agents are installed with the first one."
+          facts={[
+            loaded ? 'factory agents installed' : 'factory agents not installed yet',
+            'no projects',
+          ]}
           actions={
-            <ButtonLink href={loaded ? '/factory/new' : '/settings#factory'} size="sm">
-              {loaded ? 'Add a project' : 'Load the factory'}
+            <ButtonLink href="/factory/new" size="sm">
+              Add a project
             </ButtonLink>
           }
         />
@@ -132,7 +135,7 @@ export default async function FactoryPage() {
                 <dt className="text-mute">Waiting</dt>
                 <dd
                   className={
-                    c.waiting ? 'text-warn font-mono text-code' : 'font-mono text-code text-mute'
+                    c.waiting ? 'font-mono text-code text-warn' : 'font-mono text-code text-mute'
                   }
                 >
                   {c.waiting ? `${c.waiting} for you` : 'nothing for you'}

@@ -1,6 +1,7 @@
 'use server';
 
 import { DbLockedError, getDb } from '@/lib/db';
+import { factoryInstalled, installFactory } from '@/lib/factory';
 import { ForgeError, forgeMessage, GhCliError, type ForgeOwner, type ForgeRepo } from '@/lib/forge';
 import {
   wizardCheckFolder,
@@ -65,6 +66,19 @@ export async function saveProjectAction(
   try {
     const db = await getDb();
     const { project, notes } = await saveProject(db, id, parsed.data);
+    // The factory's agents come with the first project (D50). The project stands either way:
+    // a failed install says so, and Settings can install them later.
+    if (!id && !(await factoryInstalled(db))) {
+      try {
+        await installFactory(db);
+        notes.push('Installed the factory’s nine agents.');
+      } catch (err) {
+        console.error('[projects] install the factory failed:', err);
+        notes.push(
+          `The factory’s agents could not be installed (${err instanceof Error ? err.message : String(err)}). Install them in Settings.`,
+        );
+      }
+    }
     return { ok: true, project: await projectView(db, project), notes };
   } catch (err) {
     return failure(err, 'save the project');
