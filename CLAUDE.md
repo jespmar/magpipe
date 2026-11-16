@@ -115,7 +115,9 @@ engine and no sign-in on desktop.
   tools and write locks resolve through `run.input.worktree`, never the bound folder. GitHub
   goes through `lib/forge` (D42) the way Linear goes through `lib/tracker`; Magpipe pushes and
   merges in action steps, agents never do. Unattended merges happen only under the operator's own rule
-  (`ruleVerdict`, D44), off by default, and still go through the land. A factory issue or run belongs to a
+  (`ruleVerdict`, D44), on for projects the wizard makes (D52), and still go through the land. A
+  build that does not pass is built again by `finish_goal` (up to `MAX_REBUILDS`) before it
+  reaches Needs you, unless a person is needed. A factory issue or run belongs to a
   project (`lib/projects.ts`, D45): read Linear and GitHub settings through `linearOf` /
   `forgeOf` with its `projectId`, never `getLinearSettings` / `getForgeSettings` directly, and
   pass the project on to the runs it starts. A project owns its Linear project and repository and

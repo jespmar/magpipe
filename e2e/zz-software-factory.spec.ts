@@ -194,6 +194,18 @@ test('settings connects Linear, a passing spec is filed, Home approves it, its g
   await expect(page.getByText('files into Web app')).toBeVisible();
   await expect(page.getByText('lands in magpipe-e2e/app')).toBeVisible();
 
+  // A wizard project merges on its own once everything passed (D52). This flow answers the merge
+  // question itself, so the rule is turned off here.
+  await page.getByRole('main').getByRole('link', { name: 'Settings', exact: true }).click();
+  const rule = page.getByRole('checkbox', { name: 'Merge without asking when the rule holds' });
+  await expect(rule).toBeChecked({ timeout: 30_000 });
+  await expect(page.getByLabel('Label it needs')).toHaveValue('');
+  await rule.click();
+  await page.getByRole('button', { name: 'Save and read back' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Saved.' })).toBeVisible({
+    timeout: 30_000,
+  });
+
   // Settings says the agents are there, and brings them up to date without a folder.
   await page.goto('/settings');
   const factory = page.getByRole('region', { name: 'Software factory' });

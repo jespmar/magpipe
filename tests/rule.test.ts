@@ -92,11 +92,25 @@ describe('the rule as a verdict', () => {
         checks: 'success',
       }),
     ).toMatchObject({ holds: false, reasons: ['its build’s judges did not all pass'] });
+  });
+
+  it('merges a repository that runs no checks, and needs no label when none is named (D52)', () => {
     expect(
       ruleVerdict({ rule: RULE, labels: ['auto-merge'], build: firstPass, checks: 'none' }),
-    ).toMatchObject({
-      holds: false,
-      reasons: ['its pull request has no checks to read'],
+    ).toEqual({
+      holds: true,
+      reasons: [
+        'it carries auto-merge',
+        'every judge passed on the first try',
+        'its repository runs no checks on pull requests',
+      ],
+    });
+    // A new project's rule (the wizard's): no label, and a goal built again counts as passed.
+    const wizard = { ...RULE, autoMergeLabel: '', autoMergeFirstPass: false };
+    const sentBack = { plan: [judge('Run the tests'), judge('Review the code', { round: 2 })] };
+    expect(ruleVerdict({ rule: wizard, labels: [], build: sentBack, checks: 'success' })).toEqual({
+      holds: true,
+      reasons: ['every judge passed', 'its checks are green'],
     });
   });
 

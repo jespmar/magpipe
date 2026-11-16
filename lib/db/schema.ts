@@ -273,6 +273,8 @@ export const trackerIssues = pgTable(
     landRunId: text().references(() => runs.id, { onDelete: 'set null' }),
     mergedAt: timestamptz(),
     operatorNote: text(),
+    buildAttempts: integer().notNull().default(0),
+    rebuildNote: text(),
     approvedAt: timestamptz(),
     approvedVia: text({ enum: ['linear', 'magpipe'] }),
     createdAt: timestamptz().notNull().defaultNow(),

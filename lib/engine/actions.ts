@@ -12,6 +12,7 @@ import { workFacts } from '../work';
 import { getForge } from '../forge';
 import { pushBranch, updateBranch } from '../worktrees';
 import {
+  clearRebuilds,
   getIssue,
   goalIssues,
   issueForRun,
@@ -19,6 +20,7 @@ import {
   recordState,
   recordMerged,
   recordPull,
+  recordRebuild,
   releaseBuildRun,
   releaseGoal,
   releaseGoalsRun,
@@ -267,6 +269,7 @@ async function finishGoal({
   const pull = upstream.find((s) => s.action === 'open_pr' && s.status === 'done');
   const current = (await getIssue(db, issue.id)) ?? issue;
   if (passed) {
+    await clearRebuilds(db, issue.id);
     // The question to merge (G2, D42): with a pull request, any of three doors answers it.
     const question =
       pull && current.prUrl
@@ -293,18 +296,83 @@ async function finishGoal({
         .filter((s) => !(s.status === 'done' && s.verdict === 'pass'))
         .map((s) => `“${s.title}” ${s.status === 'done' ? `said ${verdictOf(s)}` : 'did not run'}`)
         .join('; ');
+  // Built again on its own (D52), with what this build found, unless a person is needed: a key
+  // or a tool Magpipe could not use, the spend cap, or the rebuilds used up.
+  const person = needsPerson(failed);
+  if (!person && current.buildAttempts < MAX_REBUILDS) {
+    const attempt = current.buildAttempts + 1;
+    await tracker.comment(
+      issue.externalId,
+      `Not ready yet: ${why}. Building it again (rebuild ${attempt} of ${MAX_REBUILDS}) on \`${branch}\`, with these findings.\n\n${report}${recorded}`,
+      signal,
+    );
+    const moved = await tracker.setState(issue.externalId, settings.states.approved!.id, signal);
+    await recordState(db, issue.id, settings, moved);
+    await recordRebuild(db, issue.id, rebuildNote(why, judges, who, verdictOf));
+    return {
+      status: 'done',
+      summary: `${issue.identifier} did not pass: ${why}. Building it again (rebuild ${attempt} of ${MAX_REBUILDS}).`,
+    };
+  }
+  const handed = person ? `${why}. ${person}` : `${why}, after ${MAX_REBUILDS} rebuilds`;
   await tracker.comment(
     issue.externalId,
-    `Not ready: ${why}. The work so far is on \`${branch}\`. Answer the findings here, then move this issue back to ${settings.states.approved!.name} to build it again.\n\n${report}${recorded}`,
+    `Not ready: ${handed}. The work so far is on \`${branch}\`. Answer the findings here, then move this issue back to ${settings.states.approved!.name} to build it again.\n\n${report}${recorded}`,
     signal,
   );
   const moved = await tracker.setState(issue.externalId, settings.states.needs_you!.id, signal);
   await recordState(db, issue.id, settings, moved);
   await releaseBuildRun(db, issue.id);
+  // A move back to Approved by the operator starts a fresh count.
+  await clearRebuilds(db, issue.id);
   return {
     status: 'done',
-    summary: `${issue.identifier} needs you: ${why}. Moved to ${moved.state.name} with the findings.`,
+    summary: `${issue.identifier} needs you: ${handed}. Moved to ${moved.state.name} with the findings.`,
   };
+}
+
+/** How many times a goal is built again on its own before it is handed to the operator (D52). */
+export const MAX_REBUILDS = 3;
+
+/**
+ * Failures no rebuild can fix (D52), said for the operator: a step of Magpipe's own that failed
+ * (pushing, opening the pull request: a key or GitHub), or an agent stopped by something outside
+ * the code (the spend cap, a missing API key or command, a refusal, a cancel).
+ */
+const PERSON_CODES: Record<string, string> = {
+  spend_cap: 'The daily spend cap stopped it.',
+  no_api_key: 'There is no API key for the model.',
+  no_cli: 'The claude command could not be found.',
+  refusal: 'The model refused the step.',
+  cancelled: 'It was cancelled.',
+  limit_budget: 'A step ran out of its token budget.',
+};
+
+function needsPerson(failed: Step[]): string | null {
+  for (const s of failed) {
+    const code = s.error?.code ?? '';
+    if (PERSON_CODES[code]) return PERSON_CODES[code]!;
+    if (s.action)
+      return `Magpipe could not ${s.title.toLowerCase()}, which a rebuild would not change.`;
+  }
+  return null;
+}
+
+/** What the next build is told about the last one that did not pass (D52), kept short. */
+function rebuildNote(
+  why: string,
+  judges: Step[],
+  who: (s: Step) => string,
+  verdictOf: (s: Step) => string,
+): string {
+  const findings = judges
+    .filter((s) => !(s.status === 'done' && s.verdict === 'pass'))
+    .map(
+      (s) =>
+        `${who(s)}, ${s.title.toLowerCase()}: ${verdictOf(s)}. ${s.result?.summary ?? s.error?.message ?? ''}`,
+    )
+    .join('\n\n');
+  return `${why}.\n\n${findings}`.slice(0, 6000);
 }
 
 /** A run's GitHub settings: its factory project's (D45), else the workspace's. */
