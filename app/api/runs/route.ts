@@ -57,8 +57,16 @@ export async function POST(req: Request) {
       const wanted = body.data.projectId ?? parent?.input.projectId;
       const project = await resolveProject(db, wanted);
       if (wanted && !project) return apiError('not_found', 'That project no longer exists', 404);
-      if (!project && (await listProjects(db)).length > 1) {
-        return apiError('validation', 'Pick the project this spec is for.');
+      if (!project) {
+        const count = (await listProjects(db)).length;
+        if (count > 1) return apiError('validation', 'Pick the project this spec is for.');
+        // A spec belongs to a project (D46, D50): with none, there is nowhere to build it.
+        if (count === 0) {
+          return apiError(
+            'validation',
+            'Create a project in Factory first: a spec is built there.',
+          );
+        }
       }
       projectId = project?.id;
     }

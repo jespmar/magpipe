@@ -14,7 +14,15 @@ import { openDb, type Db } from '@/lib/db';
 import { saveForgeKey, useForgeFactory } from '@/lib/forge';
 import { githubForge } from '@/lib/forge/github';
 import { scriptedForge, scriptedForgeStore, SCRIPTED_LOGIN } from '@/lib/forge/scripted';
-import { projectView, saveProject } from '@/lib/projects';
+import {
+  factoryInstalled,
+  factoryRepository,
+  installFactory,
+  projectRepository,
+  standInRepositoryPath,
+} from '@/lib/factory';
+import { listAgents } from '@/lib/agents';
+import { listProjects, projectView, saveProject } from '@/lib/projects';
 import {
   wizardCheckFolder,
   wizardEnsureClone,
@@ -311,10 +319,12 @@ describe('the New project wizard', () => {
   const store = scriptedStore(true);
   const forgeStore = scriptedForgeStore(true);
   const previous = process.env.MAGPIPE_SECRET_KEY;
+  const previousData = process.env.MAGPIPE_DATA_DIR;
 
   beforeAll(async () => {
     process.env.MAGPIPE_SECRET_KEY = SECRET;
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'magpipe-wizard-'));
+    process.env.MAGPIPE_DATA_DIR = path.join(root, '.data');
     forgeStore.bareRoot = path.join(root, 'github');
     useTrackerFactory((key) => scriptedTracker(key, store));
     useForgeFactory((token) => scriptedForge(token, forgeStore));
@@ -327,6 +337,8 @@ describe('the New project wizard', () => {
     fs.rmSync(root, { recursive: true, force: true });
     if (previous === undefined) delete process.env.MAGPIPE_SECRET_KEY;
     else process.env.MAGPIPE_SECRET_KEY = previous;
+    if (previousData === undefined) delete process.env.MAGPIPE_DATA_DIR;
+    else process.env.MAGPIPE_DATA_DIR = previousData;
   });
 
   it('asks for the shared GitHub token and Linear key first', async () => {
@@ -407,6 +419,30 @@ describe('the New project wizard', () => {
     await expect(
       wizardEnsureLinearProject(db, { teamId: SCRIPTED_TEAM.id, name: 'Shop' }),
     ).rejects.toThrow('Shop already files into the Linear project Shop');
+  });
+
+  it('installs the factory’s agents on a stand-in that each run replaces with its project (D50)', async () => {
+    const [shop] = await listProjects(db);
+    expect(await factoryInstalled(db)).toBe(false);
+    const result = await installFactory(db);
+    // A repository of Magpipe's own in the data folder, offering run so the agents hold it.
+    expect(result.path).toBe(standInRepositoryPath());
+    expect(standInRepositoryPath().startsWith(root)).toBe(true);
+    expect(await factoryInstalled(db)).toBe(true);
+    const held = await factoryRepository(db);
+    expect(held.path).toBe(standInRepositoryPath());
+    const agents = (await listAgents(db)).filter((a) => a.templateOnly);
+    expect(agents).toHaveLength(9);
+    const tester = agents.find((a) => a.slug === 'test-agent')!;
+    expect(tester.tools.find((g) => g.toolId === held.id)!.scopes).toContain('run');
+    // The projects are the operator's own: no Default project appears.
+    expect((await listProjects(db)).map((p) => p.name)).toEqual(['Shop']);
+    // A run works in its project's folder, never the stand-in.
+    expect((await projectRepository(db, shop!.id)).path).toBe(shop!.repoPath);
+    // Brought up to date later, the agents keep the tool they hold.
+    const again = await installFactory(db);
+    expect(again.path).toBe(standInRepositoryPath());
+    expect(again.tools[0]!.outcome).toBe('unchanged');
   });
 
   it('clones a repository that has a package.json, and checks a folder that holds one already', async () => {

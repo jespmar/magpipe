@@ -11,7 +11,7 @@ import {
 } from '@/lib/config-file';
 import { DbLockedError, getDb } from '@/lib/db';
 import { loadDemo } from '@/lib/db/seed';
-import { loadFactory, summarizeFactory } from '@/lib/factory';
+import { installFactory, summarizeFactory } from '@/lib/factory';
 import { loadFlock, summarizeFlock } from '@/lib/flock';
 import { parseScripts, RosterValidationError, type RosterLine } from '@/lib/roster';
 import { plural } from '@/lib/format';
@@ -137,40 +137,25 @@ export async function loadFlockAction(
   }
 }
 
+export type FactoryInstallResult =
+  { ok: true; lines: RosterLine[] } | { ok: false; message: string };
+
 /**
- * Loads the software factory's nine agents onto a repository folder (D37), the way the flock
- * loads: never throws, and a folder or script it cannot use comes back with the field to fix.
+ * Installs the software factory's nine agents, or brings them up to date (D50). No folder is
+ * asked for: every factory run works in its own project's folder.
  */
-export async function loadFactoryAction(
-  _prev: RosterState,
-  input: FlockLoadInput,
-): Promise<RosterState> {
-  const parsed = flockLoadInput.safeParse(input);
-  if (!parsed.success) {
-    const issue = parsed.error.issues[0];
-    return {
-      status: 'error',
-      message: issue?.message ?? 'Check the folder and the scripts.',
-      field: issue?.path[0] === 'scripts' ? 'scripts' : 'path',
-    };
-  }
+export async function installFactoryAction(): Promise<FactoryInstallResult> {
   try {
-    const result = await loadFactory(await getDb(), {
-      path: parsed.data.path,
-      scripts: parseScripts(parsed.data.scripts),
-    });
-    return { status: 'done', path: result.path, lines: summarizeFactory(result) };
+    const result = await installFactory(await getDb());
+    return { ok: true, lines: summarizeFactory(result) };
   } catch (err) {
-    if (err instanceof RosterValidationError) {
-      return { status: 'error', message: err.message, field: err.field };
-    }
-    console.error('[settings] load the software factory failed:', err);
+    console.error('[settings] install the software factory failed:', err);
     return {
-      status: 'error',
+      ok: false,
       message:
         err instanceof DbLockedError
           ? LOCKED
-          : `The factory could not be loaded. ${err instanceof Error ? err.message : ''}`.trim(),
+          : `The factory could not be installed. ${err instanceof Error ? err.message : ''}`.trim(),
     };
   }
 }

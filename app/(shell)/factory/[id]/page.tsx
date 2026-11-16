@@ -117,7 +117,7 @@ export default async function ProjectPage({ params }: Props) {
           <h2 className="font-medium text-body text-ink">Before the factory runs end to end</h2>
           <ul className="flex flex-col gap-1">
             {project.gaps.map((g) => (
-              <li key={g} className="text-warn text-body-sm">
+              <li key={g} className="text-body-sm text-warn">
                 {GAPS[g].text}{' '}
                 <Link
                   href={`/factory/${project.id}/${GAPS[g].href}`}
@@ -143,7 +143,7 @@ export default async function ProjectPage({ params }: Props) {
           />
         ) : (
           <p className="max-w-[31rem] text-body-sm text-body">
-            The factory&rsquo;s agents are not loaded or some are paused. Load them in{' '}
+            The factory&rsquo;s agents are not installed or some are paused. Install them in{' '}
             <Link href="/settings#factory" className="text-ink underline underline-offset-2">
               Settings
             </Link>{' '}

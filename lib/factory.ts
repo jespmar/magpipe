@@ -9,8 +9,11 @@
  * and grants so the later templates find them; nothing runs them yet.
  */
 import 'server-only';
+import { execFile } from 'node:child_process';
+import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { Db } from './db';
+import { promisify } from 'node:util';
+import { dataDir, type Db } from './db';
 import { listAgents } from './agents';
 import { MERGE_STEP_ID } from './engine/plan';
 import {
@@ -327,8 +330,6 @@ Finish with a line that reads exactly "Verdict: pass" or "Verdict: fail", then B
   },
 ];
 
-export const DEFAULT_FACTORY_SCRIPTS = ['typecheck', 'lint', 'test'];
-
 // ─── the templates ─────────────────────────────────────────────────────────
 
 export type TemplateStep = {
@@ -626,7 +627,7 @@ export async function templatePlan(
     throw new FactoryNotReadyError(
       paused.length === missing.length
         ? `${andList(paused)} ${paused.length === 1 ? 'is' : 'are'} paused. Resume ${paused.length === 1 ? 'it' : 'them'} on Agents, then send it again.`
-        : `The software factory is not loaded: ${andList(missing)} ${missing.length === 1 ? 'is' : 'are'} missing. Load it in Settings, then send it again.`,
+        : `The software factory is not installed: ${andList(missing)} ${missing.length === 1 ? 'is' : 'are'} missing. Its agents are installed with the first project in Factory, or from Settings.`,
     );
   }
   // A step that needs Linear is left out while Linear is not set up; the run is what it was.
@@ -820,7 +821,7 @@ export async function factoryRepository(db: Db): Promise<{ id: string; path: str
   const repo = rows.find((r) => r.repository);
   if (!repo?.repository) {
     throw new FactoryNotReadyError(
-      'The Code Agent holds no repository. Load the software factory in Settings onto the folder to build in.',
+      'The Code Agent holds no repository. Install the software factory: create a project in Factory, or install it from Settings.',
     );
   }
   return { id: repo.id, path: repo.repository.path };
@@ -836,6 +837,10 @@ export async function projectRepository(
 ): Promise<{ id: string; path: string }> {
   const tool = await factoryRepository(db);
   const project = await resolveProject(db, projectId);
+  // The stand-in is held, never worked in (D50): a run must name its project.
+  if (!project && path.resolve(tool.path) === standInRepositoryPath()) {
+    throw new FactoryNotReadyError('Pick the project this is for: the factory builds only in one.');
+  }
   return { id: tool.id, path: project?.repoPath ?? tool.path };
 }
 
@@ -1325,6 +1330,78 @@ export async function loadFactory(
   await ensureDefaultProject(db);
   return {
     path: found.path,
+    tools: [{ name: app.tool.name, outcome: app.outcome }],
+    namespaces,
+    agents,
+  };
+}
+
+/**
+ * Whether the factory is installed (D50): the nine agents are there and the Code Agent holds the
+ * factory's repository tool.
+ */
+export async function factoryInstalled(db: Db): Promise<boolean> {
+  if (!(await factoryRepository(db).catch(() => null))) return false;
+  const agents = await listAgents(db);
+  return FACTORY_AGENTS.every((def) => agents.some((a) => a.slug === def.slug));
+}
+
+/** The stand-in repository the factory's agents hold (D50): Magpipe's own, in its data folder. */
+export function standInRepositoryPath(): string {
+  return path.join(dataDir(), 'factory', 'repository');
+}
+
+/**
+ * Makes the stand-in repository if it is not there: an empty git work tree whose package.json
+ * names one script, so the tool offers `run` and the agents can be granted it. No run works in
+ * it: each puts its own project's folder and scripts in its place (D45, D50).
+ */
+async function ensureStandInRepository(): Promise<string> {
+  const dir = standInRepositoryPath();
+  await fs.mkdir(dir, { recursive: true });
+  const pkg = path.join(dir, 'package.json');
+  if (!(await fs.stat(pkg).catch(() => null))) {
+    await fs.writeFile(
+      pkg,
+      `${JSON.stringify(
+        {
+          name: 'magpipe-factory-stand-in',
+          private: true,
+          description:
+            'The software factory holds this folder; every run works in its own project instead.',
+          scripts: { test: 'node -e "process.exit(1)"' },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+  }
+  if (!(await fs.stat(path.join(dir, '.git')).catch(() => null))) {
+    await promisify(execFile)('git', ['init', '-q', dir], { timeout: 30_000 });
+  }
+  return dir;
+}
+
+/**
+ * Installs the nine agents, or brings them up to date, with no folder asked for (D50). They are
+ * granted the factory's repository tool, which every factory run points at its own project's
+ * folder, or a goal's worktree. A factory loaded onto a folder before keeps that folder; a new
+ * install holds a stand-in Magpipe makes in its data folder, so it needs no project and makes no
+ * Default project. Agents and tools that are not the factory's are left alone.
+ */
+export async function installFactory(db: Db): Promise<FactoryResult> {
+  const held = await factoryRepository(db).catch(() => null);
+  const folder = held?.path ?? (await ensureStandInRepository());
+  // Found by its folder, so the tool the agents hold is the one kept.
+  const app = await bindRepository(db, {
+    name: held ? path.basename(held.path) || 'App' : 'Factory projects',
+    path: folder,
+    ...(held ? {} : { scripts: ['test'] }),
+  });
+  const namespaces = await ensureNamespaces(db, FACTORY_AGENTS);
+  const agents = await upsertAgents(db, FACTORY_AGENTS, { app: app.tool });
+  return {
+    path: folder,
     tools: [{ name: app.tool.name, outcome: app.outcome }],
     namespaces,
     agents,

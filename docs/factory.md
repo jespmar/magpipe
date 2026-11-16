@@ -98,8 +98,10 @@ are the starting point for them.
 
 ## The roster in Magpipe
 
-Settings → Software factory loads these nine agents onto one repository folder, bound as a
-repository tool (or reused, when the development flock already bound it). Every one of them runs
+These nine agents are installed with the first project the New project wizard makes (D50), and
+brought up to date from Settings → Software factory. They hold one repository tool, made on the
+first project's folder (or reused, when the development flock already bound it), which every
+factory run points at its own project's folder, or a goal's worktree. Every one of them runs
 only from a template: the orchestrator leaves them out of the plans it writes, so a plain Run
 never reaches the Code Agent. The flock and anything else the operator made are left alone. They
 read `facts` and write no memory: the flock's standing instructions in `decisions` are about the

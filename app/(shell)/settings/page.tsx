@@ -11,7 +11,7 @@ import { DemoDataForm } from '@/components/settings/DemoDataForm';
 import { StandingInstructions } from '@/components/settings/StandingInstructions';
 import { RunLimitForm } from '@/components/settings/RunLimitForm';
 import { SpendCapForm } from '@/components/settings/SpendCapForm';
-import { FactoryForm } from '@/components/settings/FactoryForm';
+import { FactoryInstall } from '@/components/settings/FactoryInstall';
 import { GitHubForm } from '@/components/settings/GitHubForm';
 import { ConfigFileForm } from '@/components/settings/ConfigFileForm';
 import { configFilePath, readConfigFile } from '@/lib/config-file';
@@ -27,7 +27,7 @@ import { buildSeed } from '@/lib/db/seed-data';
 import { env } from '@/lib/env';
 import { listMemory } from '@/lib/memory';
 import { STANDING_NS } from '@/lib/memory-util';
-import { DEFAULT_FACTORY_SCRIPTS } from '@/lib/factory';
+import { factoryInstalled } from '@/lib/factory';
 import { DEFAULT_FLOCK_SCRIPTS, FLOCK_DECISIONS } from '@/lib/flock';
 import { accessMode } from '@/lib/auth-mode';
 import { currentUser } from '@/lib/session';
@@ -121,6 +121,15 @@ const EMPTY_FORGE: ForgeView = {
   ready: false,
 };
 
+/** Whether the factory's agents are installed (D50). */
+async function loadFactory(): Promise<boolean> {
+  try {
+    return await factoryInstalled(await getDb());
+  } catch {
+    return false;
+  }
+}
+
 async function loadSpend(): Promise<SpendToday | null> {
   try {
     return await spendToday(await getDb());
@@ -145,7 +154,7 @@ const MODE_LABEL = {
 
 /** Workspace facts (spec §3.7); the daily spend cap is the one the operator edits (D32). */
 export default async function SettingsPage() {
-  const [settings, spend, user, shell, backend, standing, linear, forge, ghPath] =
+  const [settings, spend, user, shell, backend, standing, linear, forge, ghPath, factory] =
     await Promise.all([
       loadSettings(),
       loadSpend(),
@@ -157,6 +166,7 @@ export default async function SettingsPage() {
       loadForge(),
       // The GitHub CLI's sign-in can stand in for a token (D47).
       findGh().catch(() => null),
+      loadFactory(),
     ]);
   // magpipe.env, editable here in the desktop app (D48). A file that cannot be read keeps its
   // section, which says why.
@@ -263,10 +273,10 @@ export default async function SettingsPage() {
               </Link>{' '}
               has its own repository and Linear project: a spec written there is filed in its Linear
               project, and once approved its goals are built on their own branches, tests first,
-              until they are ready to merge. The folder loaded here becomes the Default project.
+              until they are ready to merge. Each run works in its own project&rsquo;s folder.
             </p>
-            <FactoryForm
-              defaultScripts={DEFAULT_FACTORY_SCRIPTS}
+            <FactoryInstall
+              installed={factory}
               disabledReason={
                 shell.dbError
                   ? 'Needs the database. See the notice at the top of the page.'

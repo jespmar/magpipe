@@ -4,6 +4,7 @@ import { ButtonLink } from '@/components/ui/Button';
 import { UnavailableState } from '@/components/ui/EmptyState';
 import { PageHead } from '@/components/ui/PageHead';
 import { getDb } from '@/lib/db';
+import { factoryInstalled } from '@/lib/factory';
 import { listProjects, workspaceDefaults } from '@/lib/projects';
 import { wizardParentFolder } from '@/lib/project-wizard';
 
@@ -29,13 +30,15 @@ export default async function NewProjectPage() {
   let props: Parameters<typeof ProjectWizard>[0];
   try {
     const db = await getDb();
-    const [projects, workspace, parentFolder] = await Promise.all([
+    const [projects, workspace, parentFolder, installed] = await Promise.all([
       listProjects(db),
       workspaceDefaults(db),
       wizardParentFolder(db),
+      factoryInstalled(db),
     ]);
     props = {
       parentFolder,
+      factoryInstalled: installed,
       hasGithubKey: workspace.hasGithubKey,
       hasLinearKey: workspace.hasLinearKey,
       takenRepos: Object.fromEntries(

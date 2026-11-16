@@ -1293,3 +1293,32 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
 - **Not done.** No repository templates, no `.gitignore` or licence choices on a new repository,
   no Linear project settings beyond its name and team, and no GitHub organizations the token
   cannot see (a fine-grained token sees only the repositories it was given).
+
+## D50 · The factory's agents come with the first project
+
+- **Why.** Settings → Software factory asked for a repository folder and scripts before anything
+  else. Since projects (D45, D46) every factory run puts its own project's folder and scripts in
+  place of that folder, and a goal's build works in its own worktree, so the folder was never
+  where a project's agents worked. It only made the Default project, and an operator setting up
+  a new workspace had to invent a folder first (or name one that did not exist).
+- **Installed with the first project.** Saving a new project, which the New project wizard (D49)
+  does, installs the nine agents when they are not there, and says so in its notes; the wizard's
+  last step says it will. A failed install never undoes the project: the note says to install
+  them from Settings. Settings → Software factory asks for nothing: it says whether the agents
+  are installed and offers one button, to install them or bring them up to date (their prompts
+  and grants put back after an update of Magpipe or an edit by hand). `installFactory` in
+  `lib/factory.ts` does both.
+- **A stand-in repository.** The agents still hold one repository tool, so their grants (read,
+  write, `run` and the git operations) have something to name. A new install makes it on a
+  stand-in Magpipe keeps in its data folder (`factory/repository`): an empty git work tree whose
+  package.json names one script, so the tool offers `run` even when the first project, a new
+  repository, has no scripts yet. No run works in it: every factory run puts its project's
+  folder and scripts in its place (D45), and a build its goal's worktree (D41). A build with no
+  project to resolve is refused rather than sent to the stand-in, and the stand-in never becomes
+  a Default project.
+- **Specs need a project.** Home offers Send to the factory only once the agents are installed
+  and a project exists; the runs API refuses a spec when there is no project, as it already did
+  when there were several and none was named.
+- **What was there stays.** A factory loaded onto a folder before keeps that folder and its
+  Default project, and bringing its agents up to date keeps the tool they hold. `loadFactory`
+  remains for the tests that set the factory up on a folder.
