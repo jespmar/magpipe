@@ -278,6 +278,14 @@ describe('building one goal', () => {
     expect(run.plan.find((s) => s.id === 'tests')!.instructions).toContain(
       "The goal's branch is magpipe/header",
     );
+    // The scripts the project allows are named to the Code Agent and the Test Agent (D51).
+    const scripts = (await db.select().from(t.factoryProjects))[0]!.scripts.join(', ');
+    expect(run.plan.find((s) => s.id === 'build')!.instructions).toContain(
+      `The operator allows the scripts ${scripts}: keep one of each in package.json`,
+    );
+    expect(run.plan.find((s) => s.id === 'run')!.instructions).toContain(
+      `Run each script the operator allowed (${scripts}); one that did not run counts as not passing.`,
+    );
     // Its own worktree, on its branch, under the data folder (D41).
     const wt = run.input.worktree!;
     expect(wt.branch).toBe('magpipe/header');

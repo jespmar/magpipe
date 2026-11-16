@@ -86,6 +86,9 @@ export function latestChecks(work: StepWork): StepWork['checks'] {
 
 export function checkWord(check: StepWork['checks'][number]): string {
   if (check.timedOut) return 'timed out';
+  // An allowed script package.json does not have, or one whose dependencies did not install:
+  // nothing ran (D51).
+  if (check.exit === null) return 'did not run';
   return check.exit === 0 ? 'passed' : 'failed';
 }
 
@@ -119,7 +122,7 @@ export function workFacts(work: StepWork | undefined): string[] {
     ...latestChecks(work).map(
       (c) =>
         `${c.repo}: ran ${c.script}, ${checkWord(c)}${
-          c.timedOut ? '' : ` (exit ${c.exit ?? '?'})`
+          c.timedOut || c.exit === null ? '' : ` (exit ${c.exit})`
         } in ${c.seconds.toFixed(1)} s`,
     ),
   ];

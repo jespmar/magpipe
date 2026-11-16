@@ -201,6 +201,8 @@ export function ProjectWizard({
   // 4. Details.
   const [name, setName] = useState('');
   const [available, setAvailable] = useState<string[] | null | undefined>(undefined);
+  // Why package.json could not be read from GitHub: nothing is ticked for the operator then.
+  const [unread, setUnread] = useState<string | null>(null);
   const [scripts, setScripts] = useState<string[]>([]);
   const [context, setContext] = useState('');
 
@@ -277,6 +279,7 @@ export function ProjectWizard({
   function loadScripts() {
     const choose = (list: string[] | null) => {
       setAvailable(list);
+      setUnread(null);
       // With no scripts yet, the usual names are offered: the builds add them (D51).
       const offered = list?.length ? list : USUAL_SCRIPTS;
       // Choices the operator made that are still offered stay; else the usual ones.
@@ -289,8 +292,11 @@ export function ProjectWizard({
     if (creating) return choose(null);
     run('scripts', async () => {
       const res = await wizardRepoScriptsAction(repo);
-      // Not fatal: the scripts can be named on the project's settings later.
-      choose(res.ok ? res.scripts : null);
+      if (res.ok) return choose(res.scripts);
+      // Not fatal, but not "no package.json" either: the operator ticks what agents may run.
+      setAvailable(null);
+      setUnread(res.message);
+      setScripts([]);
     });
   }
 
@@ -922,7 +928,12 @@ export function ProjectWizard({
           <p className="text-body-sm text-body">Reading package.json…</p>
         ) : (
           <div className="flex flex-col gap-3">
-            {available === null || available.length === 0 ? (
+            {unread ? (
+              <p className="max-w-[31rem] text-body-sm text-warn">
+                Its package.json could not be read from GitHub ({unread}). Tick the scripts agents
+                may run, or name them on the project’s settings later.
+              </p>
+            ) : available === null || available.length === 0 ? (
               <p className="max-w-[31rem] text-body-sm text-body">
                 {available === null
                   ? 'The repository has no package.json yet,'
@@ -983,7 +994,7 @@ export function ProjectWizard({
     [
       'Scripts',
       scripts.length
-        ? `${scripts.join(', ')}${available?.length ? '' : ', once a build adds them'}`
+        ? `${scripts.join(', ')}${available?.length || unread ? '' : ', once a build adds them'}`
         : 'none: builds wait until the project names some',
     ],
   ];

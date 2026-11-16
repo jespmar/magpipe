@@ -121,6 +121,49 @@ describe('paths', () => {
   });
 });
 
+describe('scripts ahead of package.json (D51)', () => {
+  let dir: string;
+  beforeAll(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'magpipe-install-'));
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
+  });
+  afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const config = () => ({ path: dir, scripts: ['test'], timeoutSec: 120 });
+
+  it('says when there is no package.json, or one that is not JSON', async () => {
+    expect((await repoRun(config(), 'test')).text).toContain('there is no package.json');
+    fs.writeFileSync(path.join(dir, 'package.json'), '{ "scripts": { "test": "x", } }');
+    const broken = await repoRun(config(), 'test');
+    expect(broken.isError).toBe(true);
+    expect(broken.text).toMatch(/^package\.json is not valid JSON \(/);
+    expect(broken.work).toBeUndefined();
+  });
+
+  it('installs the dependencies a new package.json names before the first run, kept out of git', async () => {
+    fs.mkdirSync(path.join(dir, 'dep'), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'dep', 'package.json'),
+      JSON.stringify({ name: 'dep', version: '1.0.0', main: 'index.js' }),
+    );
+    fs.writeFileSync(path.join(dir, 'dep', 'index.js'), "module.exports = 'dep ok';");
+    fs.writeFileSync(
+      path.join(dir, 'package.json'),
+      JSON.stringify({
+        name: 'fresh',
+        private: true,
+        scripts: { test: 'node -e "console.log(require(\'dep\'))"' },
+        dependencies: { dep: 'file:./dep' },
+      }),
+    );
+    const ran = await repoRun(config(), 'test');
+    expect(ran.isError).toBe(false);
+    expect(ran.text).toContain('dep ok');
+    expect(fs.existsSync(path.join(dir, 'node_modules', 'dep'))).toBe(true);
+    const status = execFileSync('git', ['status', '--porcelain'], { cwd: dir, encoding: 'utf8' });
+    expect(status).not.toContain('node_modules');
+  }, 120_000);
+});
+
 describe('scripts', () => {
   it('runs an allowed script without Magpipe secrets, and reports its exit', async () => {
     process.env.ANTHROPIC_API_KEY = 'sk-must-not-leak';
@@ -152,10 +195,12 @@ describe('scripts', () => {
         isError: true,
         text: expect.stringContaining('not a script this repository allows'),
       });
-      // Allowed before package.json has it (D51): said plainly, nothing is run.
+      // Allowed before package.json has it (D51): said plainly, nothing is run, and the step's
+      // record keeps it as a check that did not run.
       expect(await repoRun({ ...config, scripts: ['typecheck'] }, 'typecheck')).toEqual({
         isError: true,
-        text: 'package.json has no script named "typecheck" yet. It is allowed, so once the change adds it, it can run.',
+        text: '"typecheck" did not run: package.json has no script named "typecheck". The operator allows it; until the change adds it, it has not passed.',
+        work: { kind: 'check', script: 'typecheck', exit: null, seconds: 0, timedOut: false },
       });
     } finally {
       delete process.env.ANTHROPIC_API_KEY;

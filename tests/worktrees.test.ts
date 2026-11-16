@@ -80,6 +80,25 @@ describe('worktrees', () => {
     expect(await removeWorktree(wt.path)).toBe('missing');
   });
 
+  it('starts a new goal from the base as it is on origin, where goals merge (D51)', async () => {
+    // A bare origin that has moved on: a goal merged there, the local main never pulled.
+    const origin = path.join(dir, 'origin.git');
+    git(dir, 'clone', '-q', '--bare', repo, origin);
+    git(repo, 'remote', 'add', 'origin', origin);
+    const elsewhere = path.join(dir, 'elsewhere');
+    git(dir, 'clone', '-q', '-b', 'main', origin, elsewhere);
+    fs.writeFileSync(path.join(elsewhere, 'scaffold.txt'), 'merged on GitHub\n');
+    git(elsewhere, 'add', '-A');
+    git(elsewhere, 'commit', '-q', '-m', 'scaffold');
+    git(elsewhere, 'push', '-q', 'origin', 'main');
+    const wt = await ensureWorktree(repo, 'magpipe/after-scaffold', data);
+    expect(fs.readFileSync(path.join(wt.path, 'scaffold.txt'), 'utf8')).toBe('merged on GitHub\n');
+    // Its branch tracks nothing: Magpipe sets the upstream when it pushes the goal.
+    expect(() =>
+      git(wt.path, 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'),
+    ).toThrow();
+  });
+
   it('refuses a folder that is not a repository', async () => {
     await expect(ensureWorktree(path.join(dir, 'nowhere'), 'magpipe/x', data)).rejects.toThrow();
   });

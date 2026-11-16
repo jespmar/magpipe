@@ -482,7 +482,7 @@ export const FACTORY_TEMPLATES = {
         agent: 'code-agent',
         title: 'Build the goal',
         instructions:
-          'Build the goal on {branch} until the tests the Test Agent committed pass, without changing them. When findings are given, fix what they name.',
+          'Build the goal on {branch} until the tests the Test Agent committed pass, without changing them. When findings are given, fix what they name. The operator allows the scripts {scripts}: keep one of each in package.json, adding any it lacks, so the checks can run.',
         dependsOn: ['read', 'tests'],
       },
       {
@@ -490,7 +490,7 @@ export const FACTORY_TEMPLATES = {
         agent: 'test-agent',
         title: 'Run the tests',
         instructions:
-          'Your step is to run the tests after the build, on {branch}. Run the scripts the operator allowed, check with git_diff against your own commit that no test file changed, and give the verdict. Send it back with the failures if it does not pass.',
+          'Your step is to run the tests after the build, on {branch}. Run each script the operator allowed ({scripts}); one that did not run counts as not passing. Check with git_diff against your own commit that no test file changed, and give the verdict. Send it back with the failures if it does not pass.',
         dependsOn: ['build'],
         judges: true,
         sendBackTo: ['build'],
@@ -563,7 +563,7 @@ export const FACTORY_TEMPLATES = {
         agent: 'test-agent',
         title: 'Run the tests again',
         instructions:
-          'Your step is to run the tests after the build, on {branch}, now brought up to date with the default branch. Run the scripts the operator allowed, check with git_diff that no test file changed since your commit, and give the verdict. There is nothing to send back: a fail stops the merge.',
+          'Your step is to run the tests after the build, on {branch}, now brought up to date with the default branch. Run each script the operator allowed ({scripts}); one that did not run counts as not passing. Check with git_diff that no test file changed since your commit, and give the verdict. There is nothing to send back: a fail stops the merge.',
         dependsOn: ['update'],
         judges: true,
         sendBackTo: [],
@@ -778,7 +778,7 @@ export async function startBuildRun(
     if (project && project.scripts.length === 0) return null;
     const branch = goalBranch(current);
     const preset = await templatePlan(db, 'build', {
-      vars: { branch },
+      vars: { branch, scripts: project?.scripts.join(', ') ?? 'none' },
       projectId: current.projectId,
     });
     // Sent back from the merge question (D42): the operator's note reaches the Code Agent.
@@ -1039,8 +1039,9 @@ export async function startLandRun(
     if (!current?.goal || !current.prNumber || current.mergedAt || current.landRunId) return null;
     if (!current.mergeRequestedAt) return null;
     const branch = goalBranch(current);
+    const landing = await resolveProject(db, current.projectId);
     const preset = await templatePlan(db, 'land', {
-      vars: { branch },
+      vars: { branch, scripts: landing?.scripts.join(', ') ?? 'none' },
       projectId: current.projectId,
     });
     const repo = await projectRepository(db, current.projectId);

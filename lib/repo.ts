@@ -482,6 +482,98 @@ export async function repoWrite(
   };
 }
 
+type PackageJson = {
+  scripts?: Record<string, unknown>;
+  dependencies?: Record<string, unknown>;
+  devDependencies?: Record<string, unknown>;
+};
+
+/** A folder's package.json: there and parsed, not there, or there and not JSON. */
+async function readPackageJson(
+  dir: string,
+): Promise<
+  { state: 'ok'; pkg: PackageJson } | { state: 'missing' } | { state: 'invalid'; error: string }
+> {
+  let text: string;
+  try {
+    text = await fs.readFile(path.join(dir, 'package.json'), 'utf8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { state: 'missing' };
+    throw err;
+  }
+  try {
+    const pkg = JSON.parse(text.replace(/^\uFEFF/, '')) as unknown;
+    if (!pkg || typeof pkg !== 'object' || Array.isArray(pkg)) {
+      return { state: 'invalid', error: 'not an object' };
+    }
+    return { state: 'ok', pkg: pkg as PackageJson };
+  } catch (err) {
+    return { state: 'invalid', error: (err as Error).message };
+  }
+}
+
+/** The install each package manager does from a lockfile or package.json, no install scripts. */
+function installArgs(pm: PackageManager): string[] {
+  return pm === 'npm'
+    ? ['install', '--ignore-scripts', '--no-audit', '--no-fund']
+    : ['install', '--ignore-scripts'];
+}
+
+/**
+ * Installs a package.json's dependencies when it names some and the folder has no node_modules
+ * (D51). A linked node_modules (the bound folder's, in a goal's worktree, D41) is used as it is.
+ * Null when nothing needed installing.
+ */
+async function installDependencies(
+  dir: string,
+  pkg: PackageJson,
+  pm: PackageManager,
+  file: string,
+  opts: { timeoutMs: number; signal?: AbortSignal },
+): Promise<ExecResult | null> {
+  const named = { ...pkg.dependencies, ...pkg.devDependencies };
+  if (Object.keys(named).length === 0) return null;
+  if (await fs.lstat(path.join(dir, 'node_modules')).catch(() => null)) return null;
+  // Kept out of git in every worktree of the repository, as a linked one is.
+  await excludeNodeModules(dir);
+  try {
+    return await exec(file, installArgs(pm), {
+      cwd: dir,
+      env: await commandEnv(),
+      timeoutMs: opts.timeoutMs,
+      signal: opts.signal,
+    });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return {
+        code: 127,
+        output: `${pm} was not found on this machine`,
+        timedOut: false,
+        truncated: false,
+      };
+    }
+    throw err;
+  }
+}
+
+/** Keeps node_modules out of git for every worktree of the repository at `dir` (D41, D51). */
+export async function excludeNodeModules(dir: string): Promise<void> {
+  const common = await git(dir, ['rev-parse', '--git-common-dir']);
+  if (common.code !== 0) return;
+  const file = path.join(path.resolve(dir, common.output.trim()), 'info', 'exclude');
+  const current = await fs.readFile(file, 'utf8').catch(() => '');
+  if (
+    current.split('\n').some((l) => l.trim() === 'node_modules' || l.trim() === '/node_modules')
+  ) {
+    return;
+  }
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(
+    file,
+    `${current}${current && !current.endsWith('\n') ? '\n' : ''}# Kept out of git by Magpipe\n/node_modules\n`,
+  );
+}
+
 /** `run`: one of the package scripts the operator allowed, with the folder as working directory. */
 export async function repoRun(
   config: RepositoryConfig,
@@ -494,21 +586,45 @@ export async function repoRun(
       isError: true,
     };
   }
-  // Allowed by name before package.json had it (D51): said plainly rather than left to npm.
-  const pkg = await fs
-    .readFile(path.join(config.path, 'package.json'), 'utf8')
-    .then((text) => JSON.parse(text) as { scripts?: Record<string, unknown> })
-    .catch(() => null);
-  if (typeof pkg?.scripts?.[script] !== 'string') {
+  // Allowed by name before package.json had it (D51): said plainly rather than left to npm, and
+  // kept in the step's record as a check that did not run.
+  const read = await readPackageJson(config.path);
+  if (read.state === 'invalid') {
     return {
-      text: `package.json has no script named "${script}" yet${pkg ? '' : ' (there is no package.json)'}. It is allowed, so once the change adds it, it can run.`,
+      text: `package.json is not valid JSON (${read.error}), so nothing ran. Fix it, then run the script again.`,
       isError: true,
+    };
+  }
+  if (read.state === 'missing' || typeof read.pkg.scripts?.[script] !== 'string') {
+    return {
+      text: `"${script}" did not run: ${read.state === 'missing' ? 'there is no package.json' : `package.json has no script named "${script}"`}. The operator allows it; until the change adds it, it has not passed.`,
+      isError: true,
+      work: { kind: 'check', script, exit: null, seconds: 0, timedOut: false },
     };
   }
   const pm = await packageManagerOf(config.path, config.path);
   const file = process.platform === 'win32' ? `${pm}.cmd` : pm;
   const started = Date.now();
   const timeoutMs = opts.timeoutMs ?? config.timeoutSec * 1000;
+  // A package.json with dependencies and no node_modules (a new repository's first build, D51):
+  // its packages are installed first, their own install scripts not run.
+  const installed = await installDependencies(config.path, read.pkg, pm, file, {
+    timeoutMs,
+    signal: opts.signal,
+  });
+  if (installed && installed.code !== 0) {
+    return {
+      text: `$ ${pm} ${installArgs(pm).join(' ')}\n${installed.output.trimEnd()}\nInstalling the dependencies failed, so "${script}" did not run.`,
+      isError: true,
+      work: {
+        kind: 'check',
+        script,
+        exit: installed.timedOut ? null : installed.code,
+        seconds: 0,
+        timedOut: installed.timedOut,
+      },
+    };
+  }
   let res: ExecResult;
   try {
     res = await exec(file, ['run', script], {
