@@ -179,6 +179,41 @@ describe('GitHub for the wizard', () => {
     );
   });
 
+  it('reads a pull request’s checks from check runs and commit statuses alike (D52)', async () => {
+    const pull = {
+      number: 3,
+      html_url: 'https://github.com/o/r/pull/3',
+      state: 'open',
+      merged_at: null,
+      head: { ref: 'magpipe/x', sha: 'abc' },
+      base: { ref: 'main' },
+    };
+    const forgeWith = (runs: unknown[], status: { state: string; total_count: number }) =>
+      githubForge(
+        't',
+        fakeFetch((c) => ({
+          json: c.url.includes('/check-runs')
+            ? { check_runs: runs }
+            : c.url.endsWith('/status')
+              ? status
+              : pull,
+        })).impl,
+      );
+    const read = async (runs: unknown[], status: { state: string; total_count: number }) =>
+      (await forgeWith(runs, status).pullRequest('o/r', 3)).checks;
+    expect(await read([], { state: 'pending', total_count: 0 })).toBe('none');
+    // CI that reports through commit statuses (CircleCI, Jenkins) is not taken for none.
+    expect(await read([], { state: 'failure', total_count: 1 })).toBe('failure');
+    expect(await read([], { state: 'pending', total_count: 2 })).toBe('pending');
+    expect(await read([], { state: 'success', total_count: 1 })).toBe('success');
+    expect(
+      await read([{ status: 'completed', conclusion: 'success' }], {
+        state: 'failure',
+        total_count: 1,
+      }),
+    ).toBe('failure');
+  });
+
   it('reads the scripts from package.json, and none when there is no package.json', async () => {
     const content = Buffer.from(
       JSON.stringify({ scripts: { test: 'vitest', lint: 'eslint', 'bad name': 'x' } }),

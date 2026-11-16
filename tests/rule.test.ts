@@ -95,8 +95,22 @@ describe('the rule as a verdict', () => {
   });
 
   it('merges a repository that runs no checks, and needs no label when none is named (D52)', () => {
+    // Right after the pull request opens, no checks may mean none have started yet: it waits.
     expect(
       ruleVerdict({ rule: RULE, labels: ['auto-merge'], build: firstPass, checks: 'none' }),
+    ).toEqual({
+      holds: false,
+      waiting: true,
+      reasons: ['its pull request has no checks yet, so Magpipe waits a few minutes for any'],
+    });
+    expect(
+      ruleVerdict({
+        rule: RULE,
+        labels: ['auto-merge'],
+        build: firstPass,
+        checks: 'none',
+        checksSettled: true,
+      }),
     ).toEqual({
       holds: true,
       reasons: [
@@ -106,6 +120,19 @@ describe('the rule as a verdict', () => {
       ],
     });
     // A new project's rule (the wizard's): no label, and a goal built again counts as passed.
+    // A goal built again does not count as passing on the first try.
+    expect(
+      ruleVerdict({
+        rule: RULE,
+        labels: ['auto-merge'],
+        build: firstPass,
+        checks: 'success',
+        rebuilds: 1,
+      }),
+    ).toMatchObject({
+      holds: false,
+      reasons: ['it was built again after a build that did not pass'],
+    });
     const wizard = { ...RULE, autoMergeLabel: '', autoMergeFirstPass: false };
     const sentBack = { plan: [judge('Run the tests'), judge('Review the code', { round: 2 })] };
     expect(ruleVerdict({ rule: wizard, labels: [], build: sentBack, checks: 'success' })).toEqual({

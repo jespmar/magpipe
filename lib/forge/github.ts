@@ -105,16 +105,38 @@ export function githubForge(
     sha: string,
     signal?: AbortSignal,
   ): Promise<PullRequest['checks']> {
-    const runs = await call<{ check_runs: { status: string; conclusion: string | null }[] }>(
-      'GET',
-      `/repos/${repo}/commits/${sha}/check-runs?per_page=100`,
-      undefined,
-      signal,
-    );
-    if (runs.check_runs.length === 0) return 'none';
-    if (runs.check_runs.some((r) => r.status !== 'completed')) return 'pending';
+    // Check runs (GitHub Actions and apps) and commit statuses (CircleCI, Jenkins and the like):
+    // a repository may report through either, so both are read (D52).
+    const [runs, status] = await Promise.all([
+      call<{ check_runs: { status: string; conclusion: string | null }[] }>(
+        'GET',
+        `/repos/${repo}/commits/${sha}/check-runs?per_page=100`,
+        undefined,
+        signal,
+      ),
+      call<{ state?: string; total_count?: number }>(
+        'GET',
+        `/repos/${repo}/commits/${sha}/status`,
+        undefined,
+        signal,
+      ),
+    ]);
+    const statuses = status.total_count ?? 0;
+    if (runs.check_runs.length === 0 && statuses === 0) return 'none';
     const bad = ['failure', 'timed_out', 'cancelled', 'action_required', 'startup_failure'];
-    return runs.check_runs.some((r) => bad.includes(r.conclusion ?? '')) ? 'failure' : 'success';
+    if (
+      runs.check_runs.some((r) => r.status === 'completed' && bad.includes(r.conclusion ?? '')) ||
+      (statuses > 0 && (status.state === 'failure' || status.state === 'error'))
+    ) {
+      return 'failure';
+    }
+    if (
+      runs.check_runs.some((r) => r.status !== 'completed') ||
+      (statuses > 0 && status.state === 'pending')
+    ) {
+      return 'pending';
+    }
+    return 'success';
   }
 
   async function shape(repo: string, raw: RawPull, signal?: AbortSignal): Promise<PullRequest> {

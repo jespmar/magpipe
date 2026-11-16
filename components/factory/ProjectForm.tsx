@@ -448,7 +448,8 @@ export function ProjectForm({ initial, agents, models, workspace }: Props) {
             onCheckedChange={(on) => setFirstPass(on === true)}
           />
           <Checkbox
-            label="Only when the pull request’s checks are green"
+            label="Only when the pull request’s checks pass"
+            description="A repository that runs no checks has none to fail, once its pull request has waited a few minutes for any to start."
             checked={checks}
             onCheckedChange={(on) => setChecks(on === true)}
           />

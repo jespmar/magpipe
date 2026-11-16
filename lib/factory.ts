@@ -37,6 +37,7 @@ import { and, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import * as t from './db/schema';
 import {
   approvedWithoutGoals,
+  clearRebuilds,
   claimBuildRun,
   claimLandRun,
   recordMerged,
@@ -795,11 +796,12 @@ export async function startBuildRun(
     });
     // Sent back from the merge question (D42): the operator's note reaches the Code Agent. Built
     // again after a build that did not pass (D52): what that build found does.
+    // A rebuild's note carries the operator's too, until a build passes.
     const build = preset.plan.find((s) => s.id === 'build');
-    if (build && current.operatorNote) {
-      build.feedback = `The operator sent this goal back from the merge question: ${current.operatorNote}`;
-    } else if (build && current.rebuildNote) {
+    if (build && current.rebuildNote) {
       build.feedback = `An earlier build of this goal did not pass. Fix what it found, keeping the tests the Test Agent committed: ${current.rebuildNote}`;
+    } else if (build && current.operatorNote) {
+      build.feedback = `The operator sent this goal back from the merge question: ${current.operatorNote}`;
     }
     // Each goal builds in its own worktree (D41), so goals go side by side.
     const repo = await projectRepository(db, current.projectId);
@@ -817,7 +819,8 @@ export async function startBuildRun(
       current.runId,
       { ...preset, createdBy: 'factory' },
     );
-    if (current.operatorNote) await releaseGoal(db, current.id, null);
+    // The note stays until a build passes, so a rebuild still has it (D52).
+    if (current.operatorNote) await releaseGoal(db, current.id);
     if (!(await claimBuildRun(db, current.id, run.id))) {
       await db
         .update(t.runs)
@@ -1000,6 +1003,8 @@ async function reconcileBuilds(db: Db, problems: string[]): Promise<string[]> {
       const moved = await tracker.setState(goal.externalId, settings.states.needs_you!.id);
       await recordState(db, goal.id, settings, moved);
       await releaseBuildRun(db, goal.id);
+      // Handed to the operator: a move back to Approved starts a fresh count (D52).
+      await clearRebuilds(db, goal.id);
       out.push(`${goal.identifier} needs you: ${why}.`);
     });
   }
@@ -1159,6 +1164,10 @@ export function ruleVerdict(input: {
   labels: readonly string[];
   build: Pick<Run, 'plan'> | undefined;
   checks: PullRequest['checks'];
+  /** Builds Magpipe started again before this one passed (D52): none is a first try. */
+  rebuilds?: number;
+  /** A pull request with no checks has waited long enough for any to start (D52). */
+  checksSettled?: boolean;
 }): RuleVerdict {
   const { rule } = input;
   if (!rule.autoMerge) return { holds: false, waiting: false, reasons: ['the rule is off'] };
@@ -1178,6 +1187,8 @@ export function ruleVerdict(input: {
   if (rule.autoMergeFirstPass) {
     const sentBack = input.build?.plan.some((s) => (s.round ?? 1) > 1) ?? true;
     if (sentBack) missing.push('a judge sent the work back');
+    else if ((input.rebuilds ?? 0) > 0)
+      missing.push('it was built again after a build that did not pass');
     else if (allPass) reasons.push('every judge passed on the first try');
   } else if (allPass) {
     reasons.push('every judge passed');
@@ -1189,14 +1200,21 @@ export function ruleVerdict(input: {
       waiting = true;
       missing.push('its checks are still running');
     } else if (input.checks === 'failure') missing.push('its checks failed');
-    // A repository that runs no checks on pull requests has none to fail (D52); the land still
-    // runs the tests again after bringing the branch up to date.
-    else reasons.push('its repository runs no checks on pull requests');
+    // A repository that runs no checks on pull requests has none to fail (D52), once the pull
+    // request has waited long enough for any to start; the land still runs the tests again.
+    else if (input.checksSettled) reasons.push('its repository runs no checks on pull requests');
+    else {
+      waiting = true;
+      missing.push('its pull request has no checks yet, so Magpipe waits a few minutes for any');
+    }
   }
   return missing.length === 0
     ? { holds: true, reasons }
     : { holds: false, waiting: waiting && missing.length === 1, reasons: missing };
 }
+
+/** How long a pull request with no checks waits for any to start before it counts as none (D52). */
+const CHECKS_GRACE_MS = 5 * 60_000;
 
 /**
  * Unattended merges (D44): each goal at the merge question with its pull request is held to the
@@ -1229,7 +1247,10 @@ async function answerByRule(db: Db, problems: string[]): Promise<void> {
       const spec = goal.parentId ? await getIssue(db, goal.parentId) : undefined;
       const specLabels = spec ? (await tracker.getIssue(spec.externalId)).labels : [];
       const [build] = goal.buildRunId
-        ? await db.select({ plan: t.runs.plan }).from(t.runs).where(eq(t.runs.id, goal.buildRunId))
+        ? await db
+            .select({ plan: t.runs.plan, finishedAt: t.runs.finishedAt })
+            .from(t.runs)
+            .where(eq(t.runs.id, goal.buildRunId))
         : [];
       const pr = await forge.pullRequest(repo, goal.prNumber!);
       if (pr.state !== 'open') return;
@@ -1238,6 +1259,9 @@ async function answerByRule(db: Db, problems: string[]): Promise<void> {
         labels: [...remote.labels, ...specLabels],
         build,
         checks: pr.checks,
+        rebuilds: goal.buildAttempts,
+        checksSettled:
+          Boolean(build?.finishedAt) && Date.now() - build!.finishedAt!.getTime() > CHECKS_GRACE_MS,
       });
       if (!verdict.holds) return;
       const now = new Date();

@@ -20,6 +20,7 @@ import {
   recordState,
   recordMerged,
   recordPull,
+  passRebuilds,
   recordRebuild,
   releaseBuildRun,
   releaseGoal,
@@ -269,7 +270,7 @@ async function finishGoal({
   const pull = upstream.find((s) => s.action === 'open_pr' && s.status === 'done');
   const current = (await getIssue(db, issue.id)) ?? issue;
   if (passed) {
-    await clearRebuilds(db, issue.id);
+    await passRebuilds(db, issue.id);
     // The question to merge (G2, D42): with a pull request, any of three doors answers it.
     const question =
       pull && current.prUrl
@@ -296,11 +297,28 @@ async function finishGoal({
         .filter((s) => !(s.status === 'done' && s.verdict === 'pass'))
         .map((s) => `“${s.title}” ${s.status === 'done' ? `said ${verdictOf(s)}` : 'did not run'}`)
         .join('; ');
+  // The operator moved the goal elsewhere while it built (Canceled, Backlog, Done): that stands.
+  if (current.stage !== 'approved' && current.stage !== 'building') {
+    await releaseBuildRun(db, issue.id);
+    return {
+      status: 'done',
+      summary: `${issue.identifier} did not pass: ${why}. Left in ${current.stateName ?? 'the status it was moved to'}, as moved while it built.`,
+    };
+  }
   // Built again on its own (D52), with what this build found, unless a person is needed: a key
-  // or a tool Magpipe could not use, the spend cap, or the rebuilds used up.
+  // or a tool Magpipe could not use, a budget spent, or the rebuilds used up.
   const person = needsPerson(failed);
   if (!person && current.buildAttempts < MAX_REBUILDS) {
-    const attempt = current.buildAttempts + 1;
+    const attempt = await recordRebuild(
+      db,
+      issue.id,
+      run.id,
+      rebuildNote(why, judges, who, verdictOf, current.operatorNote),
+    );
+    // Recorded already: this finish ran before, and was run again after a restart.
+    if (attempt === null) {
+      return { status: 'done', summary: `${issue.identifier} is being built again.` };
+    }
     await tracker.comment(
       issue.externalId,
       `Not ready yet: ${why}. Building it again (rebuild ${attempt} of ${MAX_REBUILDS}) on \`${branch}\`, with these findings.\n\n${report}${recorded}`,
@@ -308,7 +326,6 @@ async function finishGoal({
     );
     const moved = await tracker.setState(issue.externalId, settings.states.approved!.id, signal);
     await recordState(db, issue.id, settings, moved);
-    await recordRebuild(db, issue.id, rebuildNote(why, judges, who, verdictOf));
     return {
       status: 'done',
       summary: `${issue.identifier} did not pass: ${why}. Building it again (rebuild ${attempt} of ${MAX_REBUILDS}).`,
@@ -345,7 +362,11 @@ const PERSON_CODES: Record<string, string> = {
   no_cli: 'The claude command could not be found.',
   refusal: 'The model refused the step.',
   cancelled: 'It was cancelled.',
-  limit_budget: 'A step ran out of its token budget.',
+  limit_tokens: 'A step ran out of its token budget.',
+  limit_steps: 'A step ran out of its tool rounds.',
+  limit_budget: 'A step reached its spending limit.',
+  bad_request: 'The model refused the request as it was made.',
+  no_agent: 'An agent of the step is missing.',
 };
 
 function needsPerson(failed: Step[]): string | null {
@@ -364,6 +385,7 @@ function rebuildNote(
   judges: Step[],
   who: (s: Step) => string,
   verdictOf: (s: Step) => string,
+  operatorNote: string | null,
 ): string {
   const findings = judges
     .filter((s) => !(s.status === 'done' && s.verdict === 'pass'))
@@ -372,7 +394,9 @@ function rebuildNote(
         `${who(s)}, ${s.title.toLowerCase()}: ${verdictOf(s)}. ${s.result?.summary ?? s.error?.message ?? ''}`,
     )
     .join('\n\n');
-  return `${why}.\n\n${findings}`.slice(0, 6000);
+  // The operator's note from the merge question is still to be done: it stays in front.
+  const asked = operatorNote ? `The operator asked: ${operatorNote}\n\n` : '';
+  return `${asked}${why}.\n\n${findings}`.slice(0, 6000);
 }
 
 /** A run's GitHub settings: its factory project's (D45), else the workspace's. */

@@ -826,7 +826,10 @@ export const forgeSettings = z.object({
   autoMergeLabel: z.string().max(80),
   /** The rule holds only when every judge passed on the first try, nothing sent back. */
   autoMergeFirstPass: z.boolean(),
-  /** The rule holds only when the pull request's checks are green. */
+  /**
+   * The rule holds only when the pull request's checks pass: check runs and commit statuses, or
+   * none at all once it has waited a few minutes for any to start (D52).
+   */
   autoMergeChecks: z.boolean(),
   updatedAt: z.date(),
 });
