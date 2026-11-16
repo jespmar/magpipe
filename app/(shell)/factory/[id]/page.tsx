@@ -113,7 +113,7 @@ export default async function ProjectPage({ params }: Props) {
           <h2 className="font-medium text-body text-ink">Before the factory runs end to end</h2>
           <ul className="flex flex-col gap-1">
             {project.gaps.map((g) => (
-              <li key={g} className="text-amber text-body-sm">
+              <li key={g} className="text-warn text-body-sm">
                 {GAPS[g].text}{' '}
                 <Link
                   href={`/factory/${project.id}/${GAPS[g].href}`}

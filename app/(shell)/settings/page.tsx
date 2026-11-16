@@ -14,7 +14,7 @@ import { SpendCapForm } from '@/components/settings/SpendCapForm';
 import { FactoryForm } from '@/components/settings/FactoryForm';
 import { GitHubForm } from '@/components/settings/GitHubForm';
 import { ConfigFileForm } from '@/components/settings/ConfigFileForm';
-import { readConfigFile } from '@/lib/config-file';
+import { configFilePath, readConfigFile } from '@/lib/config-file';
 import { LinearForm } from '@/components/settings/LinearForm';
 import { FlockForm } from '@/components/settings/FlockForm';
 import { ScrollToHash } from '@/components/ui/ScrollToHash';
@@ -158,8 +158,17 @@ export default async function SettingsPage() {
       // The GitHub CLI's sign-in can stand in for a token (D47).
       findGh().catch(() => null),
     ]);
-  // magpipe.env, editable here in the desktop app (D48).
-  const configFile = await readConfigFile().catch(() => null);
+  // magpipe.env, editable here in the desktop app (D48). A file that cannot be read keeps its
+  // section, which says why.
+  const configPath = configFilePath();
+  const configRead = await readConfigFile().then(
+    (file) => ({ file, error: null }),
+    (err: unknown) => ({
+      file: null,
+      error: (err as NodeJS.ErrnoException).code ?? (err as Error).message,
+    }),
+  );
+  const configFile = configRead.file;
   // Where Linear sends the browser back after Sign in with Linear (D47): what the OAuth app needs.
   const callbackUrl = `${originFrom(await headers(), { desktop: accessMode() === 'desktop' })}/api/linear-callback`;
   const backendRows: (readonly [string, string])[] =
@@ -334,6 +343,14 @@ export default async function SettingsPage() {
             />
           </Section>
         </div>
+        {configPath && !configFile ? (
+          <Section id="config" title="Config file" className="md:col-span-2">
+            <p className="max-w-[31rem] text-body-sm text-danger">
+              Magpipe cannot read {configPath} ({configRead.error}). Check the file&rsquo;s
+              permissions, then open Settings again.
+            </p>
+          </Section>
+        ) : null}
         {configFile ? (
           <Section id="config" title="Config file" className="md:col-span-2">
             <p className="max-w-[31rem] text-body-sm text-body">

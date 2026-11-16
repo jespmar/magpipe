@@ -1223,6 +1223,14 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
   `electron/preload.ts` (`magpipe:restart`, `magpipe:open-config`) that the main process answers
   only for the app's own window on the app's own pages. Restart relaunches through the normal
   quit, so the embedded database closes cleanly. A browser shows the words instead of the button.
+- **After review.** A value the server's own environment schema refuses (the development stubs,
+  say) is refused too, since it would stop the next launch, from which the editor could not be
+  reached. A linked magpipe.env stays a link: the file it points at is replaced. What waits for a
+  restart is measured against the keys the desktop app took from the file at launch
+  (`MAGPIPE_CONFIG_KEYS`), so a variable from the launching shell is not taken for a pending
+  change. Restart relaunches an AppImage through the AppImage itself, and does nothing in
+  development, where `dev.mjs` owns the server. A file that cannot be read keeps its section,
+  which says why.
 - **Not done.** No editing of the environment of `next dev` (`.env`), which development reads
   itself; the section is not shown there unless the config path is set.
 

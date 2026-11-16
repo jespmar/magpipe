@@ -115,13 +115,13 @@ export default async function FactoryPage() {
               </p>
               <dl className="grid grid-cols-[6rem_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-body-sm">
                 <dt className="text-mute">Linear</dt>
-                <dd className={p.linearReady ? 'text-ink' : 'text-amber'}>
+                <dd className={p.linearReady ? 'text-ink' : 'text-warn'}>
                   {p.linear.project && !p.gaps.includes('linear_project')
                     ? `${p.linear.project.name} (${p.linear.team?.key ?? ''})${p.gaps.includes('linear_key') ? ', needs a key' : ''}`
                     : 'needs its Linear project'}
                 </dd>
                 <dt className="text-mute">GitHub</dt>
-                <dd className={p.github.repo ? 'text-ink' : 'text-amber'}>
+                <dd className={p.github.repo ? 'text-ink' : 'text-warn'}>
                   {p.github.repo ?? 'needs its repository'}
                 </dd>
                 <dt className="text-mute">Work</dt>
@@ -132,7 +132,7 @@ export default async function FactoryPage() {
                 <dt className="text-mute">Waiting</dt>
                 <dd
                   className={
-                    c.waiting ? 'text-amber font-mono text-code' : 'font-mono text-code text-mute'
+                    c.waiting ? 'text-warn font-mono text-code' : 'font-mono text-code text-mute'
                   }
                 >
                   {c.waiting ? `${c.waiting} for you` : 'nothing for you'}

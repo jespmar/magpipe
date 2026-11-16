@@ -70,6 +70,8 @@ export function loadDesktopConfig(userData: string): DesktopConfig {
       AUTH_TRUST_HOST: 'true',
       MAGPIPE_DESKTOP: '1',
       MAGPIPE_CONFIG_PATH: configPath,
+      // Which keys came from the file, so Settings tells a saved change from the launch (D48).
+      MAGPIPE_CONFIG_KEYS: Object.keys(fromFile).join(','),
       MAGPIPE_DATA_DIR: dataDir,
     },
   };
