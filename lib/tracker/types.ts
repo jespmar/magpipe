@@ -29,6 +29,8 @@ export interface Tracker {
   teams(signal?: AbortSignal): Promise<TrackerTeam[]>;
   /** The team's Linear projects, so a factory project can file into one (D45). */
   projects(teamId: string, signal?: AbortSignal): Promise<TrackerRef[]>;
+  /** Makes a Linear project in the team, for a new factory project (D49). */
+  createProject(teamId: string, name: string, signal?: AbortSignal): Promise<TrackerRef>;
   /** The team's statuses, in the team's own order. */
   states(teamId: string, signal?: AbortSignal): Promise<TrackerState[]>;
   /** The label with this name usable in the team (its own or the workspace's), made if missing. */

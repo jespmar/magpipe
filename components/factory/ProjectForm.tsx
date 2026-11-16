@@ -1,15 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import {
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  useTransition,
-  type FormEvent,
-  type ReactNode,
-} from 'react';
+import { useId, useState, useTransition, type FormEvent, type ReactNode } from 'react';
 import { Checkbox } from '@/components/arc/checkbox/checkbox';
 import { Input } from '@/components/arc/input/input';
 import { Select } from '@/components/arc/select/select';
@@ -39,8 +31,7 @@ type Note = { tone: 'done' | 'error'; text: string } | null;
 export type ProjectAgent = { slug: string; name: string; model: string };
 
 type Props = {
-  /** null for a new project. */
-  initial: ProjectView | null;
+  initial: ProjectView;
   agents: ProjectAgent[];
   models: string[];
   /** The shared keys and the workspace limit (D46). */
@@ -108,28 +99,28 @@ export function ProjectForm({ initial, agents, models, workspace }: Props) {
   const [note, setNote] = useState<Note>(null);
   const [field, setField] = useState<string>();
 
-  const [name, setName] = useState(initial?.name ?? '');
-  const [repoPath, setRepoPath] = useState(initial?.repoPath ?? '');
-  const [scripts, setScripts] = useState((initial?.scripts ?? ['test']).join(', '));
-  const [context, setContext] = useState(initial?.context ?? '');
+  const [name, setName] = useState(initial.name ?? '');
+  const [repoPath, setRepoPath] = useState(initial.repoPath ?? '');
+  const [scripts, setScripts] = useState((initial.scripts ?? ['test']).join(', '));
+  const [context, setContext] = useState(initial.context ?? '');
 
   // Linear: the project's own team, Linear project and statuses.
   const [teams, setTeams] = useState<TrackerTeam[]>([]);
   const [states, setStates] = useState<TrackerState[]>([]);
   const [linearProjects, setLinearProjects] = useState<TrackerRef[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [teamId, setTeamId] = useState(initial?.linear.team?.id ?? '');
-  const [linearProject, setLinearProject] = useState(initial?.linear.project?.id ?? '');
-  const [label, setLabel] = useState(initial?.linear.label?.name ?? 'magpipe');
+  const [teamId, setTeamId] = useState(initial.linear.team?.id ?? '');
+  const [linearProject, setLinearProject] = useState(initial.linear.project?.id ?? '');
+  const [label, setLabel] = useState(initial.linear.label?.name ?? 'magpipe');
   const [map, setMap] = useState<Record<PipelineState, string>>(
     () =>
       Object.fromEntries(
-        pipelineStates.map((p) => [p, initial?.linear.states[p]?.id ?? '']),
+        pipelineStates.map((p) => [p, initial.linear.states[p]?.id ?? '']),
       ) as Record<PipelineState, string>,
   );
 
   // GitHub: the project's own repository and rule.
-  const gh = initial?.github;
+  const gh = initial.github;
   const [repo, setRepo] = useState(gh?.repo ?? '');
   const [method, setMethod] = useState<ProjectInput['github']['mergeMethod']>(
     gh?.mergeMethod ?? 'squash',
@@ -139,9 +130,9 @@ export function ProjectForm({ initial, agents, models, workspace }: Props) {
   const [firstPass, setFirstPass] = useState(gh?.autoMergeFirstPass ?? true);
   const [checks, setChecks] = useState(gh?.autoMergeChecks ?? true);
 
-  const [maxRuns, setMaxRuns] = useState(initial?.maxRuns ? String(initial.maxRuns) : '');
-  const [cap, setCap] = useState(initial?.spendCapUsd ? String(initial.spendCapUsd) : '');
-  const [picked, setPicked] = useState<Record<string, string>>(initial?.models ?? {});
+  const [maxRuns, setMaxRuns] = useState(initial.maxRuns ? String(initial.maxRuns) : '');
+  const [cap, setCap] = useState(initial.spendCapUsd ? String(initial.spendCapUsd) : '');
+  const [picked, setPicked] = useState<Record<string, string>>(initial.models ?? {});
 
   // The keys, on a saved project only.
   const [linearKey, setLinearKey] = useState('');
@@ -161,7 +152,7 @@ export function ProjectForm({ initial, agents, models, workspace }: Props) {
   };
 
   async function loadTeam(id: string) {
-    const res = await projectLinearOptionsAction(view?.id ?? null, id || undefined);
+    const res = await projectLinearOptionsAction(view.id, id || undefined);
     if (!res.ok) {
       setNote({ tone: 'error', text: res.message });
       setField('linear');
@@ -171,7 +162,7 @@ export function ProjectForm({ initial, agents, models, workspace }: Props) {
     setStates(res.states);
     setLinearProjects(res.projects);
     setLoaded(true);
-    if (id && id === view?.linear.team?.id) {
+    if (id && id === view.linear.team?.id) {
       // The project's own team again: its saved statuses and Linear project, not an earlier pick.
       setMap(
         Object.fromEntries(
@@ -185,22 +176,6 @@ export function ProjectForm({ initial, agents, models, workspace }: Props) {
     }
     return true;
   }
-
-  // A new project starts with the teams the shared key sees, once.
-  const opened = useRef(false);
-  useEffect(() => {
-    if (opened.current || initial || !workspace.hasLinearKey) return;
-    opened.current = true;
-    setBusy('teams');
-    start(async () => {
-      try {
-        await loadTeam('');
-      } finally {
-        setBusy(null);
-      }
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on the first render
-  }, []);
 
   function chooseTeam(id: string) {
     setTeamId(id);
@@ -232,7 +207,7 @@ export function ProjectForm({ initial, agents, models, workspace }: Props) {
       models: picked,
     };
     run('save', async () => {
-      const res = await saveProjectAction(view?.id ?? null, input);
+      const res = await saveProjectAction(view.id, input);
       if (!res.ok) {
         setNote({ tone: 'error', text: res.message });
         setField(res.field);
@@ -240,17 +215,12 @@ export function ProjectForm({ initial, agents, models, workspace }: Props) {
       }
       setField(undefined);
       setNote({ tone: 'done', text: ['Saved.', ...res.notes].join(' ') });
-      if (!view) {
-        router.replace(`/factory/${res.project.id}`, { scroll: false });
-        return;
-      }
       setView(res.project);
       router.refresh();
     });
   }
 
   function saveKey(kind: 'linear' | 'github', key: string | null) {
-    if (!view) return;
     run(`${kind}-key`, async () => {
       const res = await setProjectKeyAction(view.id, kind, key);
       if (!res.ok) return setKeyNote({ tone: 'error', text: res.message });
@@ -269,7 +239,6 @@ export function ProjectForm({ initial, agents, models, workspace }: Props) {
   }
 
   function remove() {
-    if (!view) return;
     run('delete', async () => {
       const res = await deleteProjectAction(view.id);
       if (!res.ok) return setNote({ tone: 'error', text: res.message });
@@ -394,7 +363,7 @@ export function ProjectForm({ initial, agents, models, workspace }: Props) {
           </>
         ) : (
           <div className="flex flex-col gap-3">
-            {view?.linear.team ? (
+            {view.linear.team ? (
               <p className="text-body-sm text-body">
                 {view.linear.team.name}
                 {view.linear.project
@@ -408,7 +377,7 @@ export function ProjectForm({ initial, agents, models, workspace }: Props) {
                   .join('; ')}
                 .
               </p>
-            ) : workspace.hasLinearKey || view?.hasLinearKey ? null : (
+            ) : workspace.hasLinearKey || view.hasLinearKey ? null : (
               <p className="max-w-[31rem] text-body-sm text-body">
                 Save the shared Linear key in Settings first: the teams and their Linear projects
                 come from Linear.
@@ -421,7 +390,7 @@ export function ProjectForm({ initial, agents, models, workspace }: Props) {
                 loading={busy === 'teams'}
                 disabled={pending && busy !== 'teams'}
               >
-                {view?.linear.team
+                {view.linear.team
                   ? 'Change the Linear project or statuses'
                   : 'Read the teams from Linear'}
               </Button>
@@ -553,35 +522,33 @@ export function ProjectForm({ initial, agents, models, workspace }: Props) {
           loading={busy === 'save'}
           disabled={pending && busy !== 'save'}
         >
-          {view ? 'Save and read back' : 'Create project'}
+          Save and read back
         </Button>
-        {view ? (
-          confirming ? (
-            <>
-              <Button
-                variant="ghost"
-                onClick={remove}
-                loading={busy === 'delete'}
-                disabled={pending && busy !== 'delete'}
-              >
-                Delete, keeping its issues
-              </Button>
-              <Button variant="ghost" onClick={() => setConfirming(false)} disabled={pending}>
-                Cancel
-              </Button>
-            </>
-          ) : (
-            <Button variant="ghost" onClick={() => setConfirming(true)} disabled={pending}>
-              Delete project
+        {confirming ? (
+          <>
+            <Button
+              variant="ghost"
+              onClick={remove}
+              loading={busy === 'delete'}
+              disabled={pending && busy !== 'delete'}
+            >
+              Delete, keeping its issues
             </Button>
-          )
-        ) : null}
+            <Button variant="ghost" onClick={() => setConfirming(false)} disabled={pending}>
+              Cancel
+            </Button>
+          </>
+        ) : (
+          <Button variant="ghost" onClick={() => setConfirming(true)} disabled={pending}>
+            Delete project
+          </Button>
+        )}
       </div>
       <NoteLine note={note} />
     </form>
   );
 
-  const keys = view ? (
+  const keys = (
     <Section
       title="Keys of its own"
       description="Only when this project lives in another Linear workspace or GitHub account. Checked before they are stored, encrypted, never shown again."
@@ -660,7 +627,7 @@ export function ProjectForm({ initial, agents, models, workspace }: Props) {
       </div>
       <NoteLine note={keyNote} />
     </Section>
-  ) : null;
+  );
 
   return (
     <div className="flex flex-col gap-6">

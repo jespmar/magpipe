@@ -133,7 +133,8 @@ export async function projectForge(
 }
 
 /** What is still missing before a project's factory runs end to end, in the operator's words. */
-export type ProjectGap = 'linear_key' | 'linear_project' | 'github_token' | 'github_repo';
+export type ProjectGap =
+  'linear_key' | 'linear_project' | 'github_token' | 'github_repo' | 'scripts';
 
 /** What a screen shows of a project: no key refs, and what it still needs. */
 export type ProjectView = Omit<FactoryProject, 'linearKeyRef' | 'githubKeyRef'> & {
@@ -156,6 +157,7 @@ export async function projectView(db: Db, project: FactoryProject): Promise<Proj
   if (!linearReady({ ...linear, keyRef: linear.keyRef ?? 'any' })) gaps.push('linear_project');
   if (!hasForgeToken(forge)) gaps.push('github_token');
   if (!forge.repo) gaps.push('github_repo');
+  if (project.scripts.length === 0) gaps.push('scripts');
   return {
     ...rest,
     hasLinearKey: linearKeyRef !== null,
@@ -268,8 +270,9 @@ export async function saveProject(
   try {
     found = await checkRepository({
       path: input.repoPath,
+      // None is allowed: a new repository has no package.json yet (D49). The project page says
+      // the Test Agent has nothing to run until it names some.
       scripts: parseScripts(input.scripts),
-      noScripts: 'Name at least one script, such as test: the Test Agent runs the checks.',
     });
   } catch (err) {
     if (err instanceof RosterValidationError) {
@@ -568,7 +571,7 @@ export async function forgeOf(
 }
 
 /** The tracker a project's editor reads Linear with: its own key, else the shared one. */
-async function editorTracker(db: Db, id: string | null): Promise<Tracker> {
+export async function editorTracker(db: Db, id: string | null): Promise<Tracker> {
   const project = id ? await getProject(db, id) : undefined;
   const keyed = await projectLinear(db, project);
   if (!keyed.keyRef) {

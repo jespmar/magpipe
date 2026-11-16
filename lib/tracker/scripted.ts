@@ -27,6 +27,8 @@ export const SCRIPTED_STATES: TrackerState[] = [
 ];
 
 type Store = {
+  /** Linear projects made through the tracker, besides the scripted ones (D49). */
+  projects: TrackerRef[];
   labels: (TrackerRef & { teamId: string })[];
   issues: (Omit<RemoteIssue, 'labels'> & {
     labelIds: string[];
@@ -44,7 +46,7 @@ const g = globalThis as unknown as { __magpipeScriptedTracker?: Store };
 /** The shared store; tests pass their own so they never see each other's issues. */
 export function scriptedStore(fresh = false): Store {
   if (fresh || !g.__magpipeScriptedTracker) {
-    g.__magpipeScriptedTracker = { labels: [], issues: [], relations: [], next: 1 };
+    g.__magpipeScriptedTracker = { projects: [], labels: [], issues: [], relations: [], next: 1 };
   }
   return g.__magpipeScriptedTracker;
 }
@@ -104,7 +106,14 @@ export function scriptedTracker(
     async projects(teamId) {
       authed();
       team(teamId);
-      return SCRIPTED_PROJECTS.map((p) => ({ ...p }));
+      return [...SCRIPTED_PROJECTS, ...store.projects].map((p) => ({ ...p }));
+    },
+    async createProject(teamId, name) {
+      authed();
+      team(teamId);
+      const made = { id: `lp_made_${store.projects.length + 1}`, name };
+      store.projects.push(made);
+      return { ...made };
     },
     async states(teamId) {
       authed();

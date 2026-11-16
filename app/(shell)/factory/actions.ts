@@ -1,7 +1,16 @@
 'use server';
 
 import { DbLockedError, getDb } from '@/lib/db';
-import { ForgeError, forgeMessage } from '@/lib/forge';
+import { ForgeError, forgeMessage, GhCliError, type ForgeOwner, type ForgeRepo } from '@/lib/forge';
+import {
+  wizardCheckFolder,
+  wizardEnsureClone,
+  wizardEnsureLinearProject,
+  wizardEnsureRepository,
+  wizardGitHub,
+  wizardRepoScripts,
+  type FolderCheck,
+} from '@/lib/project-wizard';
 import {
   deleteProject,
   projectLinearOptions,
@@ -36,7 +45,9 @@ function failure(err: unknown, what: string): { ok: false; message: string; fiel
   if (err instanceof TrackerError || err instanceof LinearNotReadyError) {
     return { ok: false, message: trackerMessage(err), field: 'linear' };
   }
-  if (err instanceof ForgeError) return { ok: false, message: forgeMessage(err), field: 'github' };
+  if (err instanceof ForgeError || err instanceof GhCliError) {
+    return { ok: false, message: forgeMessage(err), field: 'github' };
+  }
   console.error(`[projects] ${what} failed:`, err);
   return { ok: false, message: `Could not ${what}. Try again.` };
 }
@@ -111,5 +122,81 @@ export async function deleteProjectAction(id: string): Promise<ProjectResult> {
     return gone ? { ok: true } : { ok: false, message: 'That project no longer exists.' };
   } catch (err) {
     return failure(err, 'delete the project');
+  }
+}
+
+// ─── the New project wizard (D49) ──────────────────────────────────────────
+
+/** The GitHub account, the owners a repository can be made under, and its repositories. */
+export async function wizardGitHubAction(): Promise<
+  ProjectResult<{ login: string; owners: ForgeOwner[]; repos: ForgeRepo[] }>
+> {
+  try {
+    return { ok: true, ...(await wizardGitHub(await getDb())) };
+  } catch (err) {
+    return failure(err, 'read the repositories from GitHub');
+  }
+}
+
+/** The scripts in a repository's package.json on GitHub; null when it has none. */
+export async function wizardRepoScriptsAction(
+  repo: string,
+): Promise<ProjectResult<{ scripts: string[] | null }>> {
+  try {
+    return { ok: true, scripts: await wizardRepoScripts(await getDb(), repo) };
+  } catch (err) {
+    return failure(err, 'read the repository’s package.json');
+  }
+}
+
+/** Checks where the project's folder will be, before anything is made. */
+export async function wizardCheckFolderAction(
+  input:
+    | { mode: 'clone'; repo: string; parent: string; folder: string }
+    | { mode: 'existing'; repo: string; path: string },
+): Promise<ProjectResult<{ folder: FolderCheck }>> {
+  try {
+    return { ok: true, folder: await wizardCheckFolder(input) };
+  } catch (err) {
+    return failure(err, 'check the folder');
+  }
+}
+
+/** Makes the GitHub repository, or uses the one already there by that name. */
+export async function wizardEnsureRepositoryAction(input: {
+  owner: string;
+  name: string;
+  private: boolean;
+  description: string;
+}): Promise<ProjectResult<{ repo: string; created: boolean }>> {
+  try {
+    return { ok: true, ...(await wizardEnsureRepository(await getDb(), input)) };
+  } catch (err) {
+    return failure(err, 'make the repository on GitHub');
+  }
+}
+
+/** Clones the repository into the folder picked, or uses the folder when it already holds it. */
+export async function wizardEnsureCloneAction(input: {
+  repo: string;
+  parent: string;
+  folder: string;
+}): Promise<ProjectResult<{ path: string; reused: boolean }>> {
+  try {
+    return { ok: true, ...(await wizardEnsureClone(await getDb(), input)) };
+  } catch (err) {
+    return failure(err, 'clone the repository');
+  }
+}
+
+/** Makes the Linear project, or uses the free one already there by that name. */
+export async function wizardEnsureLinearProjectAction(input: {
+  teamId: string;
+  name: string;
+}): Promise<ProjectResult<{ project: TrackerRef; created: boolean }>> {
+  try {
+    return { ok: true, ...(await wizardEnsureLinearProject(await getDb(), input)) };
+  } catch (err) {
+    return failure(err, 'make the Linear project');
   }
 }

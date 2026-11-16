@@ -1234,3 +1234,50 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
 - **Not done.** No editing of the environment of `next dev` (`.env`), which development reads
   itself; the section is not shown there unless the config path is set.
 
+
+## D49 · A new project, step by step
+
+- **Why.** A new project needs four things from three places: a GitHub repository, a clone of it
+  on this computer, a Linear project, and the folder's scripts. The form asked for each as typed
+  text (an owner/name, an absolute path, a Linear project made in Linear beforehand), so a new
+  repository meant leaving Magpipe three times.
+- **/factory/new is a wizard** (`components/factory/ProjectWizard.tsx`) in five steps:
+  Repository, Folder, Linear, Details, Create. A project's settings keep the full editor.
+  - *Repository*: every repository the shared token can push to (its own, its collaborations,
+    its organizations', most recently pushed first), grouped by owner and searchable; one another
+    project lands in is shown and cannot be picked. Or a new one: an owner (the account or one of
+    its organizations), a name, private by default, made with a README so it has a main branch
+    for goals to branch from.
+  - *Folder*: cloned into a new folder inside one the operator picks (the folder of the latest
+    project by default), or, for an existing repository, a folder that holds it already, whose
+    GitHub origin must be it. The desktop app opens the system's folder picker through a named
+    channel (`magpipe:pick-folder`); a browser types the path.
+  - *Linear*: the team (chosen when there is one), then a Linear project picked from the team's,
+    with those other projects file into shown and not offered, or a new one by name. The label
+    and statuses are guessed as before and can be changed.
+  - *Details*: the name (the repository's by default), the scripts from package.json, read from
+    GitHub before anything is cloned or from the folder, with test, lint and typecheck ticked
+    when they are there, and the brief.
+  - *Create*: what will be made, then the tasks in order, each shown as it runs: make the
+    repository, clone it, make the Linear project, save the project. Saving is `saveProject`, so
+    everything is read back as for any project.
+- **Nothing is made before the last step, and it can run again.** Each task uses what is already
+  there by the name asked for: a repository GitHub says is taken and the token can reach, a folder
+  that already holds the repository, a Linear project by that name no other project files into.
+  A wizard that stopped half-way (a network error, a refused name) picks up where it stopped, and
+  a refusal names the step to fix. `lib/project-wizard.ts` holds the tasks.
+- **The clone never keeps the token.** git gets it through its environment for the one command
+  (`GIT_CONFIG_*`, an `http.extraheader` for github.com only), so it is neither in the
+  repository's config nor on the command line, and it is scrubbed from what a failed clone says.
+  The clone goes into a new or empty folder only; a failed one leaves nothing it made
+  (`lib/clone.ts`). Pushes use the operator's own git credentials, as before.
+- **A project may have no scripts.** A new repository has no package.json, so the scripts are
+  optional: the project page says the Test Agent has nothing to run until it names some
+  (a `scripts` gap), and the settings editor allows none too.
+- **The seams grew, not the screens' reach.** The forge gained `repositories`, `owners`,
+  `createRepository`, `packageScripts` and `cloneSource`; the tracker gained `createProject`
+  (Linear's `projectCreate`). The scripted forge lists a few repositories, makes new ones, and
+  clones from bare repositories on this computer, so the end-to-end test clones for real.
+- **Not done.** No repository templates, no `.gitignore` or licence choices on a new repository,
+  no Linear project settings beyond its name and team, and no GitHub organizations the token
+  cannot see (a fine-grained token sees only the repositories it was given).

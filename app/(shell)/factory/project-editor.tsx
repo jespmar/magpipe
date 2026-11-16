@@ -8,20 +8,18 @@ import { modelOptions } from '@/lib/models';
 import { getProject, projectView, workspaceDefaults, type ProjectView } from '@/lib/projects';
 
 /**
- * The project editor's page (D46), for a new project (`id` null) or a project's settings. Returns
- * 'missing' for an unknown id, so the route can answer 404.
+ * A project's settings page (D46); a new project has the wizard instead (D49). Returns 'missing'
+ * for an unknown id, so the route can answer 404.
  */
-export async function ProjectEditorPage({ id }: { id: string | null }) {
-  let project: ProjectView | null = null;
+export async function ProjectEditorPage({ id }: { id: string }) {
+  let project: ProjectView;
   let agents: ProjectAgent[];
   let workspace: Awaited<ReturnType<typeof workspaceDefaults>>;
   try {
     const db = await getDb();
-    if (id) {
-      const row = await getProject(db, id);
-      if (!row) return 'missing' as const;
-      project = await projectView(db, row);
-    }
+    const row = await getProject(db, id);
+    if (!row) return 'missing' as const;
+    project = await projectView(db, row);
     const rows = await db
       .select({
         slug: t.agents.slug,
@@ -39,37 +37,26 @@ export async function ProjectEditorPage({ id }: { id: string | null }) {
     console.error('[project settings] unavailable:', err);
     return (
       <>
-        <PageHead title={id ? 'Project settings' : 'New project'} />
+        <PageHead title="Project settings" />
         <UnavailableState />
       </>
     );
   }
-  const models = modelOptions([
-    ...agents.map((a) => a.model),
-    ...Object.values(project?.models ?? {}),
-  ]);
+  const models = modelOptions([...agents.map((a) => a.model), ...Object.values(project.models)]);
   return (
     <div className="flex flex-col gap-8">
       <PageHead
-        title={project ? `${project.name} settings` : 'New project'}
-        description={
-          project
-            ? 'Its repository, its Linear project and GitHub repository, and how the factory works on it. Saving reads back what it names from Linear and GitHub.'
-            : 'A repository the factory builds in, with its own Linear project and GitHub repository. Saving reads both back before anything is stored.'
-        }
-        meta={project ? <span>{project.id}</span> : undefined}
+        title={`${project.name} settings`}
+        description="Its repository, its Linear project and GitHub repository, and how the factory works on it. Saving reads back what it names from Linear and GitHub."
+        meta={<span>{project.id}</span>}
         actions={
-          <ButtonLink
-            href={project ? `/factory/${project.id}` : '/factory'}
-            size="sm"
-            variant="ghost"
-          >
-            {project ? `Back to ${project.name}` : 'All projects'}
+          <ButtonLink href={`/factory/${project.id}`} size="sm" variant="ghost">
+            {`Back to ${project.name}`}
           </ButtonLink>
         }
       />
       <ProjectForm
-        key={project?.id ?? 'new'}
+        key={project.id}
         initial={project}
         agents={agents}
         models={models}

@@ -37,6 +37,10 @@ const GAPS: Record<ProjectGap, { text: string; href: string }> = {
     href: 'settings',
   },
   github_repo: { text: 'No GitHub repository yet: goals stop at a branch.', href: 'settings' },
+  scripts: {
+    text: 'No scripts yet: the Test Agent has nothing to run until the project names some from its package.json.',
+    href: 'settings',
+  },
 };
 
 const TEMPLATE_NAMES: Record<string, string> = {

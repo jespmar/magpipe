@@ -8,6 +8,7 @@
 import {
   app,
   BrowserWindow,
+  dialog,
   ipcMain,
   Menu,
   session,
@@ -167,6 +168,19 @@ function registerChannels() {
     }
     app.quit();
     return true;
+  });
+  ipcMain.handle('magpipe:pick-folder', async (event, options: unknown) => {
+    if (!fromAppWindow(event) || !mainWindow) return null;
+    // Only plain strings cross from the page; anything else is left out.
+    const o = (options && typeof options === 'object' ? options : {}) as Record<string, unknown>;
+    const text = (v: unknown) => (typeof v === 'string' && v.length <= 4096 ? v : undefined);
+    const picked = await dialog.showOpenDialog(mainWindow, {
+      title: text(o.title),
+      defaultPath: text(o.defaultPath),
+      buttonLabel: text(o.buttonLabel),
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    return picked.canceled ? null : (picked.filePaths[0] ?? null);
   });
   ipcMain.handle('magpipe:open-config', async (event) => {
     if (!fromAppWindow(event) || !config) return false;

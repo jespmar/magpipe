@@ -366,18 +366,13 @@ test('settings connects Linear, a passing spec is filed, Home approves it, its g
   }
 });
 
-test('factory projects: the Default project, a second one on its own Linear project and repository, and the Home picker', async ({
+test('factory projects: the Default project, a second one made with the wizard, and the Home picker', async ({
   page,
 }) => {
-  // New project pages compile on their first visit.
-  test.setTimeout(90_000);
-  const repo = path.join(dir, `second-${Date.now().toString(36)}`);
-  fs.mkdirSync(repo);
-  fs.writeFileSync(
-    path.join(repo, 'package.json'),
-    JSON.stringify({ scripts: { test: 'node -e 0' } }),
-  );
-  execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: repo });
+  // New project pages compile on their first visit; the wizard clones a repository.
+  test.setTimeout(120_000);
+  const stamp = Date.now().toString(36);
+  const repoName = `api-${stamp}`;
 
   await page.goto('/factory');
   await expect(page.getByRole('heading', { level: 1, name: 'Factory' })).toBeVisible();
@@ -389,43 +384,71 @@ test('factory projects: the Default project, a second one on its own Linear proj
   await expect(page.getByRole('heading', { level: 1, name: 'New project' })).toBeVisible({
     timeout: 30_000,
   });
-  const repository = page.getByRole('region', { name: 'Repository' });
-  await repository.getByLabel('Name').fill('API service');
-  await repository.getByLabel('Folder').fill(repo);
+
+  // 1. The repositories the account can push to, grouped by owner; Default's is taken (D49).
+  const repos = page.getByRole('radiogroup', { name: 'Repositories' });
+  await expect(repos.getByRole('radio', { name: /^app\b/ })).toBeDisabled({ timeout: 30_000 });
+  await expect(repos.getByText('used by Default')).toBeVisible();
+  await page.getByRole('searchbox', { name: 'Search repositories' }).fill('dotfiles');
+  await expect(repos.getByRole('radio')).toHaveCount(1);
+  // A new one instead, made at the last step.
+  await page.getByRole('button', { name: 'Make a new one' }).click();
+  await page.getByRole('combobox', { name: 'Owner' }).click();
+  await page.getByRole('option', { name: 'magpipe-e2e' }).click();
+  await page.getByLabel('Name', { exact: true }).fill(repoName);
+  await page.getByRole('button', { name: 'Continue' }).click();
+
+  // 2. Cloned into a new folder inside the one picked.
+  await expect(
+    page.getByRole('heading', { name: 'Where does it live on this computer?' }),
+  ).toBeVisible();
+  await page.getByLabel('Clone into').fill(dir);
+  await expect(page.getByLabel('New folder’s name')).toHaveValue(repoName);
+  await page.getByRole('button', { name: 'Continue' }).click();
+
+  // 3. The only team is chosen; Web app belongs to Default, so a new Linear project.
+  await expect(page.getByRole('heading', { name: 'Where are its specs filed?' })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(page.getByRole('combobox', { name: 'Team' })).toContainText('Magpipe (MAG)', {
+    timeout: 30_000,
+  });
+  await page.getByRole('combobox', { name: 'Linear project' }).click();
+  await expect(page.getByRole('option', { name: 'Web app (used by Default)' })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Make a new one' }).click();
+  await page.getByLabel('New Linear project’s name').fill(`API ${stamp}`);
+  await expect(page.getByText('Needs you is Blocked')).toBeVisible();
+  await page.getByRole('button', { name: 'Continue' }).click();
+
+  // 4. A new repository has no package.json yet: no scripts, said so.
+  await expect(page.getByText('The repository has no package.json yet')).toBeVisible();
+  await page.getByLabel('Project name').fill('API service');
   await page
-    .getByRole('region', { name: 'Context for the agents' })
-    .getByLabel('Brief')
+    .getByLabel('Brief for the agents')
     .fill('The public API. Every endpoint is versioned.');
-  // A new project starts with the teams the shared key sees.
-  const linear = page.getByRole('region', { name: 'Linear' });
-  await linear.getByRole('combobox', { name: 'Team' }).click();
-  await page.getByRole('option', { name: 'Magpipe (MAG)' }).click();
-  await expect(linear.getByRole('combobox', { name: 'Needs you' })).toContainText('Blocked');
-  // Web app belongs to Default: a second project on it is refused.
-  await linear.getByRole('combobox', { name: 'Linear project' }).click();
-  await page.getByRole('option', { name: 'Web app' }).click();
-  const github = page.getByRole('region', { name: 'GitHub' });
-  await github.getByLabel('Repository').fill('magpipe-e2e/api');
+  await page.getByRole('button', { name: 'Continue' }).click();
+
+  // 5. Made in order, then saved and read back; it opens on its own page.
+  await expect(page.getByText(`magpipe-e2e/${repoName}, new and private`)).toBeVisible();
   await page.getByRole('button', { name: 'Create project' }).click();
-  await expect(linear.getByText('Default already files into that Linear project.')).toBeVisible({
-    timeout: 30_000,
-  });
-  await linear.getByRole('combobox', { name: 'Linear project' }).click();
-  await page.getByRole('option', { name: 'API' }).click();
-  await page.getByRole('button', { name: 'Create project' }).click();
-  // Created, it opens on its own page with its spec box and board.
   await expect(page.getByRole('heading', { level: 1, name: 'API service' })).toBeVisible({
-    timeout: 30_000,
+    timeout: 60_000,
   });
+  expect(fs.existsSync(path.join(dir, repoName, 'README.md'))).toBe(true);
   await expect(page.getByText('The public API. Every endpoint is versioned.')).toBeVisible();
-  await expect(page.getByText('files into API')).toBeVisible();
-  await expect(page.getByText('lands in magpipe-e2e/api')).toBeVisible();
+  await expect(page.getByText(`files into API ${stamp}`)).toBeVisible();
+  await expect(page.getByText(`lands in magpipe-e2e/${repoName}`)).toBeVisible();
+  await expect(page.getByText('No scripts yet')).toBeVisible();
   await expect(page.getByRole('form', { name: 'Write a spec' })).toBeVisible();
   await expect(page.getByRole('heading', { level: 2, name: 'Factory' })).toBeVisible();
 
   await page.goto('/factory');
   await expect(page.getByText('2 projects')).toBeVisible();
-  await expect(page.getByText('API (MAG)', { exact: true })).toBeVisible();
+  await expect(page.getByText(`API ${stamp} (MAG)`, { exact: true })).toBeVisible();
 
   // Home asks which project a spec is for, now that there are two.
   await page.goto('/');
