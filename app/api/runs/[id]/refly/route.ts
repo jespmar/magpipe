@@ -3,6 +3,7 @@ import { apiError, dbError, requireUser } from '@/lib/api';
 import { getDb } from '@/lib/db';
 import { getEngine } from '@/lib/engine';
 import { FactoryNotReadyError, runDocument, templatePlan } from '@/lib/factory';
+import { resolveProject } from '@/lib/projects';
 import { createRun, getRun } from '@/lib/runs';
 
 export const dynamic = 'force-dynamic';
@@ -22,14 +23,18 @@ export async function POST(_req: Request, { params }: Ctx) {
     const parent = await getRun(db, id);
     if (!parent) return apiError('not_found', 'No such run', 404);
     let preset: Awaited<ReturnType<typeof templatePlan>> | undefined;
+    let input = parent.input;
     if (parent.input.template) {
+      // The project it was for, or the only one there is (D45); a deleted one is refused (D50).
+      const project = await resolveProject(db, parent.input.projectId);
       const source = parent.parentRunId ? await getRun(db, parent.parentRunId) : undefined;
       preset = await templatePlan(db, parent.input.template, {
         draft: source ? runDocument(source.plan) : undefined,
-        projectId: parent.input.projectId,
+        projectId: parent.input.projectId ?? project?.id,
       });
+      if (project) input = { ...parent.input, projectId: project.id };
     }
-    const run = await createRun(db, parent.input, parent.id, preset);
+    const run = await createRun(db, input, parent.id, preset);
     getEngine().enqueue(run.id);
     return NextResponse.json({ run }, { status: 201 });
   } catch (err) {
