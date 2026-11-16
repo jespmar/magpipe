@@ -281,7 +281,7 @@ export function LinearForm({ initial, callbackUrl, disabledReason }: Props) {
               <Fact label="Linear user">{view.viewer}</Fact>
               <Fact label="Signed in">
                 {view.signInExpired ? (
-                  <span className="text-amber">with Linear; the sign-in expired</span>
+                  <span className="text-warn">with Linear; the sign-in expired</span>
                 ) : (
                   'with Linear; the token renews by itself'
                 )}

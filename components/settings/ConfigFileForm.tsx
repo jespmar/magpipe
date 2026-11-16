@@ -113,12 +113,15 @@ export function ConfigFileForm({ initial }: { initial: ConfigFile }) {
           }}
         />
         {file.notes.length ? (
-          <ul aria-label="About this file" className="flex flex-col gap-1">
+          <ul aria-label="About the saved file" className="flex flex-col gap-1">
+            <li className="text-caption text-mute">
+              About the file as saved{changed ? ', not your unsaved changes' : ''}:
+            </li>
             {file.notes.map((n) => (
               <li
                 key={n.text}
                 className={
-                  n.tone === 'error' ? 'text-body-sm text-danger' : 'text-amber text-body-sm'
+                  n.tone === 'error' ? 'text-body-sm text-danger' : 'text-body-sm text-warn'
                 }
               >
                 {n.text}
@@ -168,7 +171,7 @@ export function ConfigFileForm({ initial }: { initial: ConfigFile }) {
         </p>
         {file.pending.length ? (
           <div className="flex flex-wrap items-center gap-3">
-            <p className="text-amber text-body-sm">
+            <p className="text-body-sm text-warn">
               Saved but not in use yet: {file.pending.join(', ')}.{' '}
               {desktop ? 'A restart applies them.' : 'Restart Magpipe to apply them.'}
             </p>

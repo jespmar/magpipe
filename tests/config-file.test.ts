@@ -7,33 +7,40 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { checkConfigText, readConfigFile, saveConfigFile } from '@/lib/config-file';
+import { checkConfigText, CONFIG_KEYS, readConfigFile, saveConfigFile } from '@/lib/config-file';
 
+/** Every key the editor compares, and the switches: the shell running the tests never leaks in. */
 const KEEP = [
-  'MAGPIPE_CONFIG_PATH',
-  'MAGPIPE_AUTH_DISABLED',
-  'MAGPIPE_REGION',
-  'MAGPIPE_MODEL_BACKEND',
-  'MAGPIPE_SECRET_KEY',
-  'MAGPIPE_DESKTOP_TOKEN',
-] as const;
+  ...new Set([
+    ...CONFIG_KEYS.map((k) => k.key),
+    'MAGPIPE_CONFIG_PATH',
+    'MAGPIPE_CONFIG_KEYS',
+    'MAGPIPE_AUTH_DISABLED',
+    'MAGPIPE_DESKTOP_TOKEN',
+  ]),
+];
 
 describe('the config file editor', () => {
   let dir: string;
   let file: string;
-  const saved: Partial<Record<(typeof KEEP)[number], string>> = {};
+  const saved: Record<string, string | undefined> = {};
 
   beforeAll(() => {
-    for (const k of KEEP) saved[k] = process.env[k];
+    for (const k of KEEP) {
+      saved[k] = process.env[k];
+      delete process.env[k];
+    }
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'magpipe-config-'));
     file = path.join(dir, 'magpipe.env');
     process.env.MAGPIPE_CONFIG_PATH = file;
     process.env.MAGPIPE_AUTH_DISABLED = 'true';
-    delete process.env.MAGPIPE_DESKTOP_TOKEN;
-    // As the desktop app passes them at launch.
+    // As the desktop app starts the server: these came from the file at launch.
     process.env.MAGPIPE_REGION = 'local';
     process.env.MAGPIPE_MODEL_BACKEND = 'claude-code';
     process.env.MAGPIPE_SECRET_KEY = 'sealed-key-from-the-file';
+    process.env.MAGPIPE_CONFIG_KEYS = 'MAGPIPE_REGION,MAGPIPE_MODEL_BACKEND,MAGPIPE_SECRET_KEY';
+    // And this one came from the shell that launched it, not from the file.
+    process.env.ANTHROPIC_API_KEY = 'sk-from-the-shell';
   });
   afterEach(() => {
     process.env.MAGPIPE_AUTH_DISABLED = 'true';
@@ -68,9 +75,11 @@ describe('the config file editor', () => {
     expect(read.notes).toEqual([]);
     const region = read.keys.find((k) => k.key === 'MAGPIPE_REGION')!;
     expect(region).toMatchObject({ set: true, pending: false });
+    // Exported in the shell that launched Magpipe, empty in the file: in use, not waiting.
     expect(read.keys.find((k) => k.key === 'ANTHROPIC_API_KEY')).toMatchObject({
       set: false,
       secret: true,
+      pending: false,
     });
     // Keys Magpipe sets itself are not listed for editing.
     expect(read.keys.map((k) => k.key)).not.toContain('MAGPIPE_DATA_DIR');
@@ -166,5 +175,45 @@ describe('the config file editor', () => {
     expect(read.text).toBe('');
     await saveConfigFile('MAGPIPE_REGION=local\n', read.version);
     expect(fs.readFileSync(file, 'utf8')).toBe('MAGPIPE_REGION=local\n');
+  });
+
+  it('refuses a value the server would refuse at start-up, and knows the settings it reads', async () => {
+    write('MAGPIPE_REGION=local\nMAGPIPE_SECRET_KEY=sealed-key-from-the-file\n');
+    const read = (await readConfigFile())!;
+    await expect(
+      saveConfigFile(`${read.text}MAGPIPE_FORGE_STUB=on\n`, read.version),
+    ).rejects.toThrow('MAGPIPE_FORGE_STUB=on would stop Magpipe from starting');
+    expect(fs.readFileSync(file, 'utf8')).not.toContain('MAGPIPE_FORGE_STUB');
+    // A setting the server reads is not taken for a typo.
+    const notes = await checkConfigText('MAGPIPE_FORGE_STUB=scripted\n', null);
+    expect(notes).toEqual([]);
+  });
+
+  it('keeps a linked magpipe.env a link, and replaces the file it points at', async () => {
+    if (process.platform === 'win32') return;
+    const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'magpipe-dotfiles-'));
+    const real = path.join(elsewhere, 'magpipe.env');
+    fs.writeFileSync(real, 'MAGPIPE_REGION=local\n', { mode: 0o600 });
+    fs.rmSync(file, { force: true });
+    fs.symlinkSync(real, file);
+    try {
+      const read = (await readConfigFile())!;
+      await saveConfigFile('MAGPIPE_REGION=linked\n', read.version);
+      expect(fs.lstatSync(file).isSymbolicLink()).toBe(true);
+      expect(fs.readFileSync(real, 'utf8')).toBe('MAGPIPE_REGION=linked\n');
+      expect(fs.readdirSync(elsewhere)).toEqual(['magpipe.env']);
+    } finally {
+      fs.rmSync(file, { force: true });
+      fs.rmSync(elsewhere, { recursive: true, force: true });
+      fs.writeFileSync(file, 'MAGPIPE_REGION=local\n', { mode: 0o600 });
+    }
+  });
+
+  it('refuses an oversized text before doing any work on it', async () => {
+    const read = (await readConfigFile())!;
+    const huge = `${'\n'.repeat(200_000)}x`;
+    const began = Date.now();
+    await expect(saveConfigFile(huge, read.version)).rejects.toThrow('larger than 64 KB');
+    expect(Date.now() - began).toBeLessThan(1000);
   });
 });

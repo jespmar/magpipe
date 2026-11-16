@@ -156,9 +156,15 @@ function fromAppWindow(event: IpcMainInvokeEvent): boolean {
  */
 function registerChannels() {
   ipcMain.handle('magpipe:restart', (event) => {
-    if (!fromAppWindow(event)) return false;
+    // Development: dev.mjs owns next dev and would not be there for a relaunched window.
+    if (!fromAppWindow(event) || DEV_URL || !server) return false;
     // before-quit closes the embedded database cleanly; relaunch starts Magpipe again after.
-    app.relaunch();
+    // An AppImage runs from a mount that goes away on quit: relaunch the AppImage itself.
+    if (process.env.APPIMAGE) {
+      app.relaunch({ execPath: process.env.APPIMAGE, args: process.argv.slice(1) });
+    } else {
+      app.relaunch();
+    }
     app.quit();
     return true;
   });

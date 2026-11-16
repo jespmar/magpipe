@@ -10,7 +10,9 @@ import { createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { parseEnv } from 'node:util';
+import type { z } from 'zod';
 import { accessMode } from './auth-mode';
+import { envSchema } from './env';
 
 /** What a key is for, as Settings lists it. */
 export type ConfigKey = {
@@ -71,13 +73,17 @@ export const CONFIG_KEYS: readonly ConfigKey[] = [
     description: 'Made once on first launch for the sign-in library the desktop app does not use.',
     secret: true,
   },
-  ...['MAGPIPE_DESKTOP', 'MAGPIPE_CONFIG_PATH', 'MAGPIPE_DATA_DIR', 'AUTH_TRUST_HOST'].map(
-    (key) => ({
-      key,
-      description: 'Set by Magpipe when it starts; a value here is ignored.',
-      managed: 'ignored' as const,
-    }),
-  ),
+  ...[
+    'MAGPIPE_DESKTOP',
+    'MAGPIPE_CONFIG_PATH',
+    'MAGPIPE_CONFIG_KEYS',
+    'MAGPIPE_DATA_DIR',
+    'AUTH_TRUST_HOST',
+  ].map((key) => ({
+    key,
+    description: 'Set by Magpipe when it starts; a value here is ignored.',
+    managed: 'ignored' as const,
+  })),
 ];
 
 const KNOWN = new Map(CONFIG_KEYS.map((k) => [k.key, k]));
@@ -162,9 +168,24 @@ export async function checkConfigText(text: string, before: string | null): Prom
   ];
   for (const key of order) {
     const value = values[key]!;
+    // A value the server's own schema refuses would stop the next launch: refused here.
+    const shape = envSchema.shape as Record<string, z.ZodTypeAny>;
+    // A key with its own list of values says so more plainly below.
+    if (shape[key] && !KNOWN.get(key)?.values) {
+      const checked = shape[key].safeParse(value);
+      if (!checked.success) {
+        notes.push({
+          tone: 'error',
+          text: `${key}=${value} would stop Magpipe from starting: ${checked.error.issues[0]?.message ?? 'not a value it takes'}.`,
+        });
+        continue;
+      }
+    }
     const known = KNOWN.get(key);
     if (!known) {
-      notes.push({ tone: 'warning', text: `${key} is not a setting Magpipe reads. A typo?` });
+      if (!shape[key]) {
+        notes.push({ tone: 'warning', text: `${key} is not a setting Magpipe reads. A typo?` });
+      }
       continue;
     }
     if (known.managed === 'ignored') {
@@ -208,19 +229,22 @@ export async function checkConfigText(text: string, before: string | null): Prom
   return notes;
 }
 
-/** Keys whose value in the file is not the one the running app has: a restart applies them. */
+/**
+ * The values the running app took from the file at launch: the desktop app names the keys it
+ * read (MAGPIPE_CONFIG_KEYS), so what came from the launching shell is not mistaken for the
+ * file's. With no such list (a server not started by the desktop app), it took nothing.
+ */
+function launchedWith(): Record<string, string> {
+  const keys = (process.env.MAGPIPE_CONFIG_KEYS ?? '').split(',').filter(Boolean);
+  return Object.fromEntries(keys.map((k) => [k, process.env[k] ?? '']));
+}
+
+/** Keys whose value in the file is not the one the app started with: a restart applies them. */
 function pendingKeys(values: Record<string, string>): string[] {
+  const launched = launchedWith();
   return CONFIG_KEYS.filter((k) => k.managed !== 'ignored')
     .map((k) => k.key)
-    .filter((key) => {
-      const file = values[key];
-      const running = process.env[key] ?? '';
-      // A generated secret is not in the file at all: the one the app made is in use.
-      if (file === undefined && (key === 'MAGPIPE_SECRET_KEY' || key === 'AUTH_SECRET')) {
-        return false;
-      }
-      return (file ?? '') !== running;
-    });
+    .filter((key) => (values[key] ?? '') !== (launched[key] ?? ''));
 }
 
 function describe(text: string, filePath: string): Omit<ConfigFile, 'notes'> {
@@ -271,18 +295,24 @@ export async function saveConfigFile(text: string, version: string): Promise<Con
       'The file changed outside Magpipe since you opened it. Reload it, then make your change again.',
     );
   }
-  const normalized = text.replace(/\r\n/g, '\n').replace(/\n*$/, '\n');
+  if (Buffer.byteLength(text) > MAX_BYTES) {
+    throw new ConfigFileError('The file is larger than 64 KB; a config file is a few lines.');
+  }
+  const normalized = `${text.replace(/\r\n/g, '\n').trimEnd()}\n`;
   const notes = await checkConfigText(normalized, current);
   const error = notes.find((n) => n.tone === 'error');
   if (error) throw new ConfigFileError(error.text);
+  // A magpipe.env that is a link (to a dotfiles folder, say) stays a link: the file it points at
+  // is the one replaced.
+  const target = await fs.realpath(filePath).catch(() => filePath);
   const temp = path.join(
-    path.dirname(filePath),
-    `.${path.basename(filePath)}.${randomBytes(6).toString('hex')}.tmp`,
+    path.dirname(target),
+    `.${path.basename(target)}.${randomBytes(6).toString('hex')}.tmp`,
   );
   try {
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.writeFile(temp, normalized, { mode: 0o600 });
-    await fs.rename(temp, filePath);
+    await fs.rename(temp, target);
   } catch (err) {
     await fs.rm(temp, { force: true });
     throw err;

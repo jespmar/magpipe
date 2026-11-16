@@ -6,7 +6,8 @@ const bool = z
   .optional()
   .transform((v) => v === 'true' || v === '1');
 
-const schema = z.object({
+/** The server's environment (D48: the config editor checks a saved file against it). */
+export const envSchema = z.object({
   MAGPIPE_DATA_DIR: z.string().optional(),
   MAGPIPE_DESKTOP: bool,
   MAGPIPE_CONFIG_PATH: z.string().optional(),
@@ -38,7 +39,7 @@ const schema = z.object({
 });
 
 /** Validated server env. Empty strings count as unset. */
-export const env = schema.parse(
+export const env = envSchema.parse(
   Object.fromEntries(Object.entries(process.env).filter(([, v]) => v !== '')),
 );
 

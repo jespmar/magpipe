@@ -371,7 +371,7 @@ export async function readConfigFileAction(): Promise<ConfigResult> {
     console.error('[settings] read the config file failed:', err);
     return {
       ok: false,
-      message: 'The config file could not be read. Open it from the File menu instead.',
+      message: `The config file could not be read: ${(err as NodeJS.ErrnoException).code ?? (err as Error).message}.`,
     };
   }
 }
