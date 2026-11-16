@@ -196,7 +196,15 @@ export function ConfigFileForm({ initial }: { initial: ConfigFile }) {
                   {k.key}
                 </span>
                 <span className="text-caption text-mute">
-                  {k.pending ? 'saved, waits for a restart' : k.set ? 'set' : 'not set'}
+                  {k.pending
+                    ? k.set
+                      ? 'saved, waits for a restart'
+                      : 'taken out, waits for a restart'
+                    : k.set
+                      ? 'set'
+                      : k.key === 'MAGPIPE_SECRET_KEY' || k.key === 'AUTH_SECRET'
+                        ? 'made by Magpipe'
+                        : 'not set'}
                 </span>
               </dt>
               <dd className="max-w-[31rem] text-body-sm text-body">{k.description}</dd>
