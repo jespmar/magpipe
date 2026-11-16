@@ -353,11 +353,18 @@ export async function saveProject(
       throw err instanceof GhCliError ? new ProjectError(err.message, 'github') : err;
     });
     if (!token) throw new ProjectError(noKey('GitHub token', current), 'github');
-    const { defaultBranch } = await forgeFor(token)
+    const { defaultBranch, canPush } = await forgeFor(token)
       .repository(input.github.repo)
       .catch((err: unknown) => {
         throw err instanceof ForgeError ? new ProjectError(err.message, 'github') : err;
       });
+    // Goals are pushed and their pull requests merged with this token.
+    if (!canPush) {
+      throw new ProjectError(
+        `The token can read ${input.github.repo} but not push to it. Pick a repository it can push to.`,
+        'github',
+      );
+    }
     github = { ...input.github, repo: input.github.repo };
     notes.push(`Read back from GitHub: ${input.github.repo}, default branch ${defaultBranch}.`);
   }

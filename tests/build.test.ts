@@ -262,6 +262,17 @@ describe('building one goal', () => {
   it('picks the oldest goal with its dependencies done, as many as the run limit allows', async () => {
     await db.update(t.settings).set({ maxRuns: 1 });
     expect((await nextGoal(db))!.id).toBe(goals.header!.id);
+    // A project with no scripts has nothing to test with: its builds wait (D49).
+    const [own] = await db.select().from(t.factoryProjects);
+    await db
+      .update(t.factoryProjects)
+      .set({ scripts: [] })
+      .where(eq(t.factoryProjects.id, own!.id));
+    expect(await startBuildRun(db, goals.header!, () => undefined)).toBeNull();
+    await db
+      .update(t.factoryProjects)
+      .set({ scripts: own!.scripts })
+      .where(eq(t.factoryProjects.id, own!.id));
     const run = (await startBuildRun(db, goals.header!, () => undefined))!;
     expect(run.input).toMatchObject({ template: 'build', issueId: goals.header!.id });
     expect(run.plan.find((s) => s.id === 'tests')!.instructions).toContain(

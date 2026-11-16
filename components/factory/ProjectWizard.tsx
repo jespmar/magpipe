@@ -56,8 +56,12 @@ type Props = {
 type Task = {
   id: 'repo' | 'clone' | 'linear' | 'save';
   label: string;
+  /** The inputs it runs with: a finished task is kept on a try again only while they hold. */
+  key: string;
   state: 'todo' | 'running' | 'done' | 'failed';
   note?: string;
+  /** What it made that a later task needs: the new Linear project's id. */
+  result?: string;
 };
 
 const STEPS = [
@@ -197,9 +201,8 @@ export function ProjectWizard({
   const [scripts, setScripts] = useState<string[]>([]);
   const [context, setContext] = useState('');
 
-  // 5. Create. What a task made is kept for a try again that skips it.
+  // 5. Create.
   const [tasks, setTasks] = useState<Task[] | null>(null);
-  const made = useRef<{ linearProjectId?: string }>({});
 
   const creating = repoMode === 'create';
   const repo = creating ? `${owner}/${newName.trim()}` : picked;
@@ -219,17 +222,21 @@ export function ProjectWizard({
 
   const fail = (text: string, at = step) => setError({ step: at, text });
 
-  // GitHub is read once, when the wizard opens.
+  /** The repositories and owners, read when the wizard opens and again on Try again. */
+  function loadGitHub() {
+    run('github', async () => {
+      const res = await wizardGitHubAction();
+      if (!res.ok) return fail(res.message, 0);
+      setError(null);
+      setGithub({ login: res.login, owners: res.owners, repos: res.repos });
+      setOwner((o) => o || res.login);
+    });
+  }
   const opened = useRef(false);
   useEffect(() => {
     if (opened.current || !hasGithubKey) return;
     opened.current = true;
-    run('github', async () => {
-      const res = await wizardGitHubAction();
-      if (!res.ok) return fail(res.message, 0);
-      setGithub({ login: res.login, owners: res.owners, repos: res.repos });
-      setOwner(res.login);
-    });
+    loadGitHub();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on the first render
   }, []);
 
@@ -260,21 +267,18 @@ export function ProjectWizard({
   function go(to: number) {
     setError(null);
     setStep(to);
-    if (to === 1 && !folderName) setFolderName(repoShort);
-    if (to === 2) {
-      if (!linearName) setLinearName(repoShort);
-      if (teams === null && hasLinearKey) loadTeam('');
-    }
-    if (to === 3) {
-      if (!name) setName(repoShort);
-      if (available === undefined) loadScripts();
-    }
+    if (to === 2 && teams === null && hasLinearKey) loadTeam('');
+    if (to === 3 && available === undefined) loadScripts();
   }
 
   function loadScripts() {
     const choose = (list: string[] | null) => {
       setAvailable(list);
-      setScripts((list ?? []).filter((s) => USUAL_SCRIPTS.includes(s)));
+      // Choices the operator made that the new list still has stay; else the usual ones.
+      setScripts((was) => {
+        const kept = was.filter((s) => list?.includes(s));
+        return kept.length ? kept : (list ?? []).filter((s) => USUAL_SCRIPTS.includes(s));
+      });
     };
     if (folder?.scripts) return choose(folder.scripts);
     if (creating) return choose(null);
@@ -284,6 +288,9 @@ export function ProjectWizard({
       choose(res.ok ? res.scripts : null);
     });
   }
+
+  // The names filled in from the repository follow it until the operator writes their own.
+  const filledFrom = useRef<{ short: string; repo: string }>({ short: '', repo: '' });
 
   /** Each step's own check before the next; the folder step asks the server. */
   function next() {
@@ -301,10 +308,21 @@ export function ProjectWizard({
         }
         const there = github?.repos.find((r) => r.fullName.toLowerCase() === repo.toLowerCase());
         if (there) return fail(`${there.fullName} is already on GitHub. Pick it from the list.`);
+        if (takenRepos[repo.toLowerCase()]) {
+          return fail(`${takenRepos[repo.toLowerCase()]} already lands in ${repo}.`);
+        }
       }
+      const was = filledFrom.current;
+      const follow = (v: string) => v === '' || v === was.short;
+      if (follow(folderName)) setFolderName(repoShort);
+      if (follow(linearName)) setLinearName(repoShort);
+      if (follow(name)) setName(repoShort);
       // A different repository: what the later steps read from it is read again.
-      setFolder(null);
-      setAvailable(undefined);
+      if (was.repo !== `${repoMode}:${repo}`) {
+        setFolder(null);
+        setAvailable(undefined);
+      }
+      filledFrom.current = { short: repoShort, repo: `${repoMode}:${repo}` };
       return go(1);
     }
     if (step === 1) {
@@ -314,9 +332,12 @@ export function ProjectWizard({
       return run('folder', async () => {
         const res = await wizardCheckFolderAction(input);
         if (!res.ok) return fail(res.message, 1);
+        if (res.folder.path !== folder?.path || res.folder.state !== folder?.state) {
+          setAvailable(undefined);
+        }
         setFolder(res.folder);
-        setAvailable(undefined);
-        go(2);
+        setStep(2);
+        if (teams === null && hasLinearKey) loadTeam('');
       });
     }
     if (step === 2) {
@@ -329,15 +350,28 @@ export function ProjectWizard({
       } else {
         const wanted = linearName.trim();
         if (!wanted) return fail('Name the new Linear project.');
+        if (wanted.length > 80) return fail('Keep the Linear project’s name under 80 characters.');
         const there = linearProjects.find((p) => p.name.toLowerCase() === wanted.toLowerCase());
-        if (there)
+        if (there) {
           return fail(`The team has a Linear project named ${there.name}. Pick it instead.`);
+        }
       }
       if (!label.trim()) return fail('Name the label that marks factory issues.');
       const missing = pipelineStates.filter((p) => !map[p]);
       if (missing.length) {
         setShowStates(true);
         return fail(`Map every status: ${missing.map((p) => PIPELINE_LABELS[p]).join(', ')}.`);
+      }
+      const twice = pipelineStates.find((p, i) =>
+        pipelineStates.slice(0, i).some((q) => map[q] === map[p]),
+      );
+      if (twice) {
+        const first = pipelineStates.find((q) => map[q] === map[twice])!;
+        const status = states.find((s) => s.id === map[twice])?.name ?? 'one status';
+        setShowStates(true);
+        return fail(
+          `${PIPELINE_LABELS[first]} and ${PIPELINE_LABELS[twice]} both use ${status}. Each needs its own.`,
+        );
       }
       return go(3);
     }
@@ -354,47 +388,63 @@ export function ProjectWizard({
       : linearName.trim();
   const team = teams?.find((t) => t.id === teamId);
 
+  /**
+   * The tasks for what is chosen now. Each carries the inputs it runs with, so a try again keeps
+   * a finished task only when nothing it used has changed since.
+   */
   function plan(): Task[] {
+    const task = (id: Task['id'], label: string, inputs: unknown): Task => ({
+      id,
+      label,
+      key: JSON.stringify(inputs),
+      state: 'todo',
+    });
     return [
       ...(creating
-        ? [{ id: 'repo' as const, label: `Make ${repo} on GitHub`, state: 'todo' as const }]
+        ? [task('repo', `Make ${repo} on GitHub`, [repo, isPrivate, description.trim()])]
         : []),
       ...(cloning
         ? [
-            {
-              id: 'clone' as const,
-              label: `Clone ${repo} into ${folder?.path ?? folderName}`,
-              state: 'todo' as const,
-            },
+            task('clone', `Clone ${repo} into ${folder?.path ?? folderName}`, [
+              repo,
+              parent,
+              folderName,
+            ]),
           ]
         : []),
       ...(linearMode === 'create'
         ? [
-            {
-              id: 'linear' as const,
-              label: `Make the Linear project ${linearChoice} in ${team?.name ?? 'the team'}`,
-              state: 'todo' as const,
-            },
+            task(
+              'linear',
+              `Make the Linear project ${linearChoice} in ${team?.name ?? 'the team'}`,
+              [teamId, linearChoice],
+            ),
           ]
         : []),
-      { id: 'save', label: 'Save the project and read it back', state: 'todo' },
+      task('save', 'Save the project and read it back', null),
     ];
   }
 
   /** Makes what is new, in order, then saves. A failed task stops it; trying again resumes. */
   function create() {
     setError(null);
-    const list = (tasks?.some((t) => t.state === 'failed') ? tasks : null) ?? plan();
+    const list = plan().map((t) => {
+      const before = tasks?.find((b) => b.id === t.id && b.key === t.key && b.state === 'done');
+      return before && t.id !== 'save' ? before : t;
+    });
     setTasks(list);
     const update = (id: Task['id'], patch: Partial<Task>) =>
       setTasks((ts) => ts?.map((t) => (t.id === id ? { ...t, ...patch } : t)) ?? null);
-    if (list !== tasks) made.current = {};
     run('create', async () => {
-      let repoPath = folder?.path ?? existing;
+      const repoPath = folder?.path ?? existing;
+      let linearProjectId =
+        linearMode === 'create' ? (list.find((t) => t.id === 'linear')?.result ?? '') : linearPick;
       for (const task of list) {
         if (task.state === 'done') continue;
         update(task.id, { state: 'running', note: undefined });
-        let res: { ok: true; note: string } | { ok: false; message: string; field?: string };
+        let res:
+          | { ok: true; note: string; result?: string }
+          | { ok: false; message: string; field?: string };
         if (task.id === 'repo') {
           const r = await wizardEnsureRepositoryAction({
             owner,
@@ -407,13 +457,16 @@ export function ProjectWizard({
             : r;
         } else if (task.id === 'clone') {
           const r = await wizardEnsureCloneAction({ repo, parent, folder: folderName });
-          if (r.ok) repoPath = r.path;
           res = r.ok ? { ok: true, note: r.reused ? 'The folder had it already.' : 'Cloned.' } : r;
         } else if (task.id === 'linear') {
           const r = await wizardEnsureLinearProjectAction({ teamId, name: linearChoice });
-          if (r.ok) made.current.linearProjectId = r.project.id;
+          if (r.ok) linearProjectId = r.project.id;
           res = r.ok
-            ? { ok: true, note: r.created ? 'Made.' : 'Already in Linear, used as it is.' }
+            ? {
+                ok: true,
+                note: r.created ? 'Made.' : 'Already in Linear, used as it is.',
+                result: r.project.id,
+              }
             : r;
         } else {
           const r = await saveProjectAction(null, {
@@ -421,13 +474,7 @@ export function ProjectWizard({
             repoPath,
             scripts: scripts.join(', '),
             context,
-            linear: {
-              teamId,
-              projectId:
-                linearMode === 'create' ? (made.current.linearProjectId ?? '') : linearPick,
-              label: label.trim(),
-              states: map,
-            },
+            linear: { teamId, projectId: linearProjectId, label: label.trim(), states: map },
             github: {
               repo,
               mergeMethod: 'squash',
@@ -458,13 +505,12 @@ export function ProjectWizard({
           );
           return;
         }
-        update(task.id, { state: 'done', note: res.note });
+        update(task.id, { state: 'done', note: res.note, result: res.result });
       }
     });
   }
 
   const busyCreating = busy === 'create';
-  const started = Boolean(tasks?.some((t) => t.state !== 'todo'));
 
   // ─── the steps ───────────────────────────────────────────────────────────
 
@@ -500,6 +546,7 @@ export function ProjectWizard({
   ) : (
     <div className="flex flex-col gap-5">
       <SegmentedControl
+        className="self-start"
         label="Repository"
         options={[
           { value: 'pick', label: 'Pick a repository' },
@@ -511,6 +558,13 @@ export function ProjectWizard({
           setError(null);
         }}
       />
+      {!github && busy !== 'github' ? (
+        <div>
+          <Button size="sm" onClick={loadGitHub} disabled={pending}>
+            Read the repositories again
+          </Button>
+        </div>
+      ) : null}
       {repoMode === 'pick' ? (
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -551,7 +605,7 @@ export function ProjectWizard({
                     return (
                       <label
                         key={r.fullName}
-                        className={`flex cursor-pointer items-start gap-3 rounded-(--radius-control) border px-3 py-2 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-cyan ${
+                        className={`flex cursor-pointer items-start gap-3 rounded-(--radius-control) border px-3 py-2 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-[color-mix(in_oklab,var(--accent-strong)_72%,transparent)] ${
                           picked === r.fullName
                             ? 'border-cyan bg-cyan-soft'
                             : 'border-transparent hover:bg-canvas-raised'
@@ -560,9 +614,11 @@ export function ProjectWizard({
                         <input
                           type="radio"
                           name={`${ids}-repo`}
+                          aria-label={`${r.fullName}, ${r.private ? 'private' : 'public'}${taken ? `, used by ${taken}` : ''}`}
+                          aria-describedby={r.description ? `${ids}-d-${r.fullName}` : undefined}
                           value={r.fullName}
                           checked={picked === r.fullName}
-                          disabled={Boolean(taken) || started}
+                          disabled={Boolean(taken)}
                           onChange={() => {
                             setPicked(r.fullName);
                             setError(null);
@@ -580,7 +636,12 @@ export function ProjectWizard({
                             ) : null}
                           </span>
                           {r.description ? (
-                            <span className="truncate text-body-sm text-body">{r.description}</span>
+                            <span
+                              id={`${ids}-d-${r.fullName}`}
+                              className="truncate text-body-sm text-body"
+                            >
+                              {r.description}
+                            </span>
                           ) : null}
                         </span>
                       </label>
@@ -607,7 +668,7 @@ export function ProjectWizard({
             }))}
             value={owner}
             onValueChange={setOwner}
-            disabled={pending || started}
+            disabled={pending}
           />
           <Input
             id={`${ids}-new-name`}
@@ -617,7 +678,7 @@ export function ProjectWizard({
             autoComplete="off"
             style={MONO}
             value={newName}
-            readOnly={pending || started}
+            readOnly={pending}
             onChange={(e) => setNewName(e.target.value)}
           />
           <div className="md:col-span-2">
@@ -626,7 +687,7 @@ export function ProjectWizard({
               label="Description"
               description="Optional. Shown on GitHub."
               value={description}
-              readOnly={pending || started}
+              readOnly={pending}
               onChange={(e) => setDescription(e.target.value)}
             />
           </div>
@@ -636,7 +697,6 @@ export function ProjectWizard({
               description="Only you and the people you add can see it."
               checked={isPrivate}
               onCheckedChange={(on) => setIsPrivate(on === true)}
-              disabled={started}
             />
           </div>
           <p className="max-w-[31rem] text-body-sm text-body md:col-span-2">
@@ -652,6 +712,7 @@ export function ProjectWizard({
     <div className="flex flex-col gap-5">
       {creating ? null : (
         <SegmentedControl
+          className="self-start"
           label="Folder"
           options={[
             { value: 'clone', label: 'Clone it' },
@@ -673,7 +734,7 @@ export function ProjectWizard({
             title="Clone into"
             value={parent}
             onChange={setParent}
-            readOnly={pending || started}
+            readOnly={pending}
           />
           <div className="max-w-[24rem]">
             <Input
@@ -683,7 +744,7 @@ export function ProjectWizard({
               autoComplete="off"
               style={MONO}
               value={folderName}
-              readOnly={pending || started}
+              readOnly={pending}
               onChange={(e) => setFolderName(e.target.value)}
             />
           </div>
@@ -734,12 +795,13 @@ export function ProjectWizard({
             setTeamId(id);
             loadTeam(id);
           }}
-          disabled={pending || started}
+          disabled={pending}
         />
       </div>
       {teamId ? (
         <>
           <SegmentedControl
+            className="self-start"
             label="Linear project"
             options={[
               { value: 'pick', label: 'Pick a Linear project' },
@@ -768,7 +830,7 @@ export function ProjectWizard({
                 }))}
                 value={linearPick}
                 onValueChange={setLinearPick}
-                disabled={pending || started}
+                disabled={pending}
               />
             ) : (
               <Input
@@ -776,7 +838,7 @@ export function ProjectWizard({
                 label="New Linear project’s name"
                 description={`Made in ${team?.name ?? 'the team'} at the last step.`}
                 value={linearName}
-                readOnly={pending || started}
+                readOnly={pending}
                 onChange={(e) => setLinearName(e.target.value)}
               />
             )}
@@ -806,7 +868,7 @@ export function ProjectWizard({
                     label="Label"
                     description="Marks the issues the factory owns. Made in Linear if the team has none by this name."
                     value={label}
-                    readOnly={pending || started}
+                    readOnly={pending}
                     onChange={(e) => setLabel(e.target.value)}
                   />
                 </div>
@@ -820,7 +882,7 @@ export function ProjectWizard({
                       options={states.map((s) => ({ value: s.id, label: s.name }))}
                       value={map[p]}
                       onValueChange={(v) => setMap((m) => ({ ...m, [p]: v }))}
-                      disabled={pending || started}
+                      disabled={pending}
                     />
                   ))}
                 </div>
@@ -922,7 +984,7 @@ export function ProjectWizard({
         so. Change any of it on the project’s settings.
       </p>
       {tasks ? (
-        <ol aria-label="Progress" className="flex flex-col gap-2">
+        <ol aria-label="Progress" aria-live="polite" className="flex flex-col gap-2">
           {tasks.map((t) => (
             <li key={t.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <Badge
@@ -971,7 +1033,7 @@ export function ProjectWizard({
         : true;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex max-w-[72rem] flex-col gap-6">
       <Stepper
         label="New project"
         steps={STEPS.map((s, i) => ({
@@ -979,7 +1041,7 @@ export function ProjectWizard({
           error: error?.step === i && i !== step ? 'Needs a look' : undefined,
         }))}
         current={step}
-        onStepSelect={busyCreating ? undefined : (i) => go(i)}
+        onStepSelect={pending ? undefined : (i) => go(i)}
         details="current"
       />
       <section aria-labelledby={`${ids}-title`} className="flex flex-col gap-6 card p-6">
@@ -1011,7 +1073,7 @@ export function ProjectWizard({
             </Button>
           )}
           {step > 0 ? (
-            <Button variant="ghost" onClick={() => go(step - 1)} disabled={busyCreating}>
+            <Button variant="ghost" onClick={() => go(step - 1)} disabled={pending}>
               Back
             </Button>
           ) : null}

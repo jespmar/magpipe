@@ -172,7 +172,7 @@ describe('the GitHub CLI’s sign-in', () => {
     logins.gho_second = 'second-account';
     const s = { ...(await getForgeSettings(db)), repo: 'o/app' };
     const { forge, repo } = await getForge(db, s);
-    await expect(forge.repository(repo)).resolves.toEqual({ defaultBranch: 'main' });
+    await expect(forge.repository(repo)).resolves.toEqual({ defaultBranch: 'main', canPush: true });
     expect(tokensSeen.slice(-2)).toEqual(['gho_from_cli', 'gho_second']);
     // Settings reads who the CLI is signed in as and keeps it current.
     expect(s.viewer).toBe('scripted-operator');

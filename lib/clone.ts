@@ -25,19 +25,48 @@ const CLONE_TIMEOUT_MS = 10 * 60_000;
 
 export type CloneTarget = { path: string; state: 'new' | 'empty' | 'same' };
 
-/** Whether a folder holds the repository `repo` (by its origin) or the clone `source` came from. */
-async function holds(dir: string, repo: string, source?: CloneSource): Promise<boolean> {
+function gitIn(cwd: string, args: string[]): Promise<{ code: number; out: string }> {
+  return new Promise((resolve) => {
+    execFile('git', args, { cwd, timeout: 30_000 }, (err, stdout, stderr) =>
+      resolve({
+        code: err ? (typeof err.code === 'number' ? err.code : 1) : 0,
+        out: `${stdout}${stderr}`.trim(),
+      }),
+    );
+  });
+}
+
+const real = (p: string) => fs.realpath(p).catch(() => path.resolve(p));
+
+/**
+ * What a folder that is already there holds: `same` when it is the top of a clone of `repo`
+ * (by its origin, or the clone `source` it came from) with a commit checked out; `partial` when
+ * it is such a clone with nothing checked out, as one cut off half-way is; else `other`. A folder
+ * inside some other clone is `other`: git would read the enclosing repository's origin.
+ */
+async function holds(
+  dir: string,
+  repo: string,
+  source?: CloneSource,
+): Promise<'same' | 'partial' | 'other'> {
+  const top = await gitIn(dir, ['rev-parse', '--show-toplevel']);
+  if (top.code !== 0 || (await real(top.out)) !== (await real(dir))) return 'other';
   const origin = await originUrl(dir);
-  if (!origin) return false;
+  if (!origin) return 'other';
   const fromOrigin = repoFromRemote(origin);
-  if (fromOrigin) return fromOrigin.toLowerCase() === repo.toLowerCase();
-  return source ? path.resolve(origin) === path.resolve(source.url) : false;
+  const match = fromOrigin
+    ? fromOrigin.toLowerCase() === repo.toLowerCase()
+    : Boolean(source) && path.resolve(origin) === path.resolve(source!.url);
+  if (!match) return 'other';
+  return (await gitIn(dir, ['rev-parse', '--verify', '--quiet', 'HEAD'])).code === 0
+    ? 'same'
+    : 'partial';
 }
 
 /**
  * Where a clone of `repo` would go, checked before anything is made: the parent must be an
- * absolute path to a folder, and the new folder must not be there yet, be empty, or already hold
- * this repository.
+ * absolute path to a folder, and the new folder must not be there yet, be empty, or already be a
+ * complete clone of this repository.
  */
 export async function checkCloneTarget(input: {
   parent: string;
@@ -62,7 +91,13 @@ export async function checkCloneTarget(input: {
   if (!there) return { path: target, state: 'new' };
   if (!there.isDirectory()) throw new CloneError(`${target} is already there, and not a folder.`);
   if ((await fs.readdir(target)).length === 0) return { path: target, state: 'empty' };
-  if (await holds(target, input.repo, input.source)) return { path: target, state: 'same' };
+  const held = await holds(target, input.repo, input.source);
+  if (held === 'same') return { path: target, state: 'same' };
+  if (held === 'partial') {
+    throw new CloneError(
+      `${target} holds a clone of ${input.repo} that did not finish. Remove the folder, then try again.`,
+    );
+  }
   throw new CloneError(
     `${target} already has files in it. Pick another folder, or another name for the new one.`,
   );
@@ -119,12 +154,19 @@ export async function cloneRepository(input: {
         }),
     );
   });
-  if (result.code !== 0) {
+  // A repository GitHub made a moment ago may not have its first commit yet: git then clones an
+  // empty repository, with no branch for goals to start from. Undone like a failed clone.
+  const empty =
+    result.code === 0 &&
+    (await gitIn(target.path, ['rev-parse', '--verify', '--quiet', 'HEAD'])).code !== 0;
+  if (result.code !== 0 || empty) {
     // A new folder git made goes again; an empty one the operator made stays, emptied.
     if (target.state === 'new') await fs.rm(target.path, { recursive: true, force: true });
     else await emptyFolder(target.path);
     throw new CloneError(
-      `git could not clone ${input.repo}: ${scrub(result.out, input.token) || `exit code ${result.code}`}`,
+      empty
+        ? `${input.repo} has no commits yet, so there is nothing to build on. If it was just made, GitHub may still be writing its first commit: try again in a moment.`
+        : `git could not clone ${input.repo}: ${scrub(result.out, input.token) || `exit code ${result.code}`}`,
     );
   }
   return { path: target.path, reused: false };

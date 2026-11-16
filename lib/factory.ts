@@ -756,6 +756,10 @@ export async function startBuildRun(
     if (!current || !current.goal || current.buildRunId || current.stage !== 'approved') {
       return null;
     }
+    // A project with no scripts has nothing for the Test Agent to run (D49): its builds wait
+    // until it names some, as its page says, rather than pass a test step that ran nothing.
+    const project = await resolveProject(db, current.projectId);
+    if (project && project.scripts.length === 0) return null;
     const branch = goalBranch(current);
     const preset = await templatePlan(db, 'build', {
       vars: { branch },

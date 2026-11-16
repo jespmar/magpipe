@@ -1272,12 +1272,24 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
   The clone goes into a new or empty folder only; a failed one leaves nothing it made
   (`lib/clone.ts`). Pushes use the operator's own git credentials, as before.
 - **A project may have no scripts.** A new repository has no package.json, so the scripts are
-  optional: the project page says the Test Agent has nothing to run until it names some
-  (a `scripts` gap), and the settings editor allows none too.
+  optional: the project page says builds wait until it names some (a `scripts` gap), and the
+  settings editor allows none too.
 - **The seams grew, not the screens' reach.** The forge gained `repositories`, `owners`,
   `createRepository`, `packageScripts` and `cloneSource`; the tracker gained `createProject`
   (Linear's `projectCreate`). The scripted forge lists a few repositories, makes new ones, and
   clones from bare repositories on this computer, so the end-to-end test clones for real.
+- **After review.** A folder counts as holding the repository only when it is the top of a
+  clone of it with a commit checked out: a subfolder of another clone, or a clone cut off before
+  its checkout, is refused with what to do. A clone of a repository GitHub has not written its
+  first commit to yet is undone, with a word to try again in a moment. A taken repository name is
+  used only when the token can push to it and no other project lands in it, and saving any
+  project refuses a repository the token can only read. GitHub's reasons for a refusal (its
+  `errors`) are said. Builds of a project with no scripts wait until it names some, rather than
+  pass a test step that ran nothing. Trying again re-plans from what is chosen now, keeping a
+  finished task only while its inputs are unchanged, so nothing is locked after a failure; names
+  filled in from the repository follow it until the operator writes their own, and the scripts
+  ticked survive going back. The repositories can be read again after a failure, each is named
+  with its owner for assistive tech, and the create step's progress is announced.
 - **Not done.** No repository templates, no `.gitignore` or licence choices on a new repository,
   no Linear project settings beyond its name and team, and no GitHub organizations the token
   cannot see (a fine-grained token sees only the repositories it was given).

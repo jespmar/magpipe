@@ -112,8 +112,8 @@ export async function wizardCheckFolder(
 }
 
 /**
- * Makes the GitHub repository, or uses the one already there by that name: one made by an
- * earlier try of this wizard.
+ * Makes the GitHub repository, or uses the one already there by that name when the token can
+ * push to it and no other project lands in it: one made by an earlier try of this wizard.
  */
 export async function wizardEnsureRepository(
   db: Db,
@@ -124,6 +124,15 @@ export async function wizardEnsureRepository(
   if (!REPO_NAME.test(input.name) || input.name === '.' || input.name === '..') {
     throw new ProjectError(
       'Name the repository with letters, digits, dots, dashes or underscores.',
+      'github',
+    );
+  }
+  const taken = (await listProjects(db)).find(
+    (p) => p.github.repo?.toLowerCase() === repo.toLowerCase(),
+  );
+  if (taken) {
+    throw new ProjectError(
+      `${taken.name} already lands in ${taken.github.repo}. Name the new repository differently.`,
       'github',
     );
   }
@@ -139,11 +148,14 @@ export async function wizardEnsureRepository(
   } catch (err) {
     // GitHub refuses a name that is taken: the repository an earlier try made is used as it is.
     if (!(err instanceof ForgeError && err.code === 'invalid')) throw err;
-    const there = await forge.repository(repo).then(
-      () => true,
-      () => false,
-    );
+    const there = await forge.repository(repo).catch(() => null);
     if (!there) throw err;
+    if (!there.canPush) {
+      throw new ProjectError(
+        `${repo} is already on GitHub, and the token cannot push to it. Name the new repository differently.`,
+        'github',
+      );
+    }
     return { repo, created: false };
   }
 }
