@@ -85,10 +85,11 @@ export function latestChecks(work: StepWork): StepWork['checks'] {
 }
 
 export function checkWord(check: StepWork['checks'][number]): string {
-  if (check.timedOut) return 'timed out';
   // An allowed script package.json does not have, or one whose dependencies did not install:
   // nothing ran (D51).
-  if (check.exit === null) return 'did not run';
+  if (check.skipped) return 'did not run';
+  if (check.timedOut) return 'timed out';
+  // A script killed by a signal (exit null) ran and failed.
   return check.exit === 0 ? 'passed' : 'failed';
 }
 
@@ -119,11 +120,12 @@ export function workFacts(work: StepWork | undefined): string[] {
     ),
     ...work.files.map((f) => `${f.repo}: ${f.change} ${f.path}`),
     ...work.commits.map((c) => `${c.repo}: committed ${c.sha} on ${c.branch}: ${c.message}`),
-    ...latestChecks(work).map(
-      (c) =>
-        `${c.repo}: ran ${c.script}, ${checkWord(c)}${
-          c.timedOut || c.exit === null ? '' : ` (exit ${c.exit})`
-        } in ${c.seconds.toFixed(1)} s`,
+    ...latestChecks(work).map((c) =>
+      c.skipped
+        ? `${c.repo}: ${c.script} did not run (${c.skipped === 'missing' ? 'not in package.json' : 'its dependencies did not install'})`
+        : `${c.repo}: ran ${c.script}, ${checkWord(c)}${
+            c.timedOut ? '' : ` (exit ${c.exit ?? 'none, killed'})`
+          } in ${c.seconds.toFixed(1)} s`,
     ),
   ];
 }

@@ -31,6 +31,8 @@ export async function POST(_req: Request, { params }: Ctx) {
       preset = await templatePlan(db, parent.input.template, {
         draft: source ? runDocument(source.plan) : undefined,
         projectId: parent.input.projectId ?? project?.id,
+        // A build or land works on its goal's branch again: its steps name it.
+        vars: parent.input.worktree ? { branch: parent.input.worktree.branch } : undefined,
       });
       if (project) input = { ...parent.input, projectId: project.id };
     }

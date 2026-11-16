@@ -56,6 +56,21 @@ describe('foldWork', () => {
     ]);
     expect(workLine(foldWork([items[0]!]))).toBe('on magpipe/x');
   });
+
+  it('says a script did not run, apart from one that ran and was killed (D51)', () => {
+    const base = { kind: 'check' as const, repo: 'App', seconds: 0, timedOut: false };
+    const work = foldWork([
+      { ...base, script: 'lint', exit: null, skipped: 'missing' },
+      { ...base, script: 'test', exit: null, skipped: 'install' },
+      { ...base, script: 'e2e', exit: null, seconds: 3.2 },
+    ])!;
+    expect(workLine(work)).toBe('lint did not run · test did not run · e2e failed');
+    expect(workFacts(work)).toEqual([
+      'App: lint did not run (not in package.json)',
+      'App: test did not run (its dependencies did not install)',
+      'App: ran e2e, failed (exit none, killed) in 3.2 s',
+    ]);
+  });
 });
 
 describe('workItems', () => {

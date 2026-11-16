@@ -617,14 +617,19 @@ export async function templatePlan(
   id: TemplateId,
   opts: { draft?: string; vars?: Record<string, string>; projectId?: string | null } = {},
 ): Promise<{ plan: Step[]; text: string }> {
-  // `{branch}` and the like in a step's instructions, filled for this run.
-  const fill = (text: string) =>
-    text.replace(/\{(\w+)\}/g, (whole, key: string) => opts.vars?.[key] ?? whole);
   const agents = await listAgents(db);
   const template: FactoryTemplate = FACTORY_TEMPLATES[id];
   // Every template run works in a project (D45, D50): one named must still be there, and with
   // the stand-in held none named would leave the run nowhere to work.
   const project = await resolveProject(db, opts.projectId);
+  // `{branch}` and the like in a step's instructions, filled for this run; `{scripts}` is the
+  // project's own, so every start of a template names them (D51).
+  const vars: Record<string, string> = {
+    scripts: project?.scripts.join(', ') || 'none',
+    ...opts.vars,
+  };
+  const fill = (text: string) =>
+    text.replace(/\{(\w+)\}/g, (whole, key: string) => vars[key] ?? whole);
   if (opts.projectId && !project) {
     throw new FactoryNotReadyError('That project no longer exists, so its run cannot start again.');
   }
@@ -778,7 +783,7 @@ export async function startBuildRun(
     if (project && project.scripts.length === 0) return null;
     const branch = goalBranch(current);
     const preset = await templatePlan(db, 'build', {
-      vars: { branch, scripts: project?.scripts.join(', ') ?? 'none' },
+      vars: { branch },
       projectId: current.projectId,
     });
     // Sent back from the merge question (D42): the operator's note reaches the Code Agent.
@@ -1039,9 +1044,8 @@ export async function startLandRun(
     if (!current?.goal || !current.prNumber || current.mergedAt || current.landRunId) return null;
     if (!current.mergeRequestedAt) return null;
     const branch = goalBranch(current);
-    const landing = await resolveProject(db, current.projectId);
     const preset = await templatePlan(db, 'land', {
-      vars: { branch, scripts: landing?.scripts.join(', ') ?? 'none' },
+      vars: { branch },
       projectId: current.projectId,
     });
     const repo = await projectRepository(db, current.projectId);

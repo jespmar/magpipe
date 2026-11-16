@@ -373,7 +373,15 @@ export type RepoWork =
   | { kind: 'file'; path: string; change: 'created' | 'updated' }
   | { kind: 'branch'; name: string; created: boolean }
   | { kind: 'commit'; branch: string; sha: string; message: string }
-  | { kind: 'check'; script: string; exit: number | null; seconds: number; timedOut: boolean };
+  | {
+      kind: 'check';
+      script: string;
+      exit: number | null;
+      seconds: number;
+      timedOut: boolean;
+      /** Why it did not run: not in package.json, or its dependencies did not install (D51). */
+      skipped?: 'missing' | 'install';
+    };
 
 export type RepoOutcome = { text: string; isError?: boolean; work?: RepoWork };
 
@@ -512,48 +520,156 @@ async function readPackageJson(
   }
 }
 
-/** The install each package manager does from a lockfile or package.json, no install scripts. */
+/** The install each package manager does from package.json, the packages' own scripts not run. */
 function installArgs(pm: PackageManager): string[] {
-  return pm === 'npm'
-    ? ['install', '--ignore-scripts', '--no-audit', '--no-fund']
-    : ['install', '--ignore-scripts'];
+  if (pm === 'npm') return ['install', '--ignore-scripts', '--no-audit', '--no-fund'];
+  // CI=1 (commandEnv) would freeze pnpm's lockfile; the lockfile is put back after anyway.
+  if (pm === 'pnpm') return ['install', '--ignore-scripts', '--no-frozen-lockfile'];
+  if (pm === 'yarn') return ['install', '--ignore-scripts', '--non-interactive'];
+  return ['install', '--ignore-scripts'];
+}
+
+/** Lockfiles an install may write: each is put back as it was, so the work tree stays as it was. */
+const LOCKFILES = [
+  'package-lock.json',
+  'npm-shrinkwrap.json',
+  'pnpm-lock.yaml',
+  'yarn.lock',
+  'bun.lockb',
+  'bun.lock',
+];
+
+/** Long enough for a cold first install; its own budget, apart from the script's. */
+const INSTALL_TIMEOUT_MS = 10 * 60_000;
+
+/** What `installDependencies` did: nothing, or an install that finished or did not. */
+type Install =
+  | { ran: false }
+  | {
+      ran: true;
+      ok: boolean;
+      command: string;
+      output: string;
+      seconds: number;
+      timedOut: boolean;
+    };
+
+/** The dependencies package.json names, as a stable string to compare installs by. */
+function dependencyKey(pkg: PackageJson): string {
+  const named = { ...pkg.dependencies, ...pkg.devDependencies } as Record<string, unknown>;
+  return JSON.stringify(
+    Object.keys(named)
+      .sort()
+      .map((k) => [k, named[k]]),
+  );
+}
+
+async function readJson(file: string): Promise<PackageJson | null> {
+  try {
+    return JSON.parse((await fs.readFile(file, 'utf8')).replace(/^﻿/, '')) as PackageJson;
+  } catch {
+    return null;
+  }
 }
 
 /**
- * Installs a package.json's dependencies when it names some and the folder has no node_modules
- * (D51). A linked node_modules (the bound folder's, in a goal's worktree, D41) is used as it is.
- * Null when nothing needed installing.
+ * Installs a package.json's dependencies before a script runs, when Magpipe can tell they are
+ * not there (D51): a folder at the top of its work tree with no node_modules (a new repository's
+ * first build), one Magpipe installed before whose dependencies have changed since, or a goal's
+ * worktree whose linked node_modules (the bound folder's, D41) was installed for other ones. A
+ * node_modules the operator installed is used as it is, and so is Yarn's Plug'n'Play. What the
+ * install did is kept in the work tree's git folder: an install cut off (a timeout, a cancel, a
+ * crash) is undone and done again. Lockfiles are put back as they were, and node_modules is kept
+ * out of git, so the work tree is as it was.
  */
 async function installDependencies(
   dir: string,
   pkg: PackageJson,
   pm: PackageManager,
-  file: string,
-  opts: { timeoutMs: number; signal?: AbortSignal },
-): Promise<ExecResult | null> {
-  const named = { ...pkg.dependencies, ...pkg.devDependencies };
-  if (Object.keys(named).length === 0) return null;
-  if (await fs.lstat(path.join(dir, 'node_modules')).catch(() => null)) return null;
-  // Kept out of git in every worktree of the repository, as a linked one is.
+  signal?: AbortSignal,
+): Promise<Install> {
+  const key = dependencyKey(pkg);
+  if (key === '[]') return { ran: false };
+  // A package inside a workspace is installed from its root, which is the operator's to do.
+  const top = await git(dir, ['rev-parse', '--show-toplevel']);
+  const real = (p: string) => fs.realpath(p).catch(() => path.resolve(p));
+  if (top.code !== 0 || (await real(top.output.trim())) !== (await real(dir))) {
+    return { ran: false };
+  }
+  if ((await exists(path.join(dir, '.pnp.cjs'))) || (await exists(path.join(dir, '.yarnrc.yml')))) {
+    return { ran: false };
+  }
+  const gitDir = await git(dir, ['rev-parse', '--absolute-git-dir']);
+  if (gitDir.code !== 0) return { ran: false };
+  const stateFile = path.join(gitDir.output.trim(), 'magpipe-install.json');
+  const state = (await readJson(stateFile)) as { state?: string; key?: string } | null;
+  const modules = path.join(dir, 'node_modules');
+  const there = await fs.lstat(modules).catch(() => null);
+  if (there?.isSymbolicLink()) {
+    // The bound folder's, linked into a goal's worktree: right while its dependencies are these.
+    const linked = await readJson(path.join(path.dirname(await real(modules)), 'package.json'));
+    if (linked && dependencyKey(linked) === key) return { ran: false };
+    await fs.unlink(modules);
+  } else if (there) {
+    if (!state) return { ran: false };
+    if (state.state === 'done' && state.key === key) return { ran: false };
+    // Cut off half-way: what is there cannot be trusted.
+    if (state.state !== 'done') await fs.rm(modules, { recursive: true, force: true });
+  }
   await excludeNodeModules(dir);
+  const locks = new Map<string, Buffer | null>();
+  for (const name of LOCKFILES) {
+    locks.set(name, await fs.readFile(path.join(dir, name)).catch(() => null));
+  }
+  const restore = async () => {
+    for (const [name, before] of locks) {
+      const file = path.join(dir, name);
+      if (before === null) await fs.rm(file, { force: true });
+      else await fs.writeFile(file, before);
+    }
+  };
+  const undo = async () => {
+    await fs.rm(modules, { recursive: true, force: true });
+    await fs.rm(stateFile, { force: true });
+  };
+  await fs.writeFile(stateFile, JSON.stringify({ state: 'installing', key }));
+  const args = installArgs(pm);
+  const file = process.platform === 'win32' ? `${pm}.cmd` : pm;
+  const started = Date.now();
+  let res: ExecResult;
   try {
-    return await exec(file, installArgs(pm), {
+    res = await exec(file, args, {
       cwd: dir,
       env: await commandEnv(),
-      timeoutMs: opts.timeoutMs,
-      signal: opts.signal,
+      timeoutMs: INSTALL_TIMEOUT_MS,
+      signal,
     });
   } catch (err) {
+    await restore();
+    await undo();
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      return {
-        code: 127,
+      res = {
+        code: null,
         output: `${pm} was not found on this machine`,
-        timedOut: false,
         truncated: false,
+        timedOut: false,
       };
+    } else {
+      throw err;
     }
-    throw err;
   }
+  await restore();
+  const ok = res.code === 0 && !res.timedOut;
+  if (ok) await fs.writeFile(stateFile, JSON.stringify({ state: 'done', key }));
+  else await undo();
+  return {
+    ran: true,
+    ok,
+    command: `${pm} ${args.join(' ')}`,
+    output: `${res.truncated ? '… (earlier output cut)\n' : ''}${res.output.trimEnd()}`,
+    seconds: Math.round((Date.now() - started) / 100) / 10,
+    timedOut: res.timedOut,
+  };
 }
 
 /** Keeps node_modules out of git for every worktree of the repository at `dir` (D41, D51). */
@@ -599,32 +715,32 @@ export async function repoRun(
     return {
       text: `"${script}" did not run: ${read.state === 'missing' ? 'there is no package.json' : `package.json has no script named "${script}"`}. The operator allows it; until the change adds it, it has not passed.`,
       isError: true,
-      work: { kind: 'check', script, exit: null, seconds: 0, timedOut: false },
+      work: { kind: 'check', script, exit: null, seconds: 0, timedOut: false, skipped: 'missing' },
     };
   }
   const pm = await packageManagerOf(config.path, config.path);
   const file = process.platform === 'win32' ? `${pm}.cmd` : pm;
-  const started = Date.now();
   const timeoutMs = opts.timeoutMs ?? config.timeoutSec * 1000;
-  // A package.json with dependencies and no node_modules (a new repository's first build, D51):
-  // its packages are installed first, their own install scripts not run.
-  const installed = await installDependencies(config.path, read.pkg, pm, file, {
-    timeoutMs,
-    signal: opts.signal,
-  });
-  if (installed && installed.code !== 0) {
+  // The dependencies first, when Magpipe can tell they are not there (D51).
+  const installed = await installDependencies(config.path, read.pkg, pm, opts.signal);
+  const installLine = installed.ran
+    ? `$ ${installed.command}\n${installed.output}\n${installed.ok ? `Installed the dependencies in ${installed.seconds.toFixed(1)} s.` : installed.timedOut ? `The install stopped after ${Math.round(INSTALL_TIMEOUT_MS / 1000)} s without finishing.` : 'The install failed.'}\n`
+    : '';
+  if (installed.ran && !installed.ok) {
     return {
-      text: `$ ${pm} ${installArgs(pm).join(' ')}\n${installed.output.trimEnd()}\nInstalling the dependencies failed, so "${script}" did not run.`,
+      text: `${installLine}Its dependencies did not install, so "${script}" did not run.`,
       isError: true,
       work: {
         kind: 'check',
         script,
-        exit: installed.timedOut ? null : installed.code,
+        exit: null,
         seconds: 0,
-        timedOut: installed.timedOut,
+        timedOut: false,
+        skipped: 'install',
       },
     };
   }
+  const started = Date.now();
   let res: ExecResult;
   try {
     res = await exec(file, ['run', script], {
@@ -641,7 +757,7 @@ export async function repoRun(
   }
   const elapsed = (Date.now() - started) / 1000;
   const seconds = elapsed.toFixed(1);
-  const head = `$ ${pm} run ${script}`;
+  const head = `${installLine}$ ${pm} run ${script}`;
   const body = `${res.truncated ? '… (earlier output cut)\n' : ''}${res.output.trimEnd()}`;
   const work: RepoWork = {
     kind: 'check',
@@ -670,6 +786,30 @@ export async function gitStatus(base: string, signal?: AbortSignal): Promise<Rep
 
 const REF = /^[A-Za-z0-9_][\w./~^@{}-]{0,199}$/;
 
+/**
+ * The base a diff is taken against: a branch named as it is, unless its copy on origin is where
+ * HEAD forked from more recently. A goal starts from `origin/<base>` (D51) while the local base
+ * is never moved, so "against main" means against what the goal started from, not every goal
+ * merged on GitHub since the operator last pulled.
+ */
+async function nearerBase(dir: string, against: string, signal?: AbortSignal): Promise<string> {
+  const remote = `origin/${against}`;
+  const known = await git(dir, ['rev-parse', '--verify', '--quiet', `refs/remotes/${remote}`], {
+    signal,
+  });
+  if (known.code !== 0) return against;
+  const local = await git(dir, ['merge-base', against, 'HEAD'], { signal });
+  const fromRemote = await git(dir, ['merge-base', remote, 'HEAD'], { signal });
+  if (local.code !== 0) return fromRemote.code === 0 ? remote : against;
+  if (fromRemote.code !== 0) return against;
+  const a = local.output.trim();
+  const b = fromRemote.output.trim();
+  if (a === b) return against;
+  // The remote's fork point is the later one when the local one is its ancestor.
+  const older = await git(dir, ['merge-base', '--is-ancestor', a, b], { signal });
+  return older.code === 0 ? remote : against;
+}
+
 /** `git_diff`: the branch against a base (`main...HEAD`), or uncommitted work against HEAD. */
 export async function gitDiff(
   base: string,
@@ -679,7 +819,7 @@ export async function gitDiff(
   if (against !== undefined && against !== '' && !REF.test(against)) {
     return { text: `Not a branch or commit: ${against}`, isError: true };
   }
-  const range = against ? [`${against}...HEAD`] : ['HEAD'];
+  const range = against ? [`${await nearerBase(base, against, signal)}...HEAD`] : ['HEAD'];
   const stat = await gitOrThrow(base, ['diff', '--stat', ...range, '--', '.'], signal);
   const diff = await git(base, ['diff', ...range, '--', '.'], { signal });
   if (diff.code !== 0) return { text: gitText(diff) || 'git diff failed', isError: true };

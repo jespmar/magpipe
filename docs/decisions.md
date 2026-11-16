@@ -1352,14 +1352,25 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
   by that name, or a package.json that is not JSON (said as such). A script that did not run is
   kept in the step's record as one ("lint did not run"), so Code Review and the Merge Agent see
   it as plainly as a failure.
-- **Dependencies are installed before the first run.** A package.json that names dependencies,
-  in a folder with no node_modules (a new repository's first build), is installed first with
-  its package manager, the packages' own install scripts not run, and node_modules kept out of
-  git. A goal's worktree with the bound folder's node_modules linked (D41) uses it as it is.
+- **Dependencies are installed before a run, when Magpipe can tell they are not there.** A
+  package.json that names dependencies, at the top of its work tree, with no node_modules (a new
+  repository's first build) is installed first with its package manager, the packages' own
+  install scripts not run. What the install did is kept in the work tree's git folder: one that
+  Magpipe made is done again when the dependencies change, and one cut off by a timeout, a
+  cancel or a crash is thrown away and done again. A goal's worktree whose linked node_modules
+  (D41) was installed for other dependencies gets an install of its own. A node_modules the
+  operator installed, a package inside a workspace and Yarn's Plug'n'Play are left as they are.
+  Lockfiles are put back as they were and node_modules is kept out of git, so the work tree is
+  exactly as the change left it. The install has its own ten minutes, apart from the script's
+  time, and one that fails is recorded as the script not having run.
 - **A new goal starts from the base on origin.** Goals merge on GitHub (D42) and the bound
   folder's own main is never moved, so a goal that follows the scaffold branches from
-  `origin/<base>` after a fetch, and sees the scaffold's package.json.
+  `origin/<base>` after a fetch, and sees the scaffold's package.json. A diff "against main" is
+  taken against whichever of main and origin/main the branch forked from more recently, so a
+  review sees the goal's own change, not every goal merged since the operator last pulled.
 - **Builds still wait for a project that allows no script at all**, and now the board says so
   above the approved goals, not only the notice at the top of the page.
 - **After review.** A package.json the wizard could not read from GitHub is said as such, with
-  nothing ticked, rather than taken for a repository with none.
+  nothing ticked, rather than taken for a repository with none. A script that did not run is
+  recorded as such (why, too), apart from one that ran and was killed. A refly of a build or land
+  names the goal's branch and the project's scripts again.
