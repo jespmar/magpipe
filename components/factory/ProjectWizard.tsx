@@ -277,10 +277,12 @@ export function ProjectWizard({
   function loadScripts() {
     const choose = (list: string[] | null) => {
       setAvailable(list);
-      // Choices the operator made that the new list still has stay; else the usual ones.
+      // With no scripts yet, the usual names are offered: the builds add them (D51).
+      const offered = list?.length ? list : USUAL_SCRIPTS;
+      // Choices the operator made that are still offered stay; else the usual ones.
       setScripts((was) => {
-        const kept = was.filter((s) => list?.includes(s));
-        return kept.length ? kept : (list ?? []).filter((s) => USUAL_SCRIPTS.includes(s));
+        const kept = was.filter((s) => offered.includes(s));
+        return kept.length ? kept : offered.filter((s) => USUAL_SCRIPTS.includes(s));
       });
     };
     if (folder?.scripts) return choose(folder.scripts);
@@ -918,26 +920,29 @@ export function ProjectWizard({
         <legend className="mb-1 text-body-sm font-medium text-ink">Scripts agents may run</legend>
         {available === undefined ? (
           <p className="text-body-sm text-body">Reading package.json…</p>
-        ) : available === null || available.length === 0 ? (
-          <p className="max-w-[31rem] text-body-sm text-body">
-            {available === null
-              ? 'The repository has no package.json yet,'
-              : 'Its package.json has no scripts yet,'}{' '}
-            so the Test Agent has nothing to run. Name the scripts on the project’s settings once it
-            has some.
-          </p>
         ) : (
-          <div className="grid gap-2 sm:grid-cols-2 wide:grid-cols-3">
-            {available.map((s) => (
-              <Checkbox
-                key={s}
-                label={s}
-                checked={scripts.includes(s)}
-                onCheckedChange={(on) =>
-                  setScripts((list) => (on === true ? [...list, s] : list.filter((x) => x !== s)))
-                }
-              />
-            ))}
+          <div className="flex flex-col gap-3">
+            {available === null || available.length === 0 ? (
+              <p className="max-w-[31rem] text-body-sm text-body">
+                {available === null
+                  ? 'The repository has no package.json yet,'
+                  : 'Its package.json has no scripts yet,'}{' '}
+                so these are the names agents may run once a build adds them, the first goal most
+                likely. Change them on the project’s settings at any time.
+              </p>
+            ) : null}
+            <div className="grid gap-2 sm:grid-cols-2 wide:grid-cols-3">
+              {(available?.length ? available : USUAL_SCRIPTS).map((s) => (
+                <Checkbox
+                  key={s}
+                  label={s}
+                  checked={scripts.includes(s)}
+                  onCheckedChange={(on) =>
+                    setScripts((list) => (on === true ? [...list, s] : list.filter((x) => x !== s)))
+                  }
+                />
+              ))}
+            </div>
           </div>
         )}
       </fieldset>
@@ -975,7 +980,12 @@ export function ProjectWizard({
       `${team?.name ?? ''}, ${linearMode === 'create' ? 'new project' : 'project'} ${linearChoice}, label ${label}`,
     ],
     ['Name', name],
-    ['Scripts', scripts.length ? scripts.join(', ') : 'none yet'],
+    [
+      'Scripts',
+      scripts.length
+        ? `${scripts.join(', ')}${available?.length ? '' : ', once a build adds them'}`
+        : 'none: builds wait until the project names some',
+    ],
   ];
 
   const createStep = (

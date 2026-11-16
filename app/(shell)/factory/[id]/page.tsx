@@ -38,7 +38,7 @@ const GAPS: Record<ProjectGap, { text: string; href: string }> = {
   },
   github_repo: { text: 'No GitHub repository yet: goals stop at a branch.', href: 'settings' },
   scripts: {
-    text: 'No scripts yet: builds wait until the project names some from its package.json, so the Test Agent has something to run.',
+    text: 'No scripts allowed: builds wait until the project names the ones agents may run, such as test.',
     href: 'settings',
   },
 };
@@ -169,7 +169,14 @@ export default async function ProjectPage({ params }: Props) {
           </p>
         ) : null}
         {board!.counts.specs + board!.counts.goals > 0 ? (
-          <FactoryBoard board={board!} />
+          <FactoryBoard
+            board={board!}
+            approvedWaits={
+              project.scripts.length === 0
+                ? 'Builds wait: the project allows no scripts. Name them on its settings.'
+                : undefined
+            }
+          />
         ) : (
           <p className="max-w-[31rem] text-body-sm text-body">
             Nothing in the factory yet. A spec that passes review lands here waiting for your

@@ -424,8 +424,12 @@ test('factory projects: a second one made with the wizard, beside the first, and
   await expect(page.getByText('Needs you is Blocked')).toBeVisible();
   await page.getByRole('button', { name: 'Continue' }).click();
 
-  // 4. A new repository has no package.json yet: no scripts, said so.
+  // 4. A new repository has no package.json yet: the usual script names are allowed ahead of
+  // it, for the first build to add (D51).
   await expect(page.getByText('The repository has no package.json yet')).toBeVisible();
+  for (const script of ['test', 'lint', 'typecheck']) {
+    await expect(page.getByRole('checkbox', { name: script, exact: true })).toBeChecked();
+  }
   await page.getByLabel('Project name').fill('API service');
   await page
     .getByLabel('Brief for the agents')
@@ -442,7 +446,8 @@ test('factory projects: a second one made with the wizard, beside the first, and
   await expect(page.getByText('The public API. Every endpoint is versioned.')).toBeVisible();
   await expect(page.getByText(`files into API ${stamp}`)).toBeVisible();
   await expect(page.getByText(`lands in magpipe-e2e/${repoName}`)).toBeVisible();
-  await expect(page.getByText('No scripts yet')).toBeVisible();
+  // Nothing stands in the way of its builds: the scripts are named ahead of package.json.
+  await expect(page.getByRole('region', { name: 'What this project needs' })).toBeHidden();
   await expect(page.getByRole('form', { name: 'Write a spec' })).toBeVisible();
   await expect(page.getByRole('heading', { level: 2, name: 'Factory', exact: true })).toBeVisible();
 

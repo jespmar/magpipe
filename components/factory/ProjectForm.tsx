@@ -281,7 +281,7 @@ export function ProjectForm({ initial, agents, models, workspace }: Props) {
         <Input
           id={`${ids}-scripts`}
           label="Scripts agents may run"
-          description="From its package.json, separated by commas."
+          description="Separated by commas. From its package.json, or ones a build will add there."
           spellCheck={false}
           style={MONO}
           value={scripts}
