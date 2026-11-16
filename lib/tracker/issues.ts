@@ -206,7 +206,13 @@ export async function releaseBuildRun(db: Db, id: string): Promise<void> {
  * A build that did not pass is built again by Magpipe (D52): the attempt is counted, what it
  * found is kept for the next build, and the goal is free to start again. Returns the count.
  */
-export async function recordRebuild(db: Db, id: string, note: string): Promise<number> {
+export async function recordRebuild(
+  db: Db,
+  id: string,
+  runId: string,
+  note: string,
+): Promise<number | null> {
+  // Once per build run: a finish run again after a restart finds it recorded and does nothing.
   const [row] = await db
     .update(t.trackerIssues)
     .set({
@@ -215,14 +221,25 @@ export async function recordRebuild(db: Db, id: string, note: string): Promise<n
       rebuildNote: note,
       updatedAt: new Date(),
     })
-    .where(eq(t.trackerIssues.id, id))
+    .where(and(eq(t.trackerIssues.id, id), eq(t.trackerIssues.buildRunId, runId)))
     .returning({ attempts: t.trackerIssues.buildAttempts });
-  return row?.attempts ?? 0;
+  return row?.attempts ?? null;
 }
 
 /**
- * The rebuild count starts again (D52): when a goal passes, or when it is handed to the operator,
- * whose move back to Approved gives it a fresh budget.
+ * A build that passed (D52): what the last ones found, and the operator's note, have been acted
+ * on. The count stays until the goal merges, so the rule's "first try" still sees the rebuilds.
+ */
+export async function passRebuilds(db: Db, id: string): Promise<void> {
+  await db
+    .update(t.trackerIssues)
+    .set({ rebuildNote: null, operatorNote: null, updatedAt: new Date() })
+    .where(eq(t.trackerIssues.id, id));
+}
+
+/**
+ * The rebuild count starts again (D52): when a goal is handed to the operator, whose move back to
+ * Approved gives it a fresh budget, and when it merges.
  */
 export async function clearRebuilds(db: Db, id: string): Promise<void> {
   await db
@@ -243,7 +260,7 @@ export async function recordPull(db: Db, id: string, pr: { number: number; url: 
 export async function recordMerged(db: Db, id: string): Promise<void> {
   await db
     .update(t.trackerIssues)
-    .set({ mergedAt: new Date(), updatedAt: new Date() })
+    .set({ mergedAt: new Date(), buildAttempts: 0, rebuildNote: null, updatedAt: new Date() })
     .where(eq(t.trackerIssues.id, id));
 }
 

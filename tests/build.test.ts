@@ -28,7 +28,13 @@ import { sendBackSet } from '@/lib/runs-util';
 import type { Goal, Step, TrackerIssue } from '@/lib/schemas';
 import { linearOf } from '@/lib/projects';
 import { saveLinearKey, useTrackerFactory } from '@/lib/tracker';
-import { checkLinear, getIssue, recordFiledIssue } from '@/lib/tracker/issues';
+import {
+  checkLinear,
+  clearRebuilds,
+  getIssue,
+  recordFiledIssue,
+  recordRebuild,
+} from '@/lib/tracker/issues';
 import { SCRIPTED_TEAM, scriptedStore, scriptedTracker } from '@/lib/tracker/scripted';
 import { setUpProject, TEST_LINEAR_PROJECT } from '@/tests/stubs/project';
 
@@ -439,6 +445,51 @@ describe('building one goal', () => {
       buildAttempts: 0,
       rebuildNote: null,
     });
+  }, 60_000);
+
+  it('carries the operator’s note into a rebuild, counts each build once, and leaves a goal the operator moved (D52)', async () => {
+    scriptedTracker('k', store).move(goals.button!.identifier, 'Approved');
+    await checkLinear(db, { force: true });
+    await db
+      .update(t.trackerIssues)
+      .set({ operatorNote: 'Rename the endpoint to /v2' })
+      .where(eq(t.trackerIssues.id, goals.button!.id));
+    const engine = new Engine({
+      client: buildModel({ run: 'Verdict: fail\n\nRuns: test exited 1.', calls: freshCalls() }),
+      getDb: async () => db,
+    });
+    const run = (await startBuildRun(db, goals.button!, (id) => engine.enqueue(id)))!;
+    expect(run.plan.find((s) => s.id === 'build')!.feedback).toContain(
+      'Rename the endpoint to /v2',
+    );
+    await engine.whenIdle();
+    const after = (await getIssue(db, goals.button!.id))!;
+    // The note is still to be done: it rides along until a build passes.
+    expect(after.rebuildNote).toContain('The operator asked: Rename the endpoint to /v2');
+    expect(after.operatorNote).toBe('Rename the endpoint to /v2');
+    // The same build's finish run again (a restart) records nothing more.
+    expect(await recordRebuild(db, goals.button!.id, run.id, 'again')).toBeNull();
+    expect((await getIssue(db, goals.button!.id))!.buildAttempts).toBe(1);
+
+    // Moved out of the build by the operator while it ran: left where they put it.
+    const next = (await startBuildRun(db, goals.button!, (id) => engine.enqueue(id)))!;
+    expect(next.plan.find((s) => s.id === 'build')!.feedback).toContain(
+      'The operator asked: Rename the endpoint to /v2',
+    );
+    await db
+      .update(t.trackerIssues)
+      .set({ stage: 'other', stateName: 'Canceled' })
+      .where(eq(t.trackerIssues.id, goals.button!.id));
+    await engine.whenIdle();
+    expect(
+      (await getRun(db, next.id))!.plan.find((s) => s.id === 'finish')!.result!.summary,
+    ).toContain('Left in Canceled');
+    expect(await getIssue(db, goals.button!.id)).toMatchObject({
+      stage: 'other',
+      buildRunId: null,
+      buildAttempts: 1,
+    });
+    await clearRebuilds(db, goals.button!.id);
   }, 60_000);
 
   it('a failed step is still reported: the finish runs after it, and the run fails', async () => {

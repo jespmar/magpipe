@@ -1404,3 +1404,12 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
   requests has none to fail. Anything short of that still stops at the merge question, and the
   land still brings the branch up to date, runs the tests again and checks before merging. A
   project's settings turn it off; projects made before keep the rule they had.
+- **After review.** A build is counted once, by its run, so a finish run again after a restart
+  does nothing more. A goal the operator moved elsewhere while it built (Canceled, Backlog, Done)
+  stays there. A spent token budget or tool rounds, a request the model refused and a missing
+  agent need a person too. The operator's note from the merge question rides along in every
+  rebuild until a build passes. A run that ended without reporting clears the count when it
+  hands the goal over, like any other. The count stays until the goal merges, so a rule that
+  asks for the first try sees that a goal was built again. Checks are read from check runs and
+  commit statuses alike, and a pull request with none waits five minutes after its build before
+  it counts as a repository that runs none.
