@@ -8,9 +8,11 @@
 import {
   app,
   BrowserWindow,
+  ipcMain,
   Menu,
   session,
   shell,
+  type IpcMainInvokeEvent,
   type MenuItemConstructorOptions,
 } from 'electron';
 import { randomBytes } from 'node:crypto';
@@ -137,8 +139,38 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+/** Only the app's own window, on the app's own pages, may call the desktop's channels. */
+function fromAppWindow(event: IpcMainInvokeEvent): boolean {
+  const frame = event.senderFrame;
+  return (
+    mainWindow !== null &&
+    event.sender === mainWindow.webContents &&
+    frame !== null &&
+    isAppUrl(frame.url)
+  );
+}
+
+/**
+ * The renderer's named channels (preload.ts): restart, so a saved config file applies, and open
+ * the config file in the operator's own editor (D48). Nothing else crosses.
+ */
+function registerChannels() {
+  ipcMain.handle('magpipe:restart', (event) => {
+    if (!fromAppWindow(event)) return false;
+    // before-quit closes the embedded database cleanly; relaunch starts Magpipe again after.
+    app.relaunch();
+    app.quit();
+    return true;
+  });
+  ipcMain.handle('magpipe:open-config', async (event) => {
+    if (!fromAppWindow(event) || !config) return false;
+    return (await shell.openPath(config.configPath)) === '';
+  });
+}
+
 async function boot() {
   hardenSessions();
+  registerChannels();
   mainWindow = createWindow();
   await mainWindow.loadURL(loadingPage());
 

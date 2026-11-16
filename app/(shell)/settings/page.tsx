@@ -13,6 +13,8 @@ import { RunLimitForm } from '@/components/settings/RunLimitForm';
 import { SpendCapForm } from '@/components/settings/SpendCapForm';
 import { FactoryForm } from '@/components/settings/FactoryForm';
 import { GitHubForm } from '@/components/settings/GitHubForm';
+import { ConfigFileForm } from '@/components/settings/ConfigFileForm';
+import { readConfigFile } from '@/lib/config-file';
 import { LinearForm } from '@/components/settings/LinearForm';
 import { FlockForm } from '@/components/settings/FlockForm';
 import { ScrollToHash } from '@/components/ui/ScrollToHash';
@@ -156,6 +158,8 @@ export default async function SettingsPage() {
       // The GitHub CLI's sign-in can stand in for a token (D47).
       findGh().catch(() => null),
     ]);
+  // magpipe.env, editable here in the desktop app (D48).
+  const configFile = await readConfigFile().catch(() => null);
   // Where Linear sends the browser back after Sign in with Linear (D47): what the OAuth app needs.
   const callbackUrl = `${originFrom(await headers(), { desktop: accessMode() === 'desktop' })}/api/linear-callback`;
   const backendRows: (readonly [string, string])[] =
@@ -330,6 +334,16 @@ export default async function SettingsPage() {
             />
           </Section>
         </div>
+        {configFile ? (
+          <Section id="config" title="Config file" className="md:col-span-2">
+            <p className="max-w-[31rem] text-body-sm text-body">
+              Settings Magpipe reads when it starts: how runs reach Claude, where commands are, the
+              Linear OAuth app. Keys and tokens you save elsewhere in Settings are stored sealed,
+              not here.
+            </p>
+            <ConfigFileForm initial={configFile} />
+          </Section>
+        ) : null}
         <Section id="linear" title="Linear" className="md:col-span-2">
           <p className="max-w-[31rem] text-body-sm text-body">
             Where the factory keeps its record. A spec that passes review is filed as an issue with

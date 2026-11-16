@@ -3,6 +3,12 @@
 import { headers } from 'next/headers';
 import { accessMode } from '@/lib/auth-mode';
 import { originFrom } from '@/lib/request-origin';
+import {
+  ConfigFileError,
+  readConfigFile,
+  saveConfigFile,
+  type ConfigFile,
+} from '@/lib/config-file';
 import { DbLockedError, getDb } from '@/lib/db';
 import { loadDemo } from '@/lib/db/seed';
 import { loadFactory, summarizeFactory } from '@/lib/factory';
@@ -347,5 +353,42 @@ export async function removeForgeKeyAction(): Promise<ForgeResult> {
     return { ok: true, view: forgeView(await removeForgeKey(await getDb())) };
   } catch (err) {
     return forgeFailure(err, 'remove the GitHub token');
+  }
+}
+
+// ─── the config file (D48) ─────────────────────────────────────────────────
+
+export type ConfigResult = { ok: true; file: ConfigFile } | { ok: false; message: string };
+
+/** The config file as it is now, for the editor's Reload. */
+export async function readConfigFileAction(): Promise<ConfigResult> {
+  try {
+    const file = await readConfigFile();
+    return file
+      ? { ok: true, file }
+      : { ok: false, message: 'This app has no config file to edit here.' };
+  } catch (err) {
+    console.error('[settings] read the config file failed:', err);
+    return {
+      ok: false,
+      message: 'The config file could not be read. Open it from the File menu instead.',
+    };
+  }
+}
+
+/** Saves the config file, if it is still the one the editor read and its text has no errors. */
+export async function saveConfigFileAction(text: string, version: string): Promise<ConfigResult> {
+  if (typeof text !== 'string' || typeof version !== 'string') {
+    return { ok: false, message: 'Nothing to save.' };
+  }
+  try {
+    return { ok: true, file: await saveConfigFile(text, version) };
+  } catch (err) {
+    if (err instanceof ConfigFileError) return { ok: false, message: err.message };
+    console.error('[settings] save the config file failed:', err);
+    return {
+      ok: false,
+      message: 'The config file could not be saved. Check that the folder is writable.',
+    };
   }
 }
