@@ -599,40 +599,58 @@ async function installDependencies(
   if ((await exists(path.join(dir, '.pnp.cjs'))) || (await exists(path.join(dir, '.yarnrc.yml')))) {
     return { ran: false };
   }
-  const gitDir = await git(dir, ['rev-parse', '--absolute-git-dir']);
-  if (gitDir.code !== 0) return { ran: false };
-  const stateFile = path.join(gitDir.output.trim(), 'magpipe-install.json');
+  const gitDirOut = await git(dir, ['rev-parse', '--absolute-git-dir']);
+  const commonOut = await git(dir, ['rev-parse', '--git-common-dir']);
+  if (gitDirOut.code !== 0 || commonOut.code !== 0) return { ran: false };
+  const gitDir = gitDirOut.output.trim();
+  // A goal's worktree (D41) has a git folder of its own beside the repository's common one.
+  const linkedWorktree =
+    (await real(gitDir)) !== (await real(path.resolve(dir, commonOut.output.trim())));
+  const stateFile = path.join(gitDir, 'magpipe-install.json');
+  const saved = path.join(gitDir, 'magpipe-install-locks');
   const state = (await readJson(stateFile)) as { state?: string; key?: string } | null;
   const modules = path.join(dir, 'node_modules');
+
+  // An install cut off before (a crash, a quit): its lockfiles are put back from what was saved
+  // before it began, and what it left in node_modules cannot be trusted.
+  if (state && state.state !== 'done') {
+    await restoreLocks(dir, saved);
+    await fs.rm(modules, { recursive: true, force: true });
+  }
   const there = await fs.lstat(modules).catch(() => null);
+  let created = !there || (state !== null && state.state !== 'done');
   if (there?.isSymbolicLink()) {
-    // The bound folder's, linked into a goal's worktree: right while its dependencies are these.
-    const linked = await readJson(path.join(path.dirname(await real(modules)), 'package.json'));
+    // Only a goal's worktree link to the bound folder's node_modules is Magpipe's to replace; a
+    // link the operator made in their own checkout is theirs.
+    if (!linkedWorktree) return { ran: false };
+    const target = path.resolve(dir, await fs.readlink(modules));
+    const alive = await fs.stat(target).catch(() => null);
+    const linked = alive ? await readJson(path.join(path.dirname(target), 'package.json')) : null;
     if (linked && dependencyKey(linked) === key) return { ran: false };
+    // Gone, or installed for other dependencies: this worktree gets an install of its own.
     await fs.unlink(modules);
-  } else if (there) {
+    created = true;
+  } else if (there && !created) {
     if (!state) return { ran: false };
-    if (state.state === 'done' && state.key === key) return { ran: false };
-    // Cut off half-way: what is there cannot be trusted.
-    if (state.state !== 'done') await fs.rm(modules, { recursive: true, force: true });
+    if (state.key === key) return { ran: false };
   }
   await excludeNodeModules(dir);
-  const locks = new Map<string, Buffer | null>();
-  for (const name of LOCKFILES) {
-    locks.set(name, await fs.readFile(path.join(dir, name)).catch(() => null));
-  }
-  const restore = async () => {
-    for (const [name, before] of locks) {
-      const file = path.join(dir, name);
-      if (before === null) await fs.rm(file, { force: true });
-      else await fs.writeFile(file, before);
+  await saveLocks(dir, saved);
+  await fs.writeFile(stateFile, JSON.stringify({ state: 'installing', key }));
+  const settle = async (ok: boolean) => {
+    await restoreLocks(dir, saved);
+    if (ok) {
+      await fs.writeFile(stateFile, JSON.stringify({ state: 'done', key }));
+    } else if (created) {
+      // Made by this install: nothing half-made is left for the next run to trust.
+      await fs.rm(modules, { recursive: true, force: true });
+      await fs.rm(stateFile, { force: true });
+    } else {
+      // An update over a working node_modules failed: it stays as it was, and so does the record
+      // of what it was installed for, so the next run tries the update again.
+      await fs.writeFile(stateFile, JSON.stringify({ state: 'done', key: state?.key ?? '' }));
     }
   };
-  const undo = async () => {
-    await fs.rm(modules, { recursive: true, force: true });
-    await fs.rm(stateFile, { force: true });
-  };
-  await fs.writeFile(stateFile, JSON.stringify({ state: 'installing', key }));
   const args = installArgs(pm);
   const file = process.platform === 'win32' ? `${pm}.cmd` : pm;
   const started = Date.now();
@@ -645,23 +663,19 @@ async function installDependencies(
       signal,
     });
   } catch (err) {
-    await restore();
-    await undo();
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      res = {
-        code: null,
-        output: `${pm} was not found on this machine`,
-        truncated: false,
-        timedOut: false,
-      };
-    } else {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      await settle(false);
       throw err;
     }
+    res = {
+      code: null,
+      output: `${pm} was not found on this machine`,
+      truncated: false,
+      timedOut: false,
+    };
   }
-  await restore();
   const ok = res.code === 0 && !res.timedOut;
-  if (ok) await fs.writeFile(stateFile, JSON.stringify({ state: 'done', key }));
-  else await undo();
+  await settle(ok);
   return {
     ran: true,
     ok,
@@ -670,6 +684,39 @@ async function installDependencies(
     seconds: Math.round((Date.now() - started) / 100) / 10,
     timedOut: res.timedOut,
   };
+}
+
+/**
+ * The lockfiles as they are before an install, kept in the work tree's git folder so a crash
+ * mid-install can still put them back: each file there is a copy, `absent.json` names the ones
+ * that were not there.
+ */
+async function saveLocks(dir: string, saved: string): Promise<void> {
+  await fs.rm(saved, { recursive: true, force: true });
+  await fs.mkdir(saved, { recursive: true });
+  const absent: string[] = [];
+  for (const name of LOCKFILES) {
+    const bytes = await fs.readFile(path.join(dir, name)).catch(() => null);
+    if (bytes === null) absent.push(name);
+    else await fs.writeFile(path.join(saved, name), bytes);
+  }
+  await fs.writeFile(path.join(saved, 'absent.json'), JSON.stringify(absent));
+}
+
+/** Puts the saved lockfiles back, takes away those that were not there, and forgets the copy. */
+async function restoreLocks(dir: string, saved: string): Promise<void> {
+  const absent = (await readJson(path.join(saved, 'absent.json'))) as unknown;
+  if (!Array.isArray(absent)) return;
+  for (const name of LOCKFILES) {
+    const file = path.join(dir, name);
+    if (absent.includes(name)) {
+      await fs.rm(file, { force: true });
+    } else {
+      const bytes = await fs.readFile(path.join(saved, name)).catch(() => null);
+      if (bytes !== null) await fs.writeFile(file, bytes);
+    }
+  }
+  await fs.rm(saved, { recursive: true, force: true });
 }
 
 /** Keeps node_modules out of git for every worktree of the repository at `dir` (D41, D51). */
@@ -793,6 +840,14 @@ const REF = /^[A-Za-z0-9_][\w./~^@{}-]{0,199}$/;
  * merged on GitHub since the operator last pulled.
  */
 async function nearerBase(dir: string, against: string, signal?: AbortSignal): Promise<string> {
+  // Only a plain local branch name: `main~1`, `HEAD`, a sha mean what they say.
+  if (!/^[A-Za-z0-9._/-]+$/.test(against) || against.includes('..') || /HEAD$/.test(against)) {
+    return against;
+  }
+  const branch = await git(dir, ['show-ref', '--verify', '--quiet', `refs/heads/${against}`], {
+    signal,
+  });
+  if (branch.code !== 0) return against;
   const remote = `origin/${against}`;
   const known = await git(dir, ['rev-parse', '--verify', '--quiet', `refs/remotes/${remote}`], {
     signal,
@@ -848,7 +903,8 @@ export async function gitLog(
     return { text: `Not a branch or commit: ${opts.since}`, isError: true };
   const limit = Math.min(Math.max(1, Math.floor(opts.limit ?? 20)), 100);
   const args = ['log', '--oneline', '--no-decorate', `-n${limit}`];
-  if (opts.since) args.push(`${opts.since}..HEAD`);
+  // The same base a diff takes (D51), so the commit list and the diff agree.
+  if (opts.since) args.push(`${await nearerBase(base, opts.since, signal)}..HEAD`);
   return { text: (await gitOrThrow(base, [...args, '--'], signal)) || 'No commits' };
 }
 
