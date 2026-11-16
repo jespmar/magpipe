@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { gitDiff, repoRun } from '@/lib/repo';
 import { baseBranch, ensureWorktree, removeWorktree, worktreesRoot } from '@/lib/worktrees';
 
 const git = (cwd: string, ...args: string[]) =>
@@ -97,7 +98,38 @@ describe('worktrees', () => {
     expect(() =>
       git(wt.path, 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'),
     ).toThrow();
+    // Reviewed "against main", the goal's diff is its own, not the scaffold merged before it.
+    fs.writeFileSync(path.join(wt.path, 'goal.txt'), 'the goal\n');
+    git(wt.path, 'add', 'goal.txt');
+    git(wt.path, 'commit', '-q', '-m', 'goal');
+    const diff = await gitDiff(wt.path, 'main');
+    expect(diff.text).toContain('goal.txt');
+    expect(diff.text).not.toContain('scaffold.txt');
   });
+
+  it('installs a goal of its own when it changes the dependencies of a linked node_modules', async () => {
+    const wt = await ensureWorktree(repo, 'magpipe/new-dep', data);
+    expect(fs.lstatSync(path.join(wt.path, 'node_modules')).isSymbolicLink()).toBe(true);
+    fs.mkdirSync(path.join(wt.path, 'dep'));
+    fs.writeFileSync(
+      path.join(wt.path, 'dep', 'package.json'),
+      JSON.stringify({ name: 'dep', version: '1.0.0', main: 'index.js' }),
+    );
+    fs.writeFileSync(path.join(wt.path, 'dep', 'index.js'), "module.exports = 'dep ok';");
+    fs.writeFileSync(
+      path.join(wt.path, 'package.json'),
+      JSON.stringify({
+        scripts: { test: 'node -e "console.log(require(\'dep\'))"' },
+        dependencies: { dep: 'file:./dep' },
+      }),
+    );
+    const ran = await repoRun({ path: wt.path, scripts: ['test'], timeoutSec: 120 }, 'test');
+    expect(ran.isError).toBe(false);
+    expect(ran.text).toContain('dep ok');
+    expect(fs.lstatSync(path.join(wt.path, 'node_modules')).isSymbolicLink()).toBe(false);
+    // The bound folder's own node_modules is untouched.
+    expect(fs.existsSync(path.join(repo, 'node_modules', 'left-pad'))).toBe(true);
+  }, 120_000);
 
   it('refuses a folder that is not a repository', async () => {
     await expect(ensureWorktree(path.join(dir, 'nowhere'), 'magpipe/x', data)).rejects.toThrow();

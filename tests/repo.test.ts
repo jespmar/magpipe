@@ -7,6 +7,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+const git = (cwd: string, ...args: string[]) =>
+  execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=T', ...args], {
+    cwd,
+    encoding: 'utf8',
+  }).trim();
 import {
   gitBranch,
   gitCommit,
@@ -139,28 +145,84 @@ describe('scripts ahead of package.json (D51)', () => {
     expect(broken.work).toBeUndefined();
   });
 
-  it('installs the dependencies a new package.json names before the first run, kept out of git', async () => {
+  const writeDep = (version: string) => {
     fs.mkdirSync(path.join(dir, 'dep'), { recursive: true });
     fs.writeFileSync(
       path.join(dir, 'dep', 'package.json'),
-      JSON.stringify({ name: 'dep', version: '1.0.0', main: 'index.js' }),
+      JSON.stringify({ name: 'dep', version, main: 'index.js' }),
     );
-    fs.writeFileSync(path.join(dir, 'dep', 'index.js'), "module.exports = 'dep ok';");
+    fs.writeFileSync(path.join(dir, 'dep', 'index.js'), `module.exports = 'dep ${version}';`);
+  };
+  const writePackage = (deps: Record<string, string>) =>
     fs.writeFileSync(
       path.join(dir, 'package.json'),
       JSON.stringify({
         name: 'fresh',
         private: true,
         scripts: { test: 'node -e "console.log(require(\'dep\'))"' },
-        dependencies: { dep: 'file:./dep' },
+        dependencies: deps,
       }),
     );
+  const stateFile = () => path.join(dir, '.git', 'magpipe-install.json');
+
+  it('installs what a new package.json names before the first run, leaving the work tree as it was', async () => {
+    writeDep('1.0.0');
+    writePackage({ dep: 'file:./dep' });
+    // The work tree before: package.json and dep/ are the change, nothing else.
+    git(dir, 'add', '-A');
+    git(dir, 'commit', '-q', '-m', 'the change');
     const ran = await repoRun(config(), 'test');
     expect(ran.isError).toBe(false);
-    expect(ran.text).toContain('dep ok');
+    expect(ran.text).toMatch(/^\$ npm install --ignore-scripts/);
+    expect(ran.text).toMatch(/Installed the dependencies in [\d.]+ s\./);
+    expect(ran.text).toContain('dep 1.0.0');
     expect(fs.existsSync(path.join(dir, 'node_modules', 'dep'))).toBe(true);
-    const status = execFileSync('git', ['status', '--porcelain'], { cwd: dir, encoding: 'utf8' });
-    expect(status).not.toContain('node_modules');
+    // No lockfile left behind, node_modules kept out of git: nothing for a merge to trip on.
+    expect(git(dir, 'status', '--porcelain')).toBe('');
+    // Installed once: the next run goes straight to the script.
+    const again = await repoRun(config(), 'test');
+    expect(again.text).toMatch(/^\$ npm run test/);
+  }, 120_000);
+
+  it('installs again when the dependencies change, or when an install was cut off', async () => {
+    writeDep('2.0.0');
+    writePackage({ dep: 'file:./dep', other: 'file:./dep' });
+    const changed = await repoRun(config(), 'test');
+    expect(changed.text).toContain('Installed the dependencies');
+    expect(changed.text).toContain('dep 2.0.0');
+    // A crash mid-install leaves "installing" behind: what is there is thrown away and redone.
+    fs.writeFileSync(stateFile(), JSON.stringify({ state: 'installing', key: 'x' }));
+    fs.rmSync(path.join(dir, 'node_modules', 'dep'), { recursive: true, force: true });
+    const redone = await repoRun(config(), 'test');
+    expect(redone.isError).toBe(false);
+    expect(redone.text).toContain('Installed the dependencies');
+    expect(JSON.parse(fs.readFileSync(stateFile(), 'utf8')).state).toBe('done');
+  }, 120_000);
+
+  it('leaves a node_modules the operator installed as it is', async () => {
+    fs.rmSync(stateFile(), { force: true });
+    writePackage({ dep: 'file:./dep', third: 'file:./dep' });
+    const ran = await repoRun(config(), 'test');
+    expect(ran.text).toMatch(/^\$ npm run test/);
+  }, 60_000);
+
+  it('records an install that failed as a script that did not run', async () => {
+    fs.rmSync(path.join(dir, 'node_modules'), { recursive: true, force: true });
+    fs.rmSync(stateFile(), { force: true });
+    // A tarball that is not there: npm refuses it without the network.
+    writePackage({ dep: 'file:./missing.tgz' });
+    const ran = await repoRun(config(), 'test');
+    expect(ran.isError).toBe(true);
+    expect(ran.text).toContain('Its dependencies did not install, so "test" did not run.');
+    expect(ran.work).toMatchObject({
+      kind: 'check',
+      script: 'test',
+      exit: null,
+      skipped: 'install',
+    });
+    // Undone: the next run tries again rather than trusting a half-made node_modules.
+    expect(fs.existsSync(path.join(dir, 'node_modules'))).toBe(false);
+    expect(fs.existsSync(stateFile())).toBe(false);
   }, 120_000);
 });
 
@@ -200,7 +262,14 @@ describe('scripts', () => {
       expect(await repoRun({ ...config, scripts: ['typecheck'] }, 'typecheck')).toEqual({
         isError: true,
         text: '"typecheck" did not run: package.json has no script named "typecheck". The operator allows it; until the change adds it, it has not passed.',
-        work: { kind: 'check', script: 'typecheck', exit: null, seconds: 0, timedOut: false },
+        work: {
+          kind: 'check',
+          script: 'typecheck',
+          exit: null,
+          seconds: 0,
+          timedOut: false,
+          skipped: 'missing',
+        },
       });
     } finally {
       delete process.env.ANTHROPIC_API_KEY;
