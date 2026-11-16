@@ -6,7 +6,6 @@
  * takes the workspace's old team, statuses and repository once and then owns them.
  */
 import 'server-only';
-import path from 'node:path';
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Db } from './db';
 import * as t from './db/schema';
@@ -181,10 +180,10 @@ export async function ensureDefaultProject(db: Db): Promise<FactoryProject | und
     await adoptWorkspace(db, existing);
     return undefined;
   }
-  const { factoryRepository, standInRepositoryPath } = await import('./factory');
+  const { factoryRepository, isStandInRepository } = await import('./factory');
   const repo = await factoryRepository(db).catch(() => null);
   // A factory installed without a folder (D50) holds a stand-in, which is no project.
-  if (!repo || path.resolve(repo.path) === standInRepositoryPath()) return undefined;
+  if (!repo || (await isStandInRepository(repo.path))) return undefined;
   const [tool] = await db
     .select({ repository: t.tools.repository })
     .from(t.tools)

@@ -14,7 +14,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { dataDir, type Db } from './db';
-import { listAgents } from './agents';
+import { listAgents, updateAgent } from './agents';
+import { inspectRepository } from './repo';
 import { MERGE_STEP_ID } from './engine/plan';
 import {
   agentsText,
@@ -621,6 +622,20 @@ export async function templatePlan(
     text.replace(/\{(\w+)\}/g, (whole, key: string) => opts.vars?.[key] ?? whole);
   const agents = await listAgents(db);
   const template: FactoryTemplate = FACTORY_TEMPLATES[id];
+  // Every template run works in a project (D45, D50): one named must still be there, and with
+  // the stand-in held none named would leave the run nowhere to work.
+  const project = await resolveProject(db, opts.projectId);
+  if (opts.projectId && !project) {
+    throw new FactoryNotReadyError('That project no longer exists, so its run cannot start again.');
+  }
+  if (!project) {
+    const held = await factoryRepository(db).catch(() => null);
+    if (held && (await isStandInRepository(held.path))) {
+      throw new FactoryNotReadyError(
+        'Pick the project this is for: the factory builds only in a project.',
+      );
+    }
+  }
   const missing = await missingAgents(db, id);
   if (missing.length > 0) {
     const paused = missing.filter((name) => agents.some((a) => a.name === name));
@@ -838,7 +853,7 @@ export async function projectRepository(
   const tool = await factoryRepository(db);
   const project = await resolveProject(db, projectId);
   // The stand-in is held, never worked in (D50): a run must name its project.
-  if (!project && path.resolve(tool.path) === standInRepositoryPath()) {
+  if (!project && (await isStandInRepository(tool.path))) {
     throw new FactoryNotReadyError('Pick the project this is for: the factory builds only in one.');
   }
   return { id: tool.id, path: project?.repoPath ?? tool.path };
@@ -1351,30 +1366,51 @@ export function standInRepositoryPath(): string {
   return path.join(dataDir(), 'factory', 'repository');
 }
 
+/** The name in the stand-in's package.json, which marks it wherever the data folder has moved. */
+const STAND_IN_NAME = 'magpipe-factory-stand-in';
+
+const STAND_IN_PACKAGE = {
+  name: STAND_IN_NAME,
+  private: true,
+  description:
+    'The software factory holds this folder; every run works in its own project instead.',
+  scripts: { test: 'node -e "process.exit(1)"' },
+};
+
 /**
- * Makes the stand-in repository if it is not there: an empty git work tree whose package.json
- * names one script, so the tool offers `run` and the agents can be granted it. No run works in
- * it: each puts its own project's folder and scripts in its place (D45, D50).
+ * Whether a folder is the stand-in (D50): its own path, or a package.json that names it, so a
+ * data folder that moved (a renamed checkout, a restore elsewhere) is still known for one.
+ */
+export async function isStandInRepository(dir: string): Promise<boolean> {
+  if (path.resolve(dir) === standInRepositoryPath()) return true;
+  try {
+    const pkg = JSON.parse(await fs.readFile(path.join(dir, 'package.json'), 'utf8')) as {
+      name?: unknown;
+    };
+    return pkg.name === STAND_IN_NAME;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Makes the stand-in repository, or mends it: an empty git work tree whose package.json names one
+ * script, so the tool offers `run` and the agents can be granted it. A package.json that is gone,
+ * unreadable or without its script is written again. No run works in it: each puts its own
+ * project's folder and scripts in its place (D45, D50).
  */
 async function ensureStandInRepository(): Promise<string> {
   const dir = standInRepositoryPath();
   await fs.mkdir(dir, { recursive: true });
   const pkg = path.join(dir, 'package.json');
-  if (!(await fs.stat(pkg).catch(() => null))) {
-    await fs.writeFile(
-      pkg,
-      `${JSON.stringify(
-        {
-          name: 'magpipe-factory-stand-in',
-          private: true,
-          description:
-            'The software factory holds this folder; every run works in its own project instead.',
-          scripts: { test: 'node -e "process.exit(1)"' },
-        },
-        null,
-        2,
-      )}\n`,
-    );
+  const current = await fs
+    .readFile(pkg, 'utf8')
+    .then((text) => JSON.parse(text) as { name?: unknown; scripts?: Record<string, unknown> })
+    .catch(() => null);
+  if (current?.name !== STAND_IN_NAME || typeof current.scripts?.test !== 'string') {
+    const temp = `${pkg}.${process.pid}.tmp`;
+    await fs.writeFile(temp, `${JSON.stringify(STAND_IN_PACKAGE, null, 2)}\n`);
+    await fs.rename(temp, pkg);
   }
   if (!(await fs.stat(path.join(dir, '.git')).catch(() => null))) {
     await promisify(execFile)('git', ['init', '-q', dir], { timeout: 30_000 });
@@ -1383,23 +1419,59 @@ async function ensureStandInRepository(): Promise<string> {
 }
 
 /**
+ * The repository tool the factory's agents hold: the Code Agent's, else any factory agent's, so a
+ * roster missing an agent or a grant still finds the tool the rest hold.
+ */
+async function heldRepository(db: Db): Promise<{ id: string; path: string } | null> {
+  const coder = await factoryRepository(db).catch(() => null);
+  if (coder) return coder;
+  const slugs = new Set(FACTORY_AGENTS.map((a) => a.slug));
+  const ids = (await listAgents(db))
+    .filter((a) => slugs.has(a.slug))
+    .flatMap((a) => a.tools.map((g) => g.toolId));
+  if (ids.length === 0) return null;
+  const rows = await db
+    .select({ id: t.tools.id, repository: t.tools.repository })
+    .from(t.tools)
+    .where(inArray(t.tools.id, ids));
+  const repo = rows.find((r) => r.repository);
+  return repo?.repository ? { id: repo.id, path: repo.repository.path } : null;
+}
+
+/**
  * Installs the nine agents, or brings them up to date, with no folder asked for (D50). They are
  * granted the factory's repository tool, which every factory run points at its own project's
- * folder, or a goal's worktree. A factory loaded onto a folder before keeps that folder; a new
- * install holds a stand-in Magpipe makes in its data folder, so it needs no project and makes no
- * Default project. Agents and tools that are not the factory's are left alone.
+ * folder, or a goal's worktree. A factory loaded onto a folder before keeps that folder while it
+ * is there; a new install, or one whose folder is gone, holds a stand-in Magpipe keeps (and
+ * mends) in its data folder, so it needs no project and makes no Default project. When the tool
+ * changes, the factory's agents let go of the one they held, so no build reaches a folder outside
+ * its worktree. Agents and tools that are not the factory's are left alone.
  */
 export async function installFactory(db: Db): Promise<FactoryResult> {
-  const held = await factoryRepository(db).catch(() => null);
-  const folder = held?.path ?? (await ensureStandInRepository());
+  const held = await heldRepository(db);
+  const keepHeld =
+    held !== null &&
+    !(await isStandInRepository(held.path)) &&
+    (await inspectRepository(held.path)).ok;
+  const folder = keepHeld ? held.path : await ensureStandInRepository();
   // Found by its folder, so the tool the agents hold is the one kept.
   const app = await bindRepository(db, {
-    name: held ? path.basename(held.path) || 'App' : 'Factory projects',
+    name: keepHeld ? path.basename(held.path) || 'App' : 'Factory projects',
     path: folder,
-    ...(held ? {} : { scripts: ['test'] }),
+    ...(keepHeld ? {} : { scripts: ['test'] }),
   });
   const namespaces = await ensureNamespaces(db, FACTORY_AGENTS);
   const agents = await upsertAgents(db, FACTORY_AGENTS, { app: app.tool });
+  if (held && held.id !== app.tool.id) {
+    const slugs = new Set(FACTORY_AGENTS.map((a) => a.slug));
+    for (const agent of (await listAgents(db)).filter((a) => slugs.has(a.slug))) {
+      if (agent.tools.some((g) => g.toolId === held.id)) {
+        await updateAgent(db, agent.id, {
+          tools: agent.tools.filter((g) => g.toolId !== held.id),
+        });
+      }
+    }
+  }
   return {
     path: folder,
     tools: [{ name: app.tool.name, outcome: app.outcome }],

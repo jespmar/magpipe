@@ -12,20 +12,14 @@ import { expect, test } from '@playwright/test';
 // shell smoke tests expect a fresh workspace.
 
 let dir: string;
-/** The first project's folder: a git repository with a bare origin, made in the first test. */
+/** The first project's folder: a git repository with a bare origin, made before the tests. */
 let mill = '';
+
+// Each test builds on the one before: a failure skips the rest rather than retrying them alone.
+test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'magpipe-e2e-factory-'));
-});
-
-test.afterAll(() => {
-  fs.rmSync(dir, { recursive: true, force: true });
-});
-
-test('before any project, the factory is not installed and Home does not offer it', async ({
-  page,
-}) => {
   mill = path.join(dir, `mill-${Date.now().toString(36)}`);
   fs.mkdirSync(mill);
   fs.writeFileSync(
@@ -54,7 +48,15 @@ test('before any project, the factory is not installed and Home does not offer i
   execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
   execFileSync('git', ['remote', 'add', 'origin', origin], { cwd: mill });
   execFileSync('git', ['push', '-q', 'origin', 'main'], { cwd: mill });
+});
 
+test.afterAll(() => {
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('before any project, the factory is not installed and Home does not offer it', async ({
+  page,
+}) => {
   // No folder is asked for: the agents come with the first project (D50).
   await page.goto('/settings');
   const section = page.getByRole('region', { name: 'Software factory' });

@@ -5,7 +5,7 @@ import { ButtonLink } from '@/components/ui/Button';
 import { EmptyState, UnavailableState } from '@/components/ui/EmptyState';
 import { PageHead } from '@/components/ui/PageHead';
 import { getDb } from '@/lib/db';
-import { missingAgents } from '@/lib/factory';
+import { factoryInstalled } from '@/lib/factory';
 import { getLinearSettings } from '@/lib/tracker';
 import { clockTime } from '@/lib/home-util';
 import {
@@ -38,7 +38,7 @@ export default async function FactoryPage() {
     [projects, counts, loaded, lastCheckAt] = await Promise.all([
       Promise.all(rows.map((p) => projectView(db, p))),
       projectCounts(db),
-      missingAgents(db, 'spec').then((m) => m.length === 0),
+      factoryInstalled(db),
       getLinearSettings(db).then((s) => s.lastCheckAt),
     ]);
   } catch (err) {
@@ -84,7 +84,7 @@ export default async function FactoryPage() {
           icon={<FolderGit2 size={24} strokeWidth={1.75} />}
           label="Factory"
           title="No projects yet"
-          description="A project is a repository with its own Linear project and GitHub repository. Specs you write in it are filed in its Linear project and built in its repository. The factory's nine agents are installed with the first one."
+          description={`A project is a repository with its own Linear project and GitHub repository. Specs you write in it are filed in its Linear project and built in its repository.${loaded ? '' : ' The factory’s nine agents are installed with the first one.'}`}
           facts={[
             loaded ? 'factory agents installed' : 'factory agents not installed yet',
             'no projects',

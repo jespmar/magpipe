@@ -1322,3 +1322,11 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
 - **What was there stays.** A factory loaded onto a folder before keeps that folder and its
   Default project, and bringing its agents up to date keeps the tool they hold. `loadFactory`
   remains for the tests that set the factory up on a folder.
+- **After review.** A loaded folder is kept only while it is still a repository: once it is gone,
+  the agents move to the stand-in and let go of the old tool, so no build reaches a folder
+  outside its worktree; the held tool is found through any factory agent, not the Code Agent
+  alone. A broken stand-in (its package.json gone or unreadable) is written again, and the
+  stand-in is known by the name in its package.json, so a moved data folder never turns it into
+  a project. Every template run, a refly included, needs a project that is still there
+  (`templatePlan`). Settings says nothing about the agents when the database cannot be read, and
+  the Factory screen and Settings ask the same question (`factoryInstalled`).

@@ -7,8 +7,8 @@ import { installFactoryAction } from '@/app/(shell)/settings/actions';
 import type { RosterLine } from '@/lib/roster';
 
 type Props = {
-  /** The nine agents are there and hold the factory's repository. */
-  installed: boolean;
+  /** The nine agents are there and hold the factory's repository; null when it could not be read. */
+  installed: boolean | null;
   /** When set, the action is unavailable and this says why. */
   disabledReason?: string;
 };
@@ -35,9 +35,11 @@ export function FactoryInstall({ installed, disabledReason }: Props) {
   return (
     <div className="flex flex-col gap-3">
       <p className="max-w-[31rem] text-body-sm text-body">
-        {installed
-          ? 'Installed. Bring them up to date after an update of Magpipe, or after editing one by hand, to put back their prompts and grants.'
-          : 'Not installed yet. They are installed with the first project you create in Factory, or here.'}
+        {installed === null
+          ? 'Whether they are installed shows once the database opens.'
+          : installed
+            ? 'Installed. Bring them up to date after an update of Magpipe, or after editing one by hand, to put back their prompts and grants.'
+            : 'Not installed yet. They are installed with the next project you create in Factory, or here.'}
       </p>
       <div className="flex flex-wrap items-center gap-3">
         <Button size="sm" onClick={install} loading={pending} disabled={Boolean(disabledReason)}>

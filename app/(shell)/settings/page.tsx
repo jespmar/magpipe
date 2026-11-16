@@ -122,11 +122,12 @@ const EMPTY_FORGE: ForgeView = {
 };
 
 /** Whether the factory's agents are installed (D50). */
-async function loadFactory(): Promise<boolean> {
+async function loadFactory(): Promise<boolean | null> {
   try {
     return await factoryInstalled(await getDb());
   } catch {
-    return false;
+    // The database could not be read: neither installed nor not, as far as this page knows.
+    return null;
   }
 }
 
