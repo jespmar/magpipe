@@ -49,6 +49,8 @@ export default defineConfig({
       // scripted Linear's sign-in, which comes straight back with a scripted code.
       MAGPIPE_GH_PATH: path.resolve('e2e/stubs/gh'),
       MAGPIPE_LINEAR_CLIENT_ID: 'e2e_oauth_client',
+      // The config file Settings edits (D48), as the desktop app names its magpipe.env.
+      MAGPIPE_CONFIG_PATH: path.resolve('.magpipe/e2e-config/magpipe.env'),
     },
   },
 });

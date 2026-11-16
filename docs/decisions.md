@@ -1203,3 +1203,26 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
   desktop app's port must match the callback URL registered with Linear; it is stable unless the
   preferred port is taken at launch, and Settings shows the URL in use.
 
+## D48 · The config file, edited in Settings
+
+- **Why.** magpipe.env holds what Magpipe reads at launch (how runs reach Claude, where the
+  `claude` and `gh` commands are, the Linear OAuth app), and the only way to it was File → Open
+  Config File, into another app.
+- **Settings → Config file**, shown when the app names a config file (`MAGPIPE_CONFIG_PATH`,
+  which the desktop app sets) and never in a hosted app with sign-in, whose environment is not the
+  operator's to read. It holds the file in an editor, the keys Magpipe reads with what each is for
+  (a secret's value is never shown outside the file itself), and what the file sets that the
+  running app does not use yet. `lib/config-file.ts` reads and saves it.
+- **Saving checks first.** A value a key does not take (`MAGPIPE_MODEL_BACKEND`), and any change
+  to `MAGPIPE_SECRET_KEY` (set, changed or taken out), are refused: every stored key and token is
+  sealed with it. Lines that are not settings, unknown keys, keys Magpipe sets itself and commands
+  that are not there are warnings, and the file is saved. A file changed elsewhere since the
+  editor read it is not overwritten: Reload brings it in. The new file is written beside the old
+  and renamed over it, owner-only (0600).
+- **Restart and Open in your editor** are the desktop app's: two named channels in
+  `electron/preload.ts` (`magpipe:restart`, `magpipe:open-config`) that the main process answers
+  only for the app's own window on the app's own pages. Restart relaunches through the normal
+  quit, so the embedded database closes cleanly. A browser shows the words instead of the button.
+- **Not done.** No editing of the environment of `next dev` (`.env`), which development reads
+  itself; the section is not shown there unless the config path is set.
+
