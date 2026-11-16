@@ -168,7 +168,7 @@ test('settings connects Linear, a passing spec is filed, Home approves it, its g
     .check({ force: true, timeout: 30_000 });
   await page.getByRole('button', { name: 'Continue' }).click();
   await page.getByRole('button', { name: 'Use a folder that has it' }).click();
-  await page.getByLabel('Folder', { exact: true }).fill(mill);
+  await page.getByRole('textbox', { name: 'Folder', exact: true }).fill(mill);
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByRole('combobox', { name: 'Team' })).toContainText('Magpipe (MAG)', {
     timeout: 30_000,

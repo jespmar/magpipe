@@ -34,7 +34,7 @@ export function FactoryInstall({ installed, disabledReason }: Props) {
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-body-sm text-body">
+      <p className="max-w-[31rem] text-body-sm text-body">
         {installed
           ? 'Installed. Bring them up to date after an update of Magpipe, or after editing one by hand, to put back their prompts and grants.'
           : 'Not installed yet. They are installed with the first project you create in Factory, or here.'}
