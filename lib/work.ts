@@ -84,6 +84,13 @@ export function latestChecks(work: StepWork): StepWork['checks'] {
   return [...last.values()];
 }
 
+/** Why a check did not run, in a fact line (D51, D53). */
+const SKIPPED = {
+  missing: 'not in package.json',
+  install: 'its dependencies did not install',
+  tool: 'its package manager could not be found on this computer',
+} as const;
+
 export function checkWord(check: StepWork['checks'][number]): string {
   // An allowed script package.json does not have, or one whose dependencies did not install:
   // nothing ran (D51).
@@ -122,7 +129,7 @@ export function workFacts(work: StepWork | undefined): string[] {
     ...work.commits.map((c) => `${c.repo}: committed ${c.sha} on ${c.branch}: ${c.message}`),
     ...latestChecks(work).map((c) =>
       c.skipped
-        ? `${c.repo}: ${c.script} did not run (${c.skipped === 'missing' ? 'not in package.json' : 'its dependencies did not install'})`
+        ? `${c.repo}: ${c.script} did not run (${SKIPPED[c.skipped]})`
         : `${c.repo}: ran ${c.script}, ${checkWord(c)}${
             c.timedOut ? '' : ` (exit ${c.exit ?? 'none, killed'})`
           } in ${c.seconds.toFixed(1)} s`,

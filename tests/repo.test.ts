@@ -22,6 +22,9 @@ import {
   inspectRepository,
   isEnvFile,
   repoRead,
+  nodeDirs,
+  overrideCommandPath,
+  pathFromShellOutput,
   repoRun,
   repoSearch,
   repoToolNames,
@@ -177,8 +180,12 @@ describe('scripts ahead of package.json (D51)', () => {
     expect(ran.text).toMatch(/Installed the dependencies in [\d.]+ s\./);
     expect(ran.text).toContain('dep 1.0.0');
     expect(fs.existsSync(path.join(dir, 'node_modules', 'dep'))).toBe(true);
-    // No lockfile left behind, node_modules kept out of git: nothing for a merge to trip on.
-    expect(git(dir, 'status', '--porcelain')).toBe('');
+    // node_modules is kept out of git; the lockfile the install wrote is the change's to commit,
+    // and the run says so (D53).
+    expect(git(dir, 'status', '--porcelain')).toBe('?? package-lock.json');
+    expect(ran.text).toContain(
+      'The install wrote package-lock.json: commit it with package.json, so a clean install gets the same versions.',
+    );
     // Installed once: the next run goes straight to the script.
     const again = await repoRun(config(), 'test');
     expect(again.text).toMatch(/^\$ npm run test/);
@@ -240,7 +247,8 @@ describe('scripts ahead of package.json (D51)', () => {
     fs.writeFileSync(path.join(dir, 'package-lock.json'), '{"stray": true}');
     const ran = await repoRun(config(), 'test');
     expect(ran.isError).toBe(false);
-    expect(fs.existsSync(path.join(dir, 'package-lock.json'))).toBe(false);
+    // The stray one is gone; the lockfile there now is the finished install's own.
+    expect(fs.readFileSync(path.join(dir, 'package-lock.json'), 'utf8')).not.toContain('stray');
     expect(fs.existsSync(saved)).toBe(false);
   }, 120_000);
 
@@ -259,6 +267,23 @@ describe('scripts ahead of package.json (D51)', () => {
       fs.rmSync(elsewhere, { recursive: true, force: true });
     }
   }, 60_000);
+
+  it('says plainly when the package manager cannot be found, and records it as a tool missing (D53)', async () => {
+    // A PATH with git and nothing else, as an app opened from Finder may have.
+    const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'magpipe-nopath-'));
+    const gitBin = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
+    fs.symlinkSync(gitBin, path.join(empty, 'git'));
+    overrideCommandPath(empty);
+    try {
+      const ran = await repoRun(config(), 'test');
+      expect(ran.isError).toBe(true);
+      expect(ran.text).toContain('Magpipe could not find npm on this computer.');
+      expect(ran.work).toMatchObject({ kind: 'check', script: 'test', skipped: 'tool' });
+    } finally {
+      overrideCommandPath(undefined);
+      fs.rmSync(empty, { recursive: true, force: true });
+    }
+  });
 
   it('records an install that failed as a script that did not run', async () => {
     fs.rmSync(path.join(dir, 'node_modules'), { recursive: true, force: true });
@@ -405,4 +430,34 @@ describe('git', () => {
     expect(sh(['branch', '--list', 'main'])).toContain('main');
     expect(sh(['log', '-1', '--format=%s', 'main'])).toBe('init');
   }, 30_000);
+});
+
+describe('finding Node for an app with no PATH of its own (D53)', () => {
+  it('reads the PATH a shell printed past whatever its startup files said', () => {
+    expect(pathFromShellOutput('Welcome!\nnvm ready\n__MAGPIPE_PATH__/a/bin:/b/bin\n')).toBe(
+      '/a/bin:/b/bin',
+    );
+    expect(pathFromShellOutput('no mark here')).toBeNull();
+  });
+
+  it('knows where nvm, Volta and the like put node: the default version first, then the newest', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'magpipe-home-'));
+    try {
+      for (const v of ['v18.20.0', 'v22.1.0', 'v20.11.1']) {
+        fs.mkdirSync(path.join(home, '.nvm', 'versions', 'node', v, 'bin'), { recursive: true });
+      }
+      fs.mkdirSync(path.join(home, '.nvm', 'alias'), { recursive: true });
+      fs.writeFileSync(path.join(home, '.nvm', 'alias', 'default'), '20\n');
+      fs.mkdirSync(path.join(home, '.volta', 'bin'), { recursive: true });
+      const dirs = (await nodeDirs(home)).filter((d) => d.startsWith(home));
+      expect(dirs).toEqual([
+        path.join(home, '.nvm', 'versions', 'node', 'v20.11.1', 'bin'),
+        path.join(home, '.nvm', 'versions', 'node', 'v22.1.0', 'bin'),
+        path.join(home, '.nvm', 'versions', 'node', 'v18.20.0', 'bin'),
+        path.join(home, '.volta', 'bin'),
+      ]);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
 });
