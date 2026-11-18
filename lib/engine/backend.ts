@@ -119,7 +119,10 @@ export function apiBackend(client: ModelClient): RunBackend {
         signal,
       );
       if (message.stop_reason === 'refusal') {
-        throw new EngineError('refusal', 'The orchestrator declined to plan this task.');
+        throw withSpent(
+          new EngineError('refusal', 'The orchestrator declined to plan this task.'),
+          usageOf(message),
+        );
       }
       return { text: textOf(message), usage: usageOf(message) };
     },

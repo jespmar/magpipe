@@ -8,7 +8,7 @@ import type { Agent, MemoryEntry, Run, Step, Tool, ToolGrant, ToolStatus } from 
 import { costUsd } from '../pricing';
 import type { Usage } from '../schemas';
 import type { RunBackend } from './backend';
-import { EngineError, type ModelMessage } from './model';
+import { EngineError, withSpent, type ModelMessage } from './model';
 
 export const MERGE_STEP_ID = 'merge';
 
@@ -186,40 +186,30 @@ export async function planRun(opts: {
     },
     opts.signal,
   );
+  // A plan Magpipe turns down was still paid for (D56): its cost goes with the error.
+  const invalid = (message: string) =>
+    withSpent(new EngineError('plan_invalid', message, true), usage);
   let json: unknown;
   try {
     json = JSON.parse(text);
   } catch {
-    throw new EngineError('plan_invalid', 'The orchestrator did not return a JSON plan.', true);
+    throw invalid('The orchestrator did not return a JSON plan.');
   }
   const parsed = planOutput.safeParse(json);
   if (!parsed.success) {
-    throw new EngineError(
-      'plan_invalid',
-      `The plan did not match the schema: ${parsed.error.issues[0]?.message}`,
-      true,
-    );
+    throw invalid(`The plan did not match the schema: ${parsed.error.issues[0]?.message}`);
   }
 
   const ids = new Set(parsed.data.steps.map((s) => s.id));
   if (ids.size !== parsed.data.steps.length || ids.has(MERGE_STEP_ID)) {
-    throw new EngineError('plan_invalid', 'Step ids must be unique and may not be "merge".', true);
+    throw invalid('Step ids must be unique and may not be "merge".');
   }
   const steps: Step[] = [];
   for (const s of parsed.data.steps) {
     const agent = available.find((a) => a.slug === s.agent);
-    if (!agent)
-      throw new EngineError(
-        'plan_invalid',
-        `The plan names an unknown or paused agent: ${s.agent}`,
-        true,
-      );
+    if (!agent) throw invalid(`The plan names an unknown or paused agent: ${s.agent}`);
     if (s.dependsOn.some((d) => !ids.has(d) || d === s.id)) {
-      throw new EngineError(
-        'plan_invalid',
-        `Step ${s.id} depends on a step that does not exist.`,
-        true,
-      );
+      throw invalid(`Step ${s.id} depends on a step that does not exist.`);
     }
     steps.push({
       id: s.id,
