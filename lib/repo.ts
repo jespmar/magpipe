@@ -6,6 +6,7 @@
  * (lib/engine/tools.ts); the Tools screen binds a folder by probing it here (lib/tools.ts).
  */
 import { spawn } from 'node:child_process';
+import { StringDecoder } from 'node:string_decoder';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { childEnv } from './mcp';
@@ -85,16 +86,26 @@ function exec(
     let output = '';
     let truncated = false;
     let timedOut = false;
-    const take = (chunk: Buffer) => {
+    // Whole characters: one split across two reads is decoded once both halves are in.
+    const outText = new StringDecoder('utf8');
+    const errText = new StringDecoder('utf8');
+    const take = (decoder: StringDecoder) => (chunk: Buffer) => {
       if (opts.keep === 'head' && truncated) return;
-      output += chunk.toString();
+      output += decoder.write(chunk);
       if (output.length > cap) {
-        output = opts.keep === 'head' ? output.slice(0, cap) : output.slice(-cap);
+        if (opts.keep === 'head') {
+          // Cut at a whole character, and stop the program: the rest would be thrown away.
+          output = output.slice(0, /[\uD800-\uDBFF]/.test(output[cap - 1] ?? '') ? cap - 1 : cap);
+          truncated = true;
+          stop();
+          return;
+        }
+        output = output.slice(-cap);
         truncated = true;
       }
     };
-    child.stdout.on('data', take);
-    child.stderr.on('data', take);
+    child.stdout.on('data', take(outText));
+    child.stderr.on('data', take(errText));
     const stop = () => {
       try {
         if (posix && child.pid) process.kill(-child.pid, 'SIGKILL');
@@ -122,7 +133,9 @@ function exec(
       clearTimeout(timer);
       opts.signal?.removeEventListener('abort', onAbort);
       if (opts.signal?.aborted) return reject(new Error('Cancelled'));
-      resolve({ code, output, truncated, timedOut });
+      // Stopped once the head was read: it ran as far as was wanted.
+      const stoppedAtCap = opts.keep === 'head' && truncated && !timedOut;
+      resolve({ code: stoppedAtCap ? 0 : code, output, truncated, timedOut });
     });
   });
 }
@@ -1193,22 +1206,20 @@ export async function gitDiff(
   );
   if (diff.code !== 0) return { text: gitText(diff) || 'git diff failed', isError: true };
   // Named from the bound folder, as the read tool takes them; a removed one is said so.
+  // -z: names as they are, never quoted, so the read tool takes them.
   const lockNames = await git(
     base,
-    ['diff', '--name-status', '--no-renames', '--relative', ...range, '--', ...locks],
+    ['diff', '-z', '--name-status', '--no-renames', '--relative', ...range, '--', ...locks],
     { signal },
   );
-  const lockDiffs =
-    lockNames.code === 0
-      ? lockNames.output
-          .trim()
-          .split('\n')
-          .filter(Boolean)
-          .map((line) => {
-            const [status, ...name] = line.split('\t');
-            return status === 'D' ? `${name.join('\t')} (removed)` : name.join('\t');
-          })
-      : [];
+  const lockDiffs: string[] = [];
+  if (lockNames.code === 0) {
+    const fields = lockNames.output.split('\0');
+    for (let i = 0; i + 1 < fields.length; i += 2) {
+      const [status, name] = [fields[i]!, fields[i + 1]!];
+      if (name) lockDiffs.push(status === 'D' ? `${name} (removed)` : name);
+    }
+  }
   let text = diff.output.trimEnd();
   if (diff.truncated) text = `${text}\n… (diff cut; read the files for the rest)`;
   const untracked = against

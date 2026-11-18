@@ -15,6 +15,7 @@ import {
   withSpent,
   type ModelClient,
   type ModelContentBlockParam,
+  type ModelMessage,
   type ModelMessageParam,
   type ModelToolResultParam,
   type ModelToolUseBlock,
@@ -30,6 +31,35 @@ export function tokenLimit(agent: Pick<Agent, 'name' | 'limits'>, context: numbe
   return new EngineError(
     'limit_tokens',
     `${agent.name} reached ${context.toLocaleString('en-US')} tokens of context, over its ${agent.limits.maxTokens.toLocaleString('en-US')}-token limit.`,
+  );
+}
+
+/**
+ * The context one response reached (D56). A response that ran server tools (web search, fetch)
+ * sampled several times inside, and its top-level usage adds those samples up: its last
+ * `message` iteration is the context. Without iterations such a response is not measured (null);
+ * the rounds and the spend cap bound it.
+ */
+export function contextOf(message: ModelMessage): number | null {
+  const u = message.usage;
+  const sampled = (u.iterations ?? []).filter(
+    (i): i is Extract<typeof i, { type: 'message' }> => i.type === 'message',
+  );
+  const last = sampled.at(-1);
+  if (last) {
+    return (
+      last.input_tokens +
+      (last.cache_read_input_tokens ?? 0) +
+      (last.cache_creation_input_tokens ?? 0) +
+      last.output_tokens
+    );
+  }
+  if (message.content.some((b) => b.type === 'server_tool_use')) return null;
+  return (
+    u.input_tokens +
+    (u.cache_read_input_tokens ?? 0) +
+    (u.cache_creation_input_tokens ?? 0) +
+    u.output_tokens
   );
 }
 
@@ -146,11 +176,10 @@ export function apiBackend(client: ModelClient): RunBackend {
           usage = addUsage(usage, call);
           // The limit is on the context a call reached (D56): each call reads the whole
           // conversation again, so the sum over calls says how long the step went, not how much.
-          // A call that ran server tools (web search, fetch) sampled several times inside, and
-          // its usage adds those up: it is bounded by the rounds and the spend cap instead.
-          const context = call.inputTokens + call.outputTokens;
-          const serverLoop = message.content.some((b) => b.type === 'server_tool_use');
-          if (!serverLoop && context > agent.limits.maxTokens) throw tokenLimit(agent, context);
+          const context = contextOf(message);
+          if (context !== null && context > agent.limits.maxTokens) {
+            throw tokenLimit(agent, context);
+          }
 
           const text = textOf(message);
           if (text) await trail.emit('message', text);

@@ -336,6 +336,39 @@ describe('run engine', () => {
     expect(counts.cancelled).toBeGreaterThanOrEqual(1);
   });
 
+  it('keeps what a cancelled step spent, on the step and the run (D56)', async () => {
+    const client = scripted(async (p, n) => {
+      if (isPlan(p))
+        return plan([
+          {
+            id: 's1',
+            agent: 'operator',
+            title: 'Spends, then waits',
+            instructions: '',
+            dependsOn: [],
+            optional: false,
+          },
+        ]);
+      // The step's first call answers and asks to go on; the next waits to be cancelled.
+      if (n === 2) return message({ stop_reason: 'pause_turn', content: [] });
+      await new Promise((r) => setTimeout(r, 600));
+      return text('too late');
+    });
+    const engine = new Engine({ client, getDb: async () => db });
+    const run = await createRun(db, { text: 'cancel me after a call', attachments: [] });
+    engine.enqueue(run.id);
+    await new Promise((r) => setTimeout(r, 250));
+    expect(await engine.cancel(run.id)).toBe(true);
+    await engine.whenIdle();
+    const result = (await getRun(db, run.id))!;
+    expect(result.status).toBe('cancelled');
+    const step = result.plan.find((s) => s.id === 's1')!;
+    expect(step.status).toBe('failed');
+    expect(step.usage?.inputTokens).toBe(100);
+    // The plan's call and the step's both count in the run.
+    expect(result.usage.inputTokens).toBe(200);
+  });
+
   it('carries a follow-up’s conversation into the plan, the step and the merge', async () => {
     const client = scripted((p) => {
       if (isPlan(p)) {

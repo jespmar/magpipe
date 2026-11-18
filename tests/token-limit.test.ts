@@ -4,7 +4,7 @@
  * little is added.
  */
 import { describe, expect, it } from 'vitest';
-import { apiBackend } from '@/lib/engine/backend';
+import { apiBackend, contextOf } from '@/lib/engine/backend';
 import { spentOf, type ModelClient, type ModelMessage } from '@/lib/engine/model';
 import type { ToolRuntime, Trail } from '@/lib/engine/tools';
 import type { Agent } from '@/lib/schemas';
@@ -99,5 +99,24 @@ describe('the token limit (D56)', () => {
       new AbortController().signal,
     );
     expect(done.usage.inputTokens).toBe(3000);
+  });
+
+  it('takes such a call’s context from its last sampling iteration when the API gives them', () => {
+    const iteration = (input: number, output: number) => ({
+      type: 'message',
+      input_tokens: input,
+      output_tokens: output,
+      cache_read_input_tokens: 0,
+      cache_creation_input_tokens: 0,
+    });
+    const m = reply('end_turn', 3000, 100, true);
+    (m.usage as unknown as { iterations: unknown[] }).iterations = [
+      iteration(400, 50),
+      { type: 'compaction', input_tokens: 9000, output_tokens: 10 },
+      iteration(900, 100),
+    ];
+    expect(contextOf(m)).toBe(1000);
+    expect(contextOf(reply('end_turn', 3000, 100, true))).toBeNull();
+    expect(contextOf(reply('end_turn', 300, 100))).toBe(400);
   });
 });

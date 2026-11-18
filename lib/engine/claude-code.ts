@@ -440,7 +440,12 @@ export function claudeCodeBackend(options: ClaudeCodeOptions = {}): RunBackend {
       ],
       { input: req.user, signal },
     );
-    if (res.is_error) throw failureFrom(res, 'The orchestrator');
+    if (res.is_error) {
+      throw withSpent(
+        failureFrom(res, 'The orchestrator'),
+        usageFrom(res.usage, res.total_cost_usd),
+      );
+    }
     return {
       res,
       text: (res.result ?? '').trim(),
@@ -470,18 +475,23 @@ export function claudeCodeBackend(options: ClaudeCodeOptions = {}): RunBackend {
       const cli = await getCli();
       // Each attempt's spend is kept (D56): a retry's cost, and a failure's, reach the step.
       let earlier = ZERO_USAGE;
-      return withRetries(
-        async () => {
-          try {
-            const out = await runStepOnce(cli, req, mcpUrl(), signal);
-            return { ...out, usage: addUsage(earlier, out.usage) };
-          } catch (err) {
-            earlier = addUsage(earlier, spentOf(err) ?? ZERO_USAGE);
-            throw withSpent(err, earlier);
-          }
-        },
-        { signal, onRetry: (f, n) => req.trail.emit('error', `Retry ${n}: ${f.message}`) },
-      );
+      try {
+        return await withRetries(
+          async () => {
+            try {
+              const out = await runStepOnce(cli, req, mcpUrl(), signal);
+              return { ...out, usage: addUsage(earlier, out.usage) };
+            } catch (err) {
+              earlier = addUsage(earlier, spentOf(err) ?? ZERO_USAGE);
+              throw withSpent(err, earlier);
+            }
+          },
+          { signal, onRetry: (f, n) => req.trail.emit('error', `Retry ${n}: ${f.message}`) },
+        );
+      } catch (err) {
+        // Stopped during a retry's wait: the attempts before it still spent.
+        throw withSpent(err, earlier);
+      }
     },
   };
 }
