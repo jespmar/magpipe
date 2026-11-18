@@ -13,7 +13,13 @@ import { env } from '../env';
 import type { Usage } from '../schemas';
 import { addUsage, costUsd, ZERO_USAGE } from '../pricing';
 import { tokenLimit, type RunBackend, type StepRequest } from './backend';
-import { abortError, EngineError, spentOf, withRetries, withSpent } from './model';
+import {
+  abortError,
+  EngineError,
+  spentOf,
+  withCountedRetries,
+  withSpent,
+} from './model';
 import { registerToolSession, unregisterToolSession } from './tool-sessions';
 import type { Trail } from './tools';
 
@@ -474,24 +480,10 @@ export function claudeCodeBackend(options: ClaudeCodeOptions = {}): RunBackend {
     async step(req, signal) {
       const cli = await getCli();
       // Each attempt's spend is kept (D56): a retry's cost, and a failure's, reach the step.
-      let earlier = ZERO_USAGE;
-      try {
-        return await withRetries(
-          async () => {
-            try {
-              const out = await runStepOnce(cli, req, mcpUrl(), signal);
-              return { ...out, usage: addUsage(earlier, out.usage) };
-            } catch (err) {
-              earlier = addUsage(earlier, spentOf(err) ?? ZERO_USAGE);
-              throw withSpent(err, earlier);
-            }
-          },
-          { signal, onRetry: (f, n) => req.trail.emit('error', `Retry ${n}: ${f.message}`) },
-        );
-      } catch (err) {
-        // Stopped during a retry's wait: the attempts before it still spent.
-        throw withSpent(err, earlier);
-      }
+      return withCountedRetries(() => runStepOnce(cli, req, mcpUrl(), signal), {
+        signal,
+        onRetry: (f, n) => req.trail.emit('error', `Retry ${n}: ${f.message}`),
+      });
     },
   };
 }

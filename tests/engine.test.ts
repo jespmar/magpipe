@@ -303,7 +303,8 @@ describe('run engine', () => {
     expect(result.plan[0]!.error?.code).toBe('limit_steps');
     // What it spent before it stopped is the step's, and the run's (D56), so the cap counts it.
     expect(result.plan[0]!.usage?.inputTokens).toBeGreaterThan(0);
-    expect(result.usage.inputTokens).toBeGreaterThanOrEqual(result.plan[0]!.usage!.inputTokens);
+    // Both plan calls count, the one turned down too (D56), with the step's.
+    expect(result.usage.inputTokens).toBe(200 + result.plan[0]!.usage!.inputTokens);
   }, 20_000);
 
   it('cancels a running run', async () => {

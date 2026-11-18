@@ -101,6 +101,8 @@ function exec(
           return;
         }
         output = output.slice(-cap);
+        // Not half a character at the start: a lone low surrogate is dropped.
+        if (/^[\uDC00-\uDFFF]/.test(output)) output = output.slice(1);
         truncated = true;
       }
     };
@@ -134,7 +136,7 @@ function exec(
       opts.signal?.removeEventListener('abort', onAbort);
       if (opts.signal?.aborted) return reject(new Error('Cancelled'));
       // Stopped once the head was read: it ran as far as was wanted.
-      const stoppedAtCap = opts.keep === 'head' && truncated && !timedOut;
+      const stoppedAtCap = opts.keep === 'head' && truncated && !timedOut && code === null;
       resolve({ code: stoppedAtCap ? 0 : code, output, truncated, timedOut });
     });
   });

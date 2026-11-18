@@ -1521,7 +1521,8 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
   wait between them, and the failed step records it, so the run's usage and the spend cap count
   it: a step past its time, one that recorded no goals, one cancelled with the run (each step of
   the wave settles and saves its usage before the run is closed), and a failed plan or merge
-  call. Before, a step that failed recorded nothing, which mattered little while the token limit
+  call. Plan and merge retries count every attempt (`withCountedRetries`), a plan Magpipe turned
+  down included. Before, a step that failed recorded nothing, which mattered little while the token limit
   stopped steps early.
 - **`git_diff` leaves lockfiles out of the diff.** The stat lists them and a line names them from
   the bound folder, as the read tool takes them (a removed one as removed); their contents

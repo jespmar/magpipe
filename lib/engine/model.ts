@@ -5,6 +5,7 @@
  * the SDK's own are turned off.
  */
 import Anthropic from '@anthropic-ai/sdk';
+import { addUsage, ZERO_USAGE } from '../pricing';
 import type { Usage } from '../schemas';
 
 export type ModelParams = Anthropic.Beta.Messages.MessageCreateParamsNonStreaming;
@@ -154,6 +155,31 @@ export async function withRetries<T>(
       await sleep(RETRY_BACKOFF_MS[attempt]!, opts.signal);
       attempt += 1;
     }
+  }
+}
+
+/**
+ * `withRetries` for a call that reports its usage (D56): what failed attempts spent is added to
+ * the one that answered, and kept on the error when none does, so retries are never free.
+ */
+export async function withCountedRetries<T extends { usage: Usage }>(
+  fn: () => Promise<T>,
+  opts: Parameters<typeof withRetries>[1] = {},
+): Promise<T> {
+  let earlier = ZERO_USAGE;
+  try {
+    return await withRetries(async () => {
+      try {
+        const out = await fn();
+        return { ...out, usage: addUsage(earlier, out.usage) };
+      } catch (err) {
+        earlier = addUsage(earlier, spentOf(err) ?? ZERO_USAGE);
+        throw withSpent(err, earlier);
+      }
+    }, opts);
+  } catch (err) {
+    // Stopped during a retry's wait: the attempts before it still spent.
+    throw withSpent(err, earlier);
   }
 }
 

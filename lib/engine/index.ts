@@ -31,6 +31,7 @@ import {
   describeFailure,
   EngineError,
   spentOf,
+  withCountedRetries,
   withSpent,
   withRetries,
   type ModelClient,
@@ -303,7 +304,8 @@ export class Engine {
       if (run.plan.length === 0) {
         const stop = await this.spendCapStop(db, 'planning', project);
         if (stop) throw stop;
-        const planned = await withRetries(
+        // Every attempt's cost is the run's (D56), a rejected plan's included.
+        const planned = await withCountedRetries(
           () =>
             planRun({
               backend: this.backend(),
@@ -647,7 +649,7 @@ export class Engine {
       });
       const merged = document
         ? { markdown: document, usage: ZERO_USAGE }
-        : await withRetries(
+        : await withCountedRetries(
             () =>
               mergeRun({
                 backend: this.backend(),
