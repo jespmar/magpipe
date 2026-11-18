@@ -20,6 +20,7 @@ import {
   type ClaudeCli,
 } from '@/lib/engine/claude-code';
 import { listEvents } from '@/lib/engine/events';
+import { spentOf } from '@/lib/engine/model';
 import { registerToolSession, unregisterToolSession } from '@/lib/engine/tool-sessions';
 import { setupTools, type Trail } from '@/lib/engine/tools';
 import { connectMcp } from '@/lib/mcp';
@@ -277,15 +278,19 @@ describe('claude code backend', () => {
       expect(done.summary).toContain('Fake answer');
       // A call that reads more than the limit, cached or not, stops the step.
       process.env.FAKE_CLAUDE_CACHE_READ = '900';
-      await expect(
-        backend.step(
+      const stopped = await backend
+        .step(
           { agent: rounds, system: 's', user: 'u', runtime, sandboxDir: process.cwd(), trail },
           new AbortController().signal,
-        ),
-      ).rejects.toMatchObject({
+        )
+        .catch((e: unknown) => e);
+      expect(stopped).toMatchObject({
         code: 'limit_tokens',
         message: 'Researcher reached 1,280 tokens of context, over its 1,000-token limit.',
       });
+      // What the calls up to the stop read and wrote stays on the error, for the step's record.
+      expect(spentOf(stopped)?.inputTokens).toBeGreaterThanOrEqual(1200);
+      expect(spentOf(stopped)?.outputTokens).toBeGreaterThanOrEqual(80);
     } finally {
       delete process.env.FAKE_CLAUDE_TURNS;
       delete process.env.FAKE_CLAUDE_SPLIT;

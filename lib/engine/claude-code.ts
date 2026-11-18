@@ -11,9 +11,9 @@ import { envVar, homeDir, runtimePath } from '../runtime-path';
 import { promisify } from 'node:util';
 import { env } from '../env';
 import type { Usage } from '../schemas';
-import { ZERO_USAGE } from '../pricing';
+import { addUsage, costUsd, ZERO_USAGE } from '../pricing';
 import { tokenLimit, type RunBackend, type StepRequest } from './backend';
-import { abortError, EngineError, withRetries } from './model';
+import { abortError, EngineError, spentOf, withRetries, withSpent } from './model';
 import { registerToolSession, unregisterToolSession } from './tool-sessions';
 import type { Trail } from './tools';
 
@@ -468,10 +468,20 @@ export function claudeCodeBackend(options: ClaudeCodeOptions = {}): RunBackend {
 
     async step(req, signal) {
       const cli = await getCli();
-      return withRetries(() => runStepOnce(cli, req, mcpUrl(), signal), {
-        signal,
-        onRetry: (f, n) => req.trail.emit('error', `Retry ${n}: ${f.message}`),
-      });
+      // Each attempt's spend is kept (D56): a retry's cost, and a failure's, reach the step.
+      let earlier = ZERO_USAGE;
+      return withRetries(
+        async () => {
+          try {
+            const out = await runStepOnce(cli, req, mcpUrl(), signal);
+            return { ...out, usage: addUsage(earlier, out.usage) };
+          } catch (err) {
+            earlier = addUsage(earlier, spentOf(err) ?? ZERO_USAGE);
+            throw withSpent(err, earlier);
+          }
+        },
+        { signal, onRetry: (f, n) => req.trail.emit('error', `Retry ${n}: ${f.message}`) },
+      );
     },
   };
 }
@@ -484,6 +494,8 @@ async function runStepOnce(
 ): Promise<{ summary: string; usage: Usage }> {
   const { agent, trail } = req;
   const session = registerToolSession({ runtime: req.runtime, trail, agentName: agent.name });
+  // What the stream has shown so far, priced from its tokens: what a failed attempt spent.
+  let usage = ZERO_USAGE;
   try {
     const cliTools = [
       ...(agent.builtins.includes('web.search') ? ['WebSearch'] : []),
@@ -528,7 +540,6 @@ async function runStepOnce(
     // One model call can come as several assistant lines (a block each) with the same id and
     // usage (D56): it counts once, as a round and in the tokens.
     const calls = new Map<string, Usage>();
-    let usage = ZERO_USAGE;
     let lastText = '';
     const toolNames = new Map<string, string>();
     const onLine = async (line: StreamLine) => {
@@ -541,16 +552,20 @@ async function runStepOnce(
             `${agent.name} used all ${agent.limits.maxSteps} allowed tool rounds.`,
           );
         }
-        const turn = message?.usage ? usageFrom(message.usage, 0) : ZERO_USAGE;
+        const raw = message?.usage;
+        const turn = raw
+          ? usageFrom(
+              raw,
+              costUsd(agent.model, {
+                inputTokens: raw.input_tokens ?? 0,
+                outputTokens: raw.output_tokens ?? 0,
+                cacheReadTokens: raw.cache_read_input_tokens ?? 0,
+                cacheWriteTokens: raw.cache_creation_input_tokens ?? 0,
+              }),
+            )
+          : ZERO_USAGE;
         calls.set(id, turn);
-        usage = [...calls.values()].reduce(
-          (sum, u) => ({
-            inputTokens: sum.inputTokens + u.inputTokens,
-            outputTokens: sum.outputTokens + u.outputTokens,
-            costUsd: 0,
-          }),
-          ZERO_USAGE,
-        );
+        usage = [...calls.values()].reduce(addUsage, ZERO_USAGE);
         // The limit is on the context one call reached, cache reads included (D56): every call
         // reads the conversation again, so a sum over calls measures how long a step went.
         const context = turn.inputTokens + turn.outputTokens;
@@ -593,8 +608,10 @@ async function runStepOnce(
       // so the CLI must not give up on a Magpipe tool call before it.
       env: { MCP_TOOL_TIMEOUT: String(agent.limits.timeoutSec * 1000) },
     });
-    if (res.is_error) throw failureFrom(res, agent.name);
     const final = usageFrom(res.usage, res.total_cost_usd);
+    if (res.is_error) {
+      throw withSpent(failureFrom(res, agent.name), final.costUsd ? final : usage);
+    }
     // The result line is the authority on tokens and cost when it carries them.
     const total: Usage = {
       inputTokens: final.inputTokens || usage.inputTokens,
@@ -602,6 +619,8 @@ async function runStepOnce(
       costUsd: final.costUsd,
     };
     return { summary: (res.result ?? '').trim() || lastText, usage: total };
+  } catch (err) {
+    throw spentOf(err) ? err : withSpent(err, usage);
   } finally {
     unregisterToolSession(session.token);
   }

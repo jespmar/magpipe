@@ -5,6 +5,7 @@
  * the SDK's own are turned off.
  */
 import Anthropic from '@anthropic-ai/sdk';
+import type { Usage } from '../schemas';
 
 export type ModelParams = Anthropic.Beta.Messages.MessageCreateParamsNonStreaming;
 export type ModelMessage = Anthropic.Beta.Messages.BetaMessage;
@@ -109,6 +110,20 @@ export class EngineError extends Error {
     super(message);
     this.name = 'EngineError';
   }
+}
+
+/**
+ * What a step spent before it failed (D56), carried on the error so the failed step records it
+ * and the spend cap counts it (D32). Overwrites what an inner attempt attached.
+ */
+export function withSpent<E>(err: E, spent: Usage): E {
+  if (err && typeof err === 'object') (err as { spent?: Usage }).spent = spent;
+  return err;
+}
+
+/** The usage a failed step's error carries, when it carries one. */
+export function spentOf(err: unknown): Usage | undefined {
+  return err && typeof err === 'object' ? (err as { spent?: Usage }).spent : undefined;
 }
 
 export const RETRY_BACKOFF_MS = [1_000, 3_000];

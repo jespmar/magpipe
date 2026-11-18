@@ -37,7 +37,13 @@ import {
   issueForRun,
   listIssues,
 } from '@/lib/tracker/issues';
-import { needsYouHint, NEW_NEEDS_YOU, statusName, statusOptions } from '@/lib/tracker/labels';
+import {
+  closedNeedsYou,
+  needsYouHint,
+  NEW_NEEDS_YOU,
+  statusName,
+  statusOptions,
+} from '@/lib/tracker/labels';
 import { linearTracker } from '@/lib/tracker/linear';
 import {
   SCRIPTED_STATES,
@@ -325,6 +331,14 @@ describe('suggestStates', () => {
       'Canceled is a closed status, and Linear may archive issues there. Pick an open one, or Needs you, a new status.',
     );
     expect(needsYouHint(closed, 'b')).toBe('Stopped with findings for you.');
+    // With a Needs you of the team's own, the hint names it rather than a new one.
+    expect(needsYouHint([...closed, { id: 'n', name: 'Needs you', type: 'started' }], 'c')).toBe(
+      'Canceled is a closed status, and Linear may archive issues there. Pick an open one, such as Needs you.',
+    );
+    expect(closedNeedsYou({ name: 'Canceled', type: 'canceled' })).toBe(
+      " Canceled is a closed status, and Linear may archive issues there: map Needs you onto an open one, or Needs you, a new status, in the project's Linear settings.",
+    );
+    expect(closedNeedsYou({ name: 'Blocked', type: 'started' })).toBe('');
   });
 });
 

@@ -5,11 +5,11 @@
  */
 import { describe, expect, it } from 'vitest';
 import { apiBackend } from '@/lib/engine/backend';
-import type { ModelClient, ModelMessage } from '@/lib/engine/model';
+import { spentOf, type ModelClient, type ModelMessage } from '@/lib/engine/model';
 import type { ToolRuntime, Trail } from '@/lib/engine/tools';
 import type { Agent } from '@/lib/schemas';
 
-const reply = (stop: string, input: number, output: number): ModelMessage =>
+const reply = (stop: string, input: number, output: number, server = false): ModelMessage =>
   ({
     id: 'msg',
     type: 'message',
@@ -17,7 +17,12 @@ const reply = (stop: string, input: number, output: number): ModelMessage =>
     model: 'claude-opus-5-5',
     stop_reason: stop,
     stop_sequence: null,
-    content: [{ type: 'text', text: 'Working.', citations: null }],
+    content: [
+      ...(server
+        ? [{ type: 'server_tool_use', id: 'srv_1', name: 'web_search', input: { query: 'x' } }]
+        : []),
+      { type: 'text', text: 'Working.', citations: null },
+    ],
     usage: { input_tokens: input, output_tokens: output, cache_read_input_tokens: 0 },
   }) as unknown as ModelMessage;
 
@@ -35,7 +40,7 @@ const agent = {
   limits: { maxTokens: 1000, maxSteps: 10, timeoutSec: 60 },
 } as Agent;
 
-function client(calls: [string, number, number][]): ModelClient {
+function client(calls: [string, number, number, boolean?][]): ModelClient {
   let i = 0;
   return { create: async () => reply(...calls[Math.min(i++, calls.length - 1)]!) };
 }
@@ -68,5 +73,31 @@ describe('the token limit (D56)', () => {
       code: 'limit_tokens',
       message: 'Reviewer reached 1,050 tokens of context, over its 1,000-token limit.',
     });
+  });
+
+  it('keeps what a stopped step spent on its error, for the step and the cap', async () => {
+    const backend = apiBackend(
+      client([
+        ['pause_turn', 400, 100],
+        ['end_turn', 950, 100],
+      ]),
+    );
+    const err = await backend
+      .step(
+        { agent, system: 's', user: 'u', runtime, sandboxDir: process.cwd(), trail },
+        new AbortController().signal,
+      )
+      .catch((e: unknown) => e);
+    expect(spentOf(err)).toMatchObject({ inputTokens: 1350, outputTokens: 200 });
+  });
+
+  it('does not take a call that ran server tools for one read of the context', async () => {
+    // Its usage adds up the searches the API ran inside it: rounds and the cap bound it.
+    const backend = apiBackend(client([['end_turn', 3000, 100, true]]));
+    const done = await backend.step(
+      { agent, system: 's', user: 'u', runtime, sandboxDir: process.cwd(), trail },
+      new AbortController().signal,
+    );
+    expect(done.usage.inputTokens).toBe(3000);
   });
 });

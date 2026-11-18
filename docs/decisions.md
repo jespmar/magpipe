@@ -1510,16 +1510,26 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
   file. And the team had no status for Needs you, so the suggested mapping fell back to Canceled.
 - **The limit is on the context one call reached.** Both backends compare `maxTokens` with the
   conversation a single model call read, cached or not, plus what it wrote. A long step is
-  bounded by `maxSteps` and the spend cap (D32), not by a sum that grows with every round. The
-  Claude Code backend counts a call once by its message id, as a round and in the usage. The
-  message names the context reached and the limit; Needs you says to raise it on the agent's page.
-- **`git_diff` leaves lockfiles out of the diff.** The stat lists them and a line names them; their
-  contents (`package-lock.json`, `pnpm-lock.yaml`, `yarn.lock` and the rest of `LOCKFILES`, at any
-  depth) are not in the diff, so the cap holds the code. The read tool still opens one.
+  bounded by `maxSteps`, `timeoutSec` and the spend cap (D32), not by a sum that grows with every
+  round. The Claude Code backend counts a call once by its message id, as a round and in the
+  usage. The message names the context reached and the limit; Needs you says to raise it on the
+  agent's page. On the API backend a call that ran server tools (web search, fetch) is not
+  checked: its usage adds up the samples the API ran inside it.
+- **A failed step keeps what it spent.** The error carries the usage so far (`withSpent`), priced
+  from the stream's tokens on the Claude Code backend and summed over retried attempts, and the
+  failed step records it, so the run's usage and the spend cap count it. Before, a step that
+  failed recorded nothing, which mattered little while the token limit stopped steps early.
+- **`git_diff` leaves lockfiles out of the diff.** The stat lists them and a line names them from
+  the bound folder, as the read tool takes them (a removed one as removed); their contents
+  (`package-lock.json`, `pnpm-lock.yaml`, `yarn.lock` and the rest of `LOCKFILES`, at any depth)
+  are not in the diff, so the cap holds the code. The diff is read from the top: past its cap the
+  end is cut and the cut is said. Before, the output kept only its last 20,000 characters and
+  started mid-line, the first files gone without a word.
 - **Needs you is never Canceled or Done.** When the team has no status for it, the suggested
   mapping is a new one, "Needs you, a new status", offered in the wizard and in a project's
   Linear settings while the team has no status by that name. Saving the mapping adds it to the
   team (an open, started status) once everything else in the mapping is right, and uses the one by
-  that name after that. A Needs you mapped onto a closed status says so beside it. Linear may
-  refuse to add a status (it can take a team admin): the operator is told to add one in Linear
-  and pick it.
+  that name after that. A Needs you mapped onto a closed status says so beside it, and a goal
+  moved there says so in its summary, for a project saved before. Linear may refuse to add a
+  status (it can take a team admin, and may answer 403): the operator is told to add one in
+  Linear and pick it.

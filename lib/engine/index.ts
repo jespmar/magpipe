@@ -30,6 +30,7 @@ import {
   anthropicModelClient,
   describeFailure,
   EngineError,
+  spentOf,
   withRetries,
   type ModelClient,
 } from './model';
@@ -506,10 +507,13 @@ export class Engine {
                 err instanceof EngineError
                   ? { code: err.code, message: err.message }
                   : describeFailure(err);
+              // What it spent before it failed counts (D56): in the run's usage and the cap.
+              const spent = spentOf(err);
               await this.finishStep(save, () => run!, step.id, {
                 status: 'failed',
                 error: { code: f.code, message: f.message },
                 work: foldWork(work),
+                ...(spent ? { usage: spent } : {}),
               });
               await emitEvent(db, {
                 runId,

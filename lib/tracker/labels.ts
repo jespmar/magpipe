@@ -50,7 +50,24 @@ export function statusName(states: readonly TrackerState[], id: string): string 
 /** Said beside Needs you when it is mapped onto a closed status, where Linear may archive it. */
 export function needsYouHint(states: readonly TrackerState[], id: string): string {
   const found = states.find((s) => s.id === id);
-  return found && (found.type === 'canceled' || found.type === 'completed')
-    ? `${found.name} is a closed status, and Linear may archive issues there. Pick an open one, or ${NEEDS_YOU_NAME}, a new status.`
-    : PIPELINE_HINTS.needs_you;
+  if (!found || (found.type !== 'canceled' && found.type !== 'completed')) {
+    return PIPELINE_HINTS.needs_you;
+  }
+  // The new status is offered only while the team has none by that name.
+  const named = states.find((s) => s.name.trim().toLowerCase() === NEEDS_YOU_NAME.toLowerCase());
+  return `${found.name} is a closed status, and Linear may archive issues there. ${
+    named
+      ? `Pick an open one, such as ${named.name}.`
+      : `Pick an open one, or ${NEEDS_YOU_NAME}, a new status.`
+  }`;
+}
+
+/**
+ * Said after a move to Needs you that landed on a closed status (D56): a mapping saved before
+ * Needs you had a status of its own, which the operator should change.
+ */
+export function closedNeedsYou(state: Pick<TrackerState, 'name' | 'type'>): string {
+  return state.type === 'canceled' || state.type === 'completed'
+    ? ` ${state.name} is a closed status, and Linear may archive issues there: map Needs you onto an open one, or ${NEEDS_YOU_NAME}, a new status, in the project's Linear settings.`
+    : '';
 }
