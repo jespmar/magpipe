@@ -176,6 +176,27 @@ describe('worktrees', () => {
     expect(fs.existsSync(path.join(repo, 'node_modules', 'left-pad'))).toBe(true);
   }, 120_000);
 
+  it('runs the project’s git hooks with the operator’s settings, not Magpipe’s (D55)', async () => {
+    const hook = path.join(repo, '.git', 'hooks', 'post-checkout');
+    const seen = path.join(dir, 'hook-env');
+    fs.writeFileSync(
+      hook,
+      `#!/bin/sh\necho "\${NODE_ENV:-no NODE_ENV} \${MAGPIPE_SECRET:-no secret}" > "${seen}"\n`,
+      { mode: 0o755 },
+    );
+    const env = process.env as Record<string, string | undefined>;
+    const before = env.MAGPIPE_SECRET;
+    env.MAGPIPE_SECRET = 'shh';
+    try {
+      await ensureWorktree(repo, 'magpipe/hooked', data);
+      expect(fs.readFileSync(seen, 'utf8').trim()).toBe('no NODE_ENV no secret');
+    } finally {
+      fs.rmSync(hook, { force: true });
+      if (before === undefined) delete env.MAGPIPE_SECRET;
+      else env.MAGPIPE_SECRET = before;
+    }
+  });
+
   it('installs over a linked node_modules missing a package, only in a goal’s worktree (D55)', async () => {
     const wt = await ensureWorktree(repo, 'magpipe/incomplete', data);
     expect(fs.lstatSync(path.join(wt.path, 'node_modules')).isSymbolicLink()).toBe(true);

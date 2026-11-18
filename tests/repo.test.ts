@@ -379,6 +379,45 @@ describe('scripts ahead of package.json (D51)', () => {
     expect(ran.text).toContain('dep 3.0.0');
     // Complete again: the next run goes straight to the script.
     expect((await repoRun(config(), 'test')).text).toMatch(/^\$ npm run test/);
+    expect(JSON.parse(fs.readFileSync(stateFile(), 'utf8'))).toMatchObject({ complete: true });
+  }, 120_000);
+
+  it('installs once more over an install recorded before D55, then trusts it', async () => {
+    const state = JSON.parse(fs.readFileSync(stateFile(), 'utf8'));
+    delete state.complete;
+    fs.writeFileSync(stateFile(), JSON.stringify(state));
+    expect((await repoRun(config(), 'test')).text).toContain('Installed the dependencies');
+    expect((await repoRun(config(), 'test')).text).toMatch(/^\$ npm run test/);
+  }, 120_000);
+
+  it('does not install again and again when the install itself leaves a package out', async () => {
+    // As a bun or workspace config that leaves devDependencies out records it: done, incomplete.
+    fs.rmSync(path.join(dir, 'node_modules', 'dep'), { recursive: true, force: true });
+    const state = JSON.parse(fs.readFileSync(stateFile(), 'utf8'));
+    fs.writeFileSync(stateFile(), JSON.stringify({ ...state, complete: false }));
+    const ran = await repoRun(config(), 'test');
+    expect(ran.text).toMatch(/^\$ npm run test/);
+    expect(ran.isError).toBe(true);
+  }, 60_000);
+
+  it('counts a local dependency linked without a package.json as installed', async () => {
+    fs.rmSync(path.join(dir, 'node_modules'), { recursive: true, force: true });
+    fs.rmSync(stateFile(), { force: true });
+    fs.mkdirSync(path.join(dir, 'assets'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'assets', 'index.js'), "module.exports = 'assets';");
+    fs.writeFileSync(
+      path.join(dir, 'package.json'),
+      JSON.stringify({
+        name: 'fresh',
+        private: true,
+        scripts: { test: 'node -e "console.log(require(\'assets\'))"' },
+        dependencies: { assets: 'file:./assets' },
+      }),
+    );
+    const first = await repoRun(config(), 'test');
+    expect(first.text).toContain('Installed the dependencies');
+    expect(first.isError).toBe(false);
+    expect((await repoRun(config(), 'test')).text).toMatch(/^\$ npm run test/);
   }, 120_000);
 
   it('installs devDependencies with pnpm even where its config says production (D55)', async () => {
@@ -451,6 +490,21 @@ describe('repositoryEnv (D55)', () => {
       NPM_CONFIG_REGISTRY: 'https://mirror.example/npm/',
       ELECTRON_MIRROR: 'https://mirror.example/electron/',
       NEXT_TELEMETRY_DISABLED: '1',
+    });
+  });
+
+  it('keeps the operator’s lower-case npm_config_* when no npm script started Magpipe', () => {
+    expect(
+      repositoryEnv({
+        HOME: '/home/op',
+        TURBOPACK: '1',
+        npm_config_registry: 'https://mirror.example/npm/',
+        npm_config_https_proxy: 'http://proxy.example:3128',
+      }),
+    ).toEqual({
+      HOME: '/home/op',
+      npm_config_registry: 'https://mirror.example/npm/',
+      npm_config_https_proxy: 'http://proxy.example:3128',
     });
   });
 });

@@ -14,7 +14,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { dataDir } from './db';
-import { excludeNodeModules, inspectRepository, LOCKFILES } from './repo';
+import { excludeNodeModules, inspectRepository, LOCKFILES, repositoryEnv } from './repo';
 
 type GitResult = { code: number; out: string };
 
@@ -23,7 +23,14 @@ function git(cwd: string, args: string[]): Promise<GitResult> {
     execFile(
       'git',
       args,
-      { cwd, timeout: 60_000, maxBuffer: 4 * 1024 * 1024 },
+      // The project's hooks run here (post-checkout, post-merge, pre-push): with the operator's
+      // settings, not Magpipe's own (D55).
+      {
+        cwd,
+        timeout: 60_000,
+        maxBuffer: 4 * 1024 * 1024,
+        env: { ...repositoryEnv(process.env), GIT_TERMINAL_PROMPT: '0' },
+      },
       (err, stdout, stderr) => {
         const code = err ? (typeof err.code === 'number' ? err.code : 1) : 0;
         resolve({ code, out: `${stdout}${stderr}`.trim() });
