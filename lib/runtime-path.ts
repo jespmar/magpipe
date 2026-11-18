@@ -22,6 +22,11 @@ export function homeDir(): string {
   return os.homedir();
 }
 
+/** The system's folder for temporary files (under AppData on Windows). */
+export function tempDir(): string {
+  return os.tmpdir();
+}
+
 /** An environment variable, read when called. */
 export function envVar(name: string): string | undefined {
   return process.env[name] || undefined;

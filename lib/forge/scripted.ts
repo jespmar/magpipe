@@ -6,7 +6,7 @@
  */
 import { execFile } from 'node:child_process';
 import fs from 'node:fs/promises';
-import os from 'node:os';
+import { runtimePath, tempDir } from '../runtime-path';
 import path from 'node:path';
 import { ForgeError, type Forge, type ForgeOwner, type ForgeRepo, type PullRequest } from './types';
 
@@ -52,7 +52,7 @@ export function scriptedForgeStore(fresh = false): Store {
       pulls: [],
       checks: 'success',
       made: [],
-      bareRoot: path.join(os.tmpdir(), `magpipe-scripted-forge-${process.pid}`),
+      bareRoot: runtimePath(tempDir(), `magpipe-scripted-forge-${process.pid}`),
     };
   return g.__magpipeScriptedForge;
 }
@@ -72,7 +72,7 @@ function git(cwd: string, args: string[]): Promise<void> {
 async function bareRepository(root: string, repo: ForgeRepo, scripts: string[] | null) {
   const bare = path.join(root, repo.owner, `${repo.name}.git`);
   if (await fs.stat(path.join(bare, 'HEAD')).catch(() => null)) return bare;
-  const work = await fs.mkdtemp(path.join(os.tmpdir(), 'magpipe-scripted-seed-'));
+  const work = await fs.mkdtemp(runtimePath(tempDir(), 'magpipe-scripted-seed-'));
   try {
     await git(work, ['init', '-q', '-b', 'main']);
     await fs.writeFile(path.join(work, 'README.md'), `# ${repo.name}\n`);
