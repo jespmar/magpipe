@@ -9,7 +9,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { gitDiff, gitLog, repoRun } from '@/lib/repo';
-import { baseBranch, ensureWorktree, removeWorktree, worktreesRoot } from '@/lib/worktrees';
+import {
+  baseBranch,
+  ensureWorktree,
+  removeWorktree,
+  updateBranch,
+  worktreesRoot,
+} from '@/lib/worktrees';
 
 const git = (cwd: string, ...args: string[]) =>
   execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=T', ...args], {
@@ -163,6 +169,26 @@ describe('worktrees', () => {
     // The bound folder's own node_modules is untouched.
     expect(fs.existsSync(path.join(repo, 'node_modules', 'left-pad'))).toBe(true);
   }, 120_000);
+
+  it('an untracked lockfile gives way to the base’s, and does not keep a worktree from going (D53)', async () => {
+    const wt = await ensureWorktree(repo, 'magpipe/lock', data);
+    fs.writeFileSync(path.join(wt.path, 'package-lock.json'), '{"mine": true}');
+    // The base now tracks a lockfile, as another goal merged it.
+    const elsewhere = path.join(dir, 'elsewhere');
+    git(elsewhere, 'pull', '-q', 'origin', 'main');
+    fs.writeFileSync(path.join(elsewhere, 'package-lock.json'), '{"base": true}');
+    git(elsewhere, 'add', 'package-lock.json');
+    git(elsewhere, 'commit', '-q', '-m', 'lockfile');
+    git(elsewhere, 'push', '-q', 'origin', 'main');
+    const updated = await updateBranch(wt.path, 'main');
+    expect(updated).toMatchObject({ ok: true, changed: true });
+    expect(fs.readFileSync(path.join(wt.path, 'package-lock.json'), 'utf8')).toContain('base');
+    // Another untracked lockfile and a real node_modules: still removed.
+    fs.writeFileSync(path.join(wt.path, 'pnpm-lock.yaml'), 'x');
+    fs.rmSync(path.join(wt.path, 'node_modules'), { force: true });
+    fs.mkdirSync(path.join(wt.path, 'node_modules', 'pkg'), { recursive: true });
+    expect(await removeWorktree(wt.path)).toBe('removed');
+  });
 
   it('refuses a folder that is not a repository', async () => {
     await expect(ensureWorktree(path.join(dir, 'nowhere'), 'magpipe/x', data)).rejects.toThrow();

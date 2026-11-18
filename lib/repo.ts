@@ -97,6 +97,10 @@ function exec(
     const timer = setTimeout(() => {
       timedOut = true;
       stop();
+      // A process that left the group (a daemon from a shell's startup files) may still hold the
+      // pipes: they are closed from this end, so the wait ends at the timeout all the same.
+      child.stdout.destroy();
+      child.stderr.destroy();
     }, opts.timeoutMs);
     const onAbort = () => stop();
     opts.signal?.addEventListener('abort', onAbort, { once: true });
@@ -116,9 +120,33 @@ function exec(
 
 let loginPath: Promise<string> | null = null;
 
-/** Tests set the PATH repository commands see; `undefined` asks the shell again. */
-export function overrideCommandPath(value: string | undefined): void {
-  loginPath = value === undefined ? null : Promise.resolve(value);
+/** A PATH tests pin for repository commands; `undefined` lets Magpipe work it out again. */
+let pinnedPath: string | null = null;
+
+export function pinCommandPath(value: string | undefined): void {
+  pinnedPath = value ?? null;
+  loginPath = null;
+}
+
+/** Works the PATH out again on the next command: a tool may have been installed since (D53). */
+function forgetCommandPath(): void {
+  loginPath = null;
+}
+
+/** Folders of Node version managers, which name the operator's chosen Node (D53). */
+const VERSION_MANAGER = /[/\\](\.nvm|\.volta|\.asdf|fnm|mise)[/\\]/;
+
+/**
+ * The PATH from what the shell said, the app's own and the known Node folders (D53). A version
+ * manager the shell did not put on its PATH (one loaded lazily, say) goes ahead of Homebrew's and
+ * the system's node, which would otherwise be found first.
+ */
+export function composePath(found: string | null, own: string, known: string[]): string {
+  const split = (p: string | null) => (p ?? '').split(path.delimiter).filter(Boolean);
+  const managers = known.filter((d) => VERSION_MANAGER.test(d));
+  const shellHas = split(found).some((d) => VERSION_MANAGER.test(d));
+  const dirs = [...(found && !shellHas ? managers : []), ...split(found), ...split(own), ...known];
+  return [...new Set(dirs)].join(path.delimiter);
 }
 
 /** Marks where the PATH starts in a shell's output, past anything its startup files print. */
@@ -168,15 +196,26 @@ export async function nodeDirs(home: string): Promise<string[]> {
     )
       out.push(dir);
   };
-  const versions = path.join(home, '.nvm', 'versions', 'node');
-  const alias = (
-    await fs.readFile(path.join(home, '.nvm', 'alias', 'default'), 'utf8').catch(() => '')
-  ).trim();
-  const installed = await fs.readdir(versions).catch(() => [] as string[]);
-  const chosen = installed.find(
-    (v) => alias && (v === alias || v === `v${alias}` || v.startsWith(`v${alias}.`)),
-  );
-  for (const v of [chosen, ...newestFirst(installed)].filter((v): v is string => Boolean(v))) {
+  const nvm = process.env.NVM_DIR || path.join(home, '.nvm');
+  const versions = path.join(nvm, 'versions', 'node');
+  const installed = newestFirst(await fs.readdir(versions).catch(() => [] as string[]));
+  // nvm's default alias, followed as nvm does: "20" is the newest 20.x, "lts/iron" and "lts/*"
+  // name another alias, "node" and "stable" the newest of all.
+  let alias = 'default';
+  for (let hops = 0; hops < 4; hops++) {
+    const next = (await fs.readFile(path.join(nvm, 'alias', alias), 'utf8').catch(() => '')).trim();
+    if (!next) break;
+    alias = next;
+  }
+  const chosen =
+    alias === 'default'
+      ? undefined
+      : alias === 'node' || alias === 'stable'
+        ? installed[0]
+        : installed.find(
+            (v) => v === alias || v === `v${alias}` || v.startsWith(`v${alias.replace(/^v/, '')}.`),
+          );
+  for (const v of [chosen, ...installed].filter((v): v is string => Boolean(v))) {
     await add(path.join(versions, v, 'bin'));
   }
   for (const dir of [
@@ -204,6 +243,7 @@ export async function nodeDirs(home: string): Promise<string[]> {
  * is found even when no shell says where it is.
  */
 function shellPath(): Promise<string> {
+  if (pinnedPath !== null) return Promise.resolve(pinnedPath);
   loginPath ??= (async () => {
     const own = process.env.PATH ?? '';
     if (process.platform === 'win32') return own;
@@ -211,23 +251,21 @@ function shellPath(): Promise<string> {
     let found: string | null = null;
     for (const flags of ['-ilc', '-lc']) {
       try {
+        // The operator's own startup files run here: without Magpipe's secrets, as every
+        // repository command does (childEnv).
         const res = await exec(shell, [flags, `printf '\\n${PATH_MARK}%s\\n' "$PATH"`], {
           cwd: os.homedir(),
-          env: process.env,
+          env: childEnv(process.env),
           timeoutMs: 10_000,
         });
-        found = res.code === 0 ? pathFromShellOutput(res.output) : null;
+        // Read whatever the shell printed: some exit non-zero after a startup file complains.
+        found = pathFromShellOutput(res.output);
       } catch {
         found = null;
       }
       if (found) break;
     }
-    const known = await nodeDirs(os.homedir());
-    const dirs = [found, own, ...known]
-      .filter(Boolean)
-      .flatMap((p) => p!.split(path.delimiter))
-      .filter(Boolean);
-    return [...new Set(dirs)].join(path.delimiter);
+    return composePath(found, own, await nodeDirs(os.homedir()));
   })();
   return loginPath;
 }
@@ -626,7 +664,7 @@ function installArgs(pm: PackageManager): string[] {
 }
 
 /** Lockfiles an install may write: each is put back as it was, so the work tree stays as it was. */
-const LOCKFILES = [
+export const LOCKFILES = [
   'package-lock.json',
   'npm-shrinkwrap.json',
   'pnpm-lock.yaml',
@@ -686,6 +724,7 @@ async function installDependencies(
   dir: string,
   pkg: PackageJson,
   pm: PackageManager,
+  keepLocks: boolean,
   signal?: AbortSignal,
 ): Promise<Install> {
   const key = dependencyKey(pkg);
@@ -740,8 +779,8 @@ async function installDependencies(
   const settle = async (ok: boolean): Promise<string[]> => {
     // A finished install's lockfile is part of the change (D53): kept, and named, so the agent
     // commits it with package.json. One cut off or failed is put back as it was.
-    const wrote = ok ? await changedLocks(dir, saved) : [];
-    if (ok) await fs.rm(saved, { recursive: true, force: true });
+    const wrote = ok && keepLocks ? await changedLocks(dir, saved) : [];
+    if (ok && keepLocks) await fs.rm(saved, { recursive: true, force: true });
     else await restoreLocks(dir, saved);
     if (ok) {
       await fs.writeFile(stateFile, JSON.stringify({ state: 'done', key }));
@@ -818,7 +857,10 @@ async function changedLocks(dir: string, saved: string): Promise<string[]> {
     const before = absent.includes(name)
       ? null
       : await fs.readFile(path.join(saved, name)).catch(() => null);
-    if (before === null || !before.equals(now)) out.push(name);
+    if (before !== null && before.equals(now)) continue;
+    // One the repository ignores is not the change's to commit.
+    if ((await git(dir, ['check-ignore', '-q', '--', name])).code === 0) continue;
+    out.push(name);
   }
   return out;
 }
@@ -866,7 +908,7 @@ export async function excludeNodeModules(dir: string): Promise<void> {
 export async function repoRun(
   config: RepositoryConfig,
   script: string,
-  opts: { signal?: AbortSignal; timeoutMs?: number } = {},
+  opts: { signal?: AbortSignal; timeoutMs?: number; lookedAgain?: boolean } = {},
 ): Promise<RepoOutcome> {
   if (!config.scripts.includes(script)) {
     return {
@@ -894,7 +936,13 @@ export async function repoRun(
   const file = process.platform === 'win32' ? `${pm}.cmd` : pm;
   const timeoutMs = opts.timeoutMs ?? config.timeoutSec * 1000;
   // The dependencies first, when Magpipe can tell they are not there (D51).
-  const installed = await installDependencies(config.path, read.pkg, pm, opts.signal);
+  const installed = await installDependencies(
+    config.path,
+    read.pkg,
+    pm,
+    Boolean(config.keepLockfiles),
+    opts.signal,
+  );
   const wrote =
     installed.ran && installed.lockfiles.length
       ? `\nThe install wrote ${installed.lockfiles.join(', ')}: commit ${installed.lockfiles.length === 1 ? 'it' : 'them'} with package.json, so a clean install gets the same versions.`
@@ -902,6 +950,11 @@ export async function repoRun(
   const installLine = installed.ran
     ? `$ ${installed.command}\n${installed.output}\n${installed.ok ? `Installed the dependencies in ${installed.seconds.toFixed(1)} s.${wrote}` : installed.timedOut ? `The install stopped after ${Math.round(INSTALL_TIMEOUT_MS / 1000)} s without finishing.` : 'The install failed.'}\n`
     : '';
+  // A package manager installed since the PATH was worked out: looked for again, once (D53).
+  if (installed.ran && installed.noTool && !opts.lookedAgain) {
+    forgetCommandPath();
+    return repoRun(config, script, { ...opts, lookedAgain: true });
+  }
   if (installed.ran && !installed.ok) {
     return {
       text: installed.noTool
@@ -929,6 +982,10 @@ export async function repoRun(
     });
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      if (!opts.lookedAgain) {
+        forgetCommandPath();
+        return repoRun(config, script, { ...opts, lookedAgain: true });
+      }
       return {
         text: `"${script}" did not run. ${notFound(pm)}`,
         isError: true,

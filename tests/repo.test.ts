@@ -23,7 +23,8 @@ import {
   isEnvFile,
   repoRead,
   nodeDirs,
-  overrideCommandPath,
+  pinCommandPath,
+  composePath,
   pathFromShellOutput,
   repoRun,
   repoSearch,
@@ -137,7 +138,8 @@ describe('scripts ahead of package.json (D51)', () => {
     execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
   });
   afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
-  const config = () => ({ path: dir, scripts: ['test'], timeoutSec: 120 });
+  // As a factory build run sets it (D53): the lockfile an install writes is kept.
+  const config = () => ({ path: dir, scripts: ['test'], timeoutSec: 120, keepLockfiles: true });
 
   it('says when there is no package.json, or one that is not JSON', async () => {
     expect((await repoRun(config(), 'test')).text).toContain('there is no package.json');
@@ -273,17 +275,45 @@ describe('scripts ahead of package.json (D51)', () => {
     const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'magpipe-nopath-'));
     const gitBin = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
     fs.symlinkSync(gitBin, path.join(empty, 'git'));
-    overrideCommandPath(empty);
+    pinCommandPath(empty);
     try {
       const ran = await repoRun(config(), 'test');
       expect(ran.isError).toBe(true);
       expect(ran.text).toContain('Magpipe could not find npm on this computer.');
       expect(ran.work).toMatchObject({ kind: 'check', script: 'test', skipped: 'tool' });
     } finally {
-      overrideCommandPath(undefined);
+      pinCommandPath(undefined);
       fs.rmSync(empty, { recursive: true, force: true });
     }
   });
+
+  it('outside a build run, puts the lockfile back; one the repository ignores is never named (D53)', async () => {
+    fs.rmSync(path.join(dir, 'node_modules'), { recursive: true, force: true });
+    fs.rmSync(stateFile(), { force: true });
+    fs.rmSync(path.join(dir, 'package-lock.json'), { force: true });
+    writePackage({ dep: 'file:./dep' });
+    const plain = await repoRun({ ...config(), keepLockfiles: false }, 'test');
+    expect(plain.isError).toBe(false);
+    expect(fs.existsSync(path.join(dir, 'package-lock.json'))).toBe(false);
+    // Ignored by the repository: kept as npm left it, but not the change's to commit.
+    fs.rmSync(path.join(dir, 'node_modules'), { recursive: true, force: true });
+    fs.rmSync(stateFile(), { force: true });
+    fs.writeFileSync(path.join(dir, '.gitignore'), 'package-lock.json\n');
+    const ignored = await repoRun(config(), 'test');
+    expect(ignored.text).not.toContain('The install wrote');
+    fs.rmSync(path.join(dir, '.gitignore'));
+  }, 120_000);
+
+  it('a daemon a script leaves behind does not hold a run past its time', async () => {
+    fs.writeFileSync(
+      path.join(dir, 'package.json'),
+      JSON.stringify({ scripts: { test: 'setsid sleep 20 > /dev/stderr & sleep 30' } }),
+    );
+    const began = Date.now();
+    const ran = await repoRun(config(), 'test', { timeoutMs: 1500 });
+    expect(ran.text).toContain('without finishing');
+    expect(Date.now() - began).toBeLessThan(8000);
+  }, 30_000);
 
   it('records an install that failed as a script that did not run', async () => {
     fs.rmSync(path.join(dir, 'node_modules'), { recursive: true, force: true });
@@ -438,6 +468,35 @@ describe('finding Node for an app with no PATH of its own (D53)', () => {
       '/a/bin:/b/bin',
     );
     expect(pathFromShellOutput('no mark here')).toBeNull();
+  });
+
+  it('puts a version manager the shell left out ahead of Homebrew and the system', () => {
+    const nvm = '/home/u/.nvm/versions/node/v22.1.0/bin';
+    expect(composePath('/opt/homebrew/bin:/usr/bin', '/usr/bin', [nvm, '/opt/homebrew/bin'])).toBe(
+      `${nvm}:/opt/homebrew/bin:/usr/bin`,
+    );
+    // The shell named it already: its own order stands.
+    expect(composePath(`/usr/bin:${nvm}`, '', [nvm])).toBe(`/usr/bin:${nvm}`);
+  });
+
+  it('follows nvm aliases as nvm does: a major is its newest, lts names another alias', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'magpipe-home-'));
+    try {
+      for (const v of ['v22.1.0', 'v22.11.0', 'v20.11.1', 'v23.0.0']) {
+        fs.mkdirSync(path.join(home, '.nvm', 'versions', 'node', v, 'bin'), { recursive: true });
+      }
+      fs.mkdirSync(path.join(home, '.nvm', 'alias', 'lts'), { recursive: true });
+      const first = async () => (await nodeDirs(home)).filter((d) => d.startsWith(home))[0];
+      fs.writeFileSync(path.join(home, '.nvm', 'alias', 'default'), '22');
+      expect(await first()).toBe(path.join(home, '.nvm', 'versions', 'node', 'v22.11.0', 'bin'));
+      fs.writeFileSync(path.join(home, '.nvm', 'alias', 'default'), 'lts/iron');
+      fs.writeFileSync(path.join(home, '.nvm', 'alias', 'lts', 'iron'), 'v20.11.1');
+      expect(await first()).toBe(path.join(home, '.nvm', 'versions', 'node', 'v20.11.1', 'bin'));
+      fs.writeFileSync(path.join(home, '.nvm', 'alias', 'default'), 'node');
+      expect(await first()).toBe(path.join(home, '.nvm', 'versions', 'node', 'v23.0.0', 'bin'));
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
   });
 
   it('knows where nvm, Volta and the like put node: the default version first, then the newest', async () => {
