@@ -14,7 +14,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { dataDir } from './db';
-import { excludeNodeModules, inspectRepository } from './repo';
+import { excludeNodeModules, inspectRepository, LOCKFILES } from './repo';
 
 type GitResult = { code: number; out: string };
 
@@ -128,6 +128,12 @@ async function linkNodeModules(root: string, dir: string): Promise<void> {
   await fs.symlink(source, target, 'dir');
 }
 
+/** Lockfiles at the top of a worktree that git does not track (D53). */
+async function untrackedLockfiles(dir: string): Promise<string[]> {
+  const res = await git(dir, ['ls-files', '--others', '--exclude-standard', '--', ...LOCKFILES]);
+  return res.code === 0 ? res.out.split('\n').filter(Boolean) : [];
+}
+
 /**
  * Removes a goal's worktree once its work is merged or abandoned. A worktree with uncommitted
  * changes is kept, so nothing an agent wrote is lost; the branch itself is never deleted.
@@ -138,9 +144,12 @@ export async function removeWorktree(dir: string): Promise<'removed' | 'kept' | 
   if (top.code !== 0) return 'missing';
   const dirty = await git(dir, ['status', '--porcelain', '--untracked-files=no']);
   if (dirty.out) return 'kept';
-  // The link is git-excluded, so it does not count as a change; remove it first so git does not
-  // follow it.
-  await fs.unlink(path.join(dir, 'node_modules')).catch(() => undefined);
+  // node_modules (a link, or the worktree's own install, D53) and lockfiles an install left
+  // untracked are Magpipe's, not the goal's work: removed first, so git removes the worktree.
+  await fs.rm(path.join(dir, 'node_modules'), { recursive: true, force: true });
+  for (const name of await untrackedLockfiles(dir)) {
+    await fs.rm(path.join(dir, name), { force: true });
+  }
   const common = await git(dir, ['rev-parse', '--git-common-dir']);
   const root = path.dirname(path.resolve(dir, common.out));
   const res = await git(root, ['worktree', 'remove', dir]);
@@ -209,6 +218,14 @@ export async function updateBranch(dir: string, base: string): Promise<BranchUpd
     ref = `origin/${base}`;
   }
   const before = await git(dir, ['rev-parse', 'HEAD']);
+  // A lockfile an install left untracked gives way to the one the base now tracks (D53): the
+  // merge would refuse to overwrite it otherwise.
+  const incoming = new Set(
+    (await git(dir, ['diff', '--name-only', `HEAD...${ref}`])).out.split('\n').filter(Boolean),
+  );
+  for (const name of await untrackedLockfiles(dir)) {
+    if (incoming.has(name)) await fs.rm(path.join(dir, name), { force: true });
+  }
   const merged = await git(dir, [...(await identity(dir)), 'merge', '--no-edit', ref]);
   if (merged.code !== 0) {
     const conflicts = (await git(dir, ['diff', '--name-only', '--diff-filter=U'])).out

@@ -1436,3 +1436,15 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
   package-lock.json: commit it with package.json"); the build's Code Agent is told to commit
   them with package.json, so a clean install (`npm ci`) gets the same versions. An install that
   failed, was cancelled or was cut off by a crash still has its lockfiles put back as they were.
+- **After review.** Lockfiles are kept only in a factory build run, whose Code Agent can commit
+  them (the engine sets `keepLockfiles` on its worktree); a land run, the development flock and
+  any other repository have them put back as D51 did. The Code Agent is told to commit any
+  lockfile `git_status` shows as new or changed before it finishes, whichever step's run wrote
+  it, and a lockfile the repository ignores is never named. One left untracked anyway gives way
+  to the base's when the branch is brought up to date, and is removed with node_modules when the
+  worktree goes. The shell probe runs without Magpipe's secrets, reads what the shell printed
+  even when it exits non-zero, and cannot be held past its time by a daemon a startup file left
+  holding its output; a version manager the shell left out goes ahead of Homebrew's and the
+  system's node; nvm's default alias is followed as nvm does (`22`, `lts/iron`, `node`,
+  `NVM_DIR`). A package manager not found is looked for again once, so installing Node needs no
+  restart.

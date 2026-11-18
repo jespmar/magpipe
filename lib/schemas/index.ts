@@ -327,6 +327,11 @@ export const repositoryConfig = z.object({
   scripts: z.array(z.string().regex(/^[A-Za-z0-9][\w:.-]{0,63}$/, 'Not a script name')).max(20),
   /** How long one `run` may take before it is stopped. */
   timeoutSec: z.number().int().min(10).max(3600),
+  /**
+   * Keep the lockfiles an install writes, for the change to commit: set by the engine for a
+   * factory build run only (D53), never stored. Otherwise they are put back as they were.
+   */
+  keepLockfiles: z.boolean().optional(),
 });
 
 export const tool = z.object({

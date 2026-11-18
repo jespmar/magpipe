@@ -136,7 +136,7 @@ export type ToolSetup = {
    * A repository tool's folder for this run (D41): a goal's worktree stands in for the folder, and
    * a factory project's folder and scripts for the factory's (D45).
    */
-  repoPaths?: Record<string, { path: string; scripts?: string[] }>;
+  repoPaths?: Record<string, { path: string; scripts?: string[]; keepLockfiles?: boolean }>;
   /**
    * Called after each item lands in `work`, so the engine can save the record onto the step
    * before the step ends (D33). A failure here is logged, never the tool call's.
@@ -687,6 +687,7 @@ export async function setupTools(setup: ToolSetup): Promise<ToolRuntime> {
             ...tool.repository,
             path: override.path,
             scripts: override.scripts ?? tool.repository.scripts,
+            ...(override.keepLockfiles ? { keepLockfiles: true } : {}),
           };
         }
         // A folder that is gone loses the step these tools, not the step itself (D19).

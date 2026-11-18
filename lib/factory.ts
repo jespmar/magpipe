@@ -483,7 +483,7 @@ export const FACTORY_TEMPLATES = {
         agent: 'code-agent',
         title: 'Build the goal',
         instructions:
-          'Build the goal on {branch} until the tests the Test Agent committed pass, without changing them. When findings are given, fix what they name. The operator allows the scripts {scripts}: keep one of each in package.json, adding any it lacks, so the checks can run, and commit the lockfile a run says the install wrote with package.json.',
+          'Build the goal on {branch} until the tests the Test Agent committed pass, without changing them. When findings are given, fix what they name. The operator allows the scripts {scripts}: keep one of each in package.json, adding any it lacks, so the checks can run, and before you finish, commit with package.json any lockfile git_status shows as new or changed.',
         dependsOn: ['read', 'tests'],
       },
       {
