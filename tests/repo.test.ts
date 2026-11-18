@@ -31,6 +31,7 @@ import {
   repoToolNames,
   repoWrite,
   resolveRepoPath,
+  repositoryEnv,
 } from '@/lib/repo';
 
 let dir: string;
@@ -333,6 +334,76 @@ describe('scripts ahead of package.json (D51)', () => {
     expect(fs.existsSync(path.join(dir, 'node_modules'))).toBe(false);
     expect(fs.existsSync(stateFile())).toBe(false);
   }, 120_000);
+
+  it('installs devDependencies and runs the checks outside Magpipe’s production settings (D55)', async () => {
+    // The desktop server runs with NODE_ENV=production: an install that sees it leaves out
+    // devDependencies, which is where a project's test runner, linter and compiler live.
+    const env = process.env as Record<string, string | undefined>;
+    const before = { NODE_ENV: env.NODE_ENV, PORT: env.PORT };
+    env.NODE_ENV = 'production';
+    env.PORT = '3999';
+    try {
+      writeDep('3.0.0');
+      fs.writeFileSync(
+        path.join(dir, 'package.json'),
+        JSON.stringify({
+          name: 'fresh',
+          private: true,
+          scripts: {
+            test: 'node -e "console.log(require(\'dep\'), process.env.NODE_ENV || \'no NODE_ENV\', process.env.PORT || \'no PORT\')"',
+          },
+          devDependencies: { dep: 'file:./dep' },
+        }),
+      );
+      const ran = await repoRun(config(), 'test');
+      expect(ran.isError).toBe(false);
+      expect(ran.text).toMatch(/^\$ npm install --ignore-scripts --include=dev/);
+      expect(ran.text).toContain('dep 3.0.0 no NODE_ENV no PORT');
+    } finally {
+      for (const [k, v] of Object.entries(before)) {
+        if (v === undefined) delete env[k];
+        else env[k] = v;
+      }
+    }
+  }, 120_000);
+
+  it('installs again when an install recorded as done is missing a package', async () => {
+    // As the installs that left out devDependencies were recorded (D55): done, for these
+    // dependencies, and without the package.
+    fs.rmSync(path.join(dir, 'node_modules', 'dep'), { recursive: true, force: true });
+    expect(JSON.parse(fs.readFileSync(stateFile(), 'utf8')).state).toBe('done');
+    expect(fs.existsSync(path.join(dir, 'node_modules'))).toBe(true);
+    const ran = await repoRun(config(), 'test');
+    expect(ran.isError).toBe(false);
+    expect(ran.text).toContain('Installed the dependencies');
+    expect(ran.text).toContain('dep 3.0.0');
+    // Complete again: the next run goes straight to the script.
+    expect((await repoRun(config(), 'test')).text).toMatch(/^\$ npm run test/);
+  }, 120_000);
+});
+
+describe('repositoryEnv (D55)', () => {
+  it('leaves out Magpipe’s secrets and its own server settings, and keeps the operator’s', () => {
+    const env = repositoryEnv({
+      HOME: '/home/op',
+      PATH: '/usr/bin',
+      NODE_OPTIONS: '--max-old-space-size=4096',
+      NODE_ENV: 'production',
+      PORT: '3999',
+      HOSTNAME: '127.0.0.1',
+      NEXT_RUNTIME: 'nodejs',
+      __NEXT_PRIVATE_ORIGIN: 'x',
+      ELECTRON_RUN_AS_NODE: '1',
+      npm_config_production: 'true',
+      MAGPIPE_DESKTOP_TOKEN: 'secret',
+      ANTHROPIC_API_KEY: 'sk',
+    });
+    expect(env).toEqual({
+      HOME: '/home/op',
+      PATH: '/usr/bin',
+      NODE_OPTIONS: '--max-old-space-size=4096',
+    });
+  });
 });
 
 describe('scripts', () => {
