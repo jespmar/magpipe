@@ -7,9 +7,9 @@
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { childEnv } from './mcp';
+import { envVar, homeDir, runtimePath } from './runtime-path';
 import type { RepositoryConfig } from './schemas';
 
 /** The operations a repository tool offers, in the order the editor lists them. */
@@ -185,7 +185,7 @@ function newestFirst(names: string[]): string[] {
  * shells do not say: nvm's default (or newest) version, fnm's and Volta's, asdf's and mise's
  * shims, Homebrew's and the system's. Only folders that are there are returned.
  */
-export async function nodeDirs(home: string): Promise<string[]> {
+export async function nodeDirs(home: string, nvmDir?: string): Promise<string[]> {
   const out: string[] = [];
   const add = async (dir: string) => {
     if (
@@ -196,14 +196,17 @@ export async function nodeDirs(home: string): Promise<string[]> {
     )
       out.push(dir);
   };
-  const nvm = process.env.NVM_DIR || path.join(home, '.nvm');
-  const versions = path.join(nvm, 'versions', 'node');
+  // Built at run time only, out of the build's file tracer's reach (D54).
+  const nvm = nvmDir || runtimePath(home, '.nvm');
+  const versions = runtimePath(nvm, 'versions', 'node');
   const installed = newestFirst(await fs.readdir(versions).catch(() => [] as string[]));
   // nvm's default alias, followed as nvm does: "20" is the newest 20.x, "lts/iron" and "lts/*"
   // name another alias, "node" and "stable" the newest of all.
   let alias = 'default';
   for (let hops = 0; hops < 4; hops++) {
-    const next = (await fs.readFile(path.join(nvm, 'alias', alias), 'utf8').catch(() => '')).trim();
+    const next = (
+      await fs.readFile(runtimePath(nvm, 'alias', alias), 'utf8').catch(() => '')
+    ).trim();
     if (!next) break;
     alias = next;
   }
@@ -216,19 +219,19 @@ export async function nodeDirs(home: string): Promise<string[]> {
             (v) => v === alias || v === `v${alias}` || v.startsWith(`v${alias.replace(/^v/, '')}.`),
           );
   for (const v of [chosen, ...installed].filter((v): v is string => Boolean(v))) {
-    await add(path.join(versions, v, 'bin'));
+    await add(runtimePath(versions, v, 'bin'));
   }
   for (const dir of [
-    path.join(home, '.local', 'share', 'fnm', 'aliases', 'default', 'bin'),
-    path.join(home, '.fnm', 'aliases', 'default', 'bin'),
-    path.join(home, 'Library', 'Application Support', 'fnm', 'aliases', 'default', 'bin'),
-    path.join(home, '.volta', 'bin'),
-    path.join(home, '.asdf', 'shims'),
-    path.join(home, '.local', 'share', 'mise', 'shims'),
-    path.join(home, '.bun', 'bin'),
-    path.join(home, '.local', 'bin'),
-    '/opt/homebrew/bin',
-    '/usr/local/bin',
+    runtimePath(home, '.local', 'share', 'fnm', 'aliases', 'default', 'bin'),
+    runtimePath(home, '.fnm', 'aliases', 'default', 'bin'),
+    runtimePath(home, 'Library', 'Application Support', 'fnm', 'aliases', 'default', 'bin'),
+    runtimePath(home, '.volta', 'bin'),
+    runtimePath(home, '.asdf', 'shims'),
+    runtimePath(home, '.local', 'share', 'mise', 'shims'),
+    runtimePath(home, '.bun', 'bin'),
+    runtimePath(home, '.local', 'bin'),
+    runtimePath('/opt/homebrew/bin'),
+    runtimePath('/usr/local/bin'),
   ]) {
     await add(dir);
   }
@@ -254,7 +257,7 @@ function shellPath(): Promise<string> {
         // The operator's own startup files run here: without Magpipe's secrets, as every
         // repository command does (childEnv).
         const res = await exec(shell, [flags, `printf '\\n${PATH_MARK}%s\\n' "$PATH"`], {
-          cwd: os.homedir(),
+          cwd: homeDir(),
           env: childEnv(process.env),
           timeoutMs: 10_000,
         });
@@ -265,7 +268,7 @@ function shellPath(): Promise<string> {
       }
       if (found) break;
     }
-    return composePath(found, own, await nodeDirs(os.homedir()));
+    return composePath(found, own, await nodeDirs(homeDir(), envVar('NVM_DIR')));
   })();
   return loginPath;
 }

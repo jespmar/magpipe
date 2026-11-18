@@ -1448,3 +1448,17 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
   system's node; nvm's default alias is followed as nvm does (`22`, `lts/iron`, `node`,
   `NVM_DIR`). A package manager not found is looked for again once, so installing Node needs no
   restart.
+
+## D54 · Paths on the operator's computer stay out of the build's tracer
+
+- **Why.** The installer build stopped on Windows from D47 on: `next build` failed with EPERM
+  on `C:\Users\runneradmin\AppData\Local\Application Data`. Next traces the files server code
+  may read by evaluating its path expressions, and the places Magpipe looks for `gh`, `claude`
+  and Node (the home folder, `LOCALAPPDATA`, `APPDATA`, nvm and the like) became searches of the
+  build machine's own folders, which on Windows meet protected junctions.
+- **Built through `lib/runtime-path.ts`.** `runtimePath`, `homeDir` and `envVar` are plain
+  `path.join`, `os.homedir()` and `process.env` at run time; to the tracer they are calls it
+  cannot follow, so it searches nothing. Every place that builds a path under the operator's
+  home folder or from an environment variable goes through them; a new one should too.
+- **`nodeDirs` takes nvm's folder as an argument** (`NVM_DIR`, passed by the caller), so a test,
+  or a CI runner with nvm of its own, gets the folder it names.

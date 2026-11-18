@@ -7,7 +7,7 @@
  * everything as it does for any project.
  */
 import 'server-only';
-import os from 'node:os';
+import { homeDir } from './runtime-path';
 import path from 'node:path';
 import { checkCloneTarget, cloneRepository, CloneError } from './clone';
 import type { Db } from './db';
@@ -59,7 +59,7 @@ export async function wizardRepoScripts(db: Db, repo: string): Promise<string[] 
 export async function wizardParentFolder(db: Db): Promise<string> {
   const projects = await listProjects(db);
   const latest = projects.at(-1);
-  return latest ? path.dirname(latest.repoPath) : os.homedir();
+  return latest ? path.dirname(latest.repoPath) : homeDir();
 }
 
 function checkFullName(repo: string): void {

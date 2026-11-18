@@ -7,8 +7,7 @@
 import 'server-only';
 import { execFile } from 'node:child_process';
 import fs from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
+import { envVar, homeDir, runtimePath } from '../runtime-path';
 import { promisify } from 'node:util';
 import { env } from '../env';
 
@@ -67,21 +66,22 @@ function ghPathSetting(): string | undefined {
 
 /** Where the GitHub CLI's installers put it. */
 function usualPlaces(): string[] {
-  const home = os.homedir();
+  // Built at run time only, out of the build's file tracer's reach (D54).
+  const home = homeDir();
   if (process.platform === 'win32') {
-    const programFiles = process.env.ProgramFiles ?? 'C:\\Program Files';
-    const local = process.env.LOCALAPPDATA ?? path.join(home, 'AppData', 'Local');
+    const programFiles = envVar('ProgramFiles') ?? 'C:\\Program Files';
+    const local = envVar('LOCALAPPDATA') ?? runtimePath(home, 'AppData', 'Local');
     return [
-      path.join(programFiles, 'GitHub CLI', 'gh.exe'),
-      path.join(local, 'Programs', 'GitHub CLI', 'gh.exe'),
+      runtimePath(programFiles, 'GitHub CLI', 'gh.exe'),
+      runtimePath(local, 'Programs', 'GitHub CLI', 'gh.exe'),
     ];
   }
   return [
-    '/opt/homebrew/bin/gh',
-    '/usr/local/bin/gh',
-    '/usr/bin/gh',
-    '/home/linuxbrew/.linuxbrew/bin/gh',
-    path.join(home, '.local', 'bin', 'gh'),
+    runtimePath('/opt/homebrew/bin/gh'),
+    runtimePath('/usr/local/bin/gh'),
+    runtimePath('/usr/bin/gh'),
+    runtimePath('/home/linuxbrew/.linuxbrew/bin/gh'),
+    runtimePath(home, '.local', 'bin', 'gh'),
   ];
 }
 
