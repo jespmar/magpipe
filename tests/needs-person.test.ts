@@ -65,7 +65,9 @@ describe('needsPerson', () => {
         [step('Build', { status: 'failed', error: { code: 'limit_tokens', message: 'x' } })],
         [],
       ),
-    ).toBe('A step ran out of its token budget.');
+    ).toBe(
+      'A step ran out of its token limit: raise it on the agent’s page, then move the goal back.',
+    );
     expect(
       needsPerson(
         [

@@ -775,3 +775,34 @@ describe('finding Node for an app with no PATH of its own (D53)', () => {
     }
   });
 });
+
+describe('git_diff and lockfiles (D56)', () => {
+  it('names a changed lockfile but leaves its thousands of lines out of the diff', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'magpipe-lockdiff-'));
+    try {
+      git(dir, 'init', '-q', '-b', 'main');
+      fs.mkdirSync(path.join(dir, 'src'));
+      fs.writeFileSync(path.join(dir, 'src', 'a.ts'), 'export const a = 1;\n');
+      git(dir, 'add', '-A');
+      git(dir, 'commit', '-q', '-m', 'init');
+      git(dir, 'switch', '-q', '-c', 'magpipe/goal');
+      fs.writeFileSync(path.join(dir, 'src', 'a.ts'), 'export const a = 2;\n');
+      fs.writeFileSync(path.join(dir, 'package-lock.json'), `{"lock": "${'x'.repeat(50_000)}"}\n`);
+      fs.mkdirSync(path.join(dir, 'web'));
+      fs.writeFileSync(path.join(dir, 'web', 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
+      git(dir, 'add', '-A');
+      git(dir, 'commit', '-q', '-m', 'the goal');
+      const diff = (await gitDiff(dir, 'main')).text;
+      expect(diff).toContain('package-lock.json');
+      expect(diff).toContain(
+        'Lockfiles changed, contents not shown: package-lock.json, web/pnpm-lock.yaml.',
+      );
+      expect(diff).toContain('+export const a = 2;');
+      expect(diff).not.toContain('xxxxxxxxxx');
+      expect(diff).not.toContain('lockfileVersion');
+      expect(diff).not.toContain('diff cut');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

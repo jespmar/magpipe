@@ -265,7 +265,31 @@ describe('claude code backend', () => {
           new AbortController().signal,
         ),
       ).rejects.toMatchObject({ code: 'limit_steps' });
+
+      // D56: a call sent as two lines is one round, and the limit is on the context one call
+      // read (300 + 50 cached + 80 written), not on the sum over the calls.
+      process.env.FAKE_CLAUDE_SPLIT = '1';
+      const rounds = { ...researcher, limits: { maxTokens: 1000, maxSteps: 5, timeoutSec: 60 } };
+      const done = await backend.step(
+        { agent: rounds, system: 's', user: 'u', runtime, sandboxDir: process.cwd(), trail },
+        new AbortController().signal,
+      );
+      expect(done.summary).toContain('Fake answer');
+      // A call that reads more than the limit, cached or not, stops the step.
+      process.env.FAKE_CLAUDE_CACHE_READ = '900';
+      await expect(
+        backend.step(
+          { agent: rounds, system: 's', user: 'u', runtime, sandboxDir: process.cwd(), trail },
+          new AbortController().signal,
+        ),
+      ).rejects.toMatchObject({
+        code: 'limit_tokens',
+        message: 'Researcher reached 1,280 tokens of context, over its 1,000-token limit.',
+      });
     } finally {
+      delete process.env.FAKE_CLAUDE_TURNS;
+      delete process.env.FAKE_CLAUDE_SPLIT;
+      delete process.env.FAKE_CLAUDE_CACHE_READ;
       await runtime.close();
     }
 

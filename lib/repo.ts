@@ -1171,8 +1171,18 @@ export async function gitDiff(
   }
   const range = against ? [`${await nearerBase(base, against, signal)}...HEAD`] : ['HEAD'];
   const stat = await gitOrThrow(base, ['diff', '--stat', ...range, '--', '.'], signal);
-  const diff = await git(base, ['diff', ...range, '--', '.'], { signal });
+  // A lockfile's diff is thousands of generated lines (D56): listed in the stat and named, but
+  // left out of the diff, so the cap below holds the code.
+  const locks = LOCKFILES.map((f) => `:(glob)**/${f}`);
+  const diff = await git(
+    base,
+    ['diff', ...range, '--', '.', ...locks.map((l) => l.replace(':(glob)', ':(exclude,glob)'))],
+    { signal },
+  );
   if (diff.code !== 0) return { text: gitText(diff) || 'git diff failed', isError: true };
+  const lockNames = await git(base, ['diff', '--name-only', ...range, '--', ...locks], { signal });
+  const lockDiffs =
+    lockNames.code === 0 ? lockNames.output.trim().split('\n').filter(Boolean) : [];
   let text = diff.output.trimEnd();
   if (text.length > 2 * REPO_OUTPUT_CAP) {
     text = `${text.slice(0, 2 * REPO_OUTPUT_CAP)}\n… (diff cut; read the files for the rest)`;
@@ -1182,6 +1192,9 @@ export async function gitDiff(
     : await gitOrThrow(base, ['ls-files', '--others', '--exclude-standard', '--', '.'], signal);
   const parts = [
     stat || 'No changes',
+    lockDiffs.length
+      ? `Lockfiles changed, contents not shown: ${lockDiffs.join(', ')}. Read one with the read tool if it matters.`
+      : '',
     text,
     untracked ? `New files not yet added:\n${untracked}` : '',
   ].filter(Boolean);

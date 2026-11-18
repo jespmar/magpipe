@@ -1498,3 +1498,28 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
 - **A goal's worktree is the engine's to name.** The engine sets `goalWorktree` on the repository
   tools of a run in a goal's worktree (D41), never stored; a git worktree the operator made and
   bound is their own checkout, and its `node_modules` is left as it is.
+
+## D56 · A step's token limit is on its context, the review reads the code, Needs you stays open
+
+- **Why.** A goal's Code Review stopped with "exceeded its 150000-token limit", and the goal was
+  moved to Canceled. Three things added up. The limit summed the tokens of every model call, and
+  each call reads the whole conversation again (cache reads included), so a reviewer ran out after
+  a handful of rounds however little each added; Claude Code also sends one call as several
+  stream lines with the same usage, each counted. The diff the reviewer read was cut at its cap
+  inside the 8,736 lines of a new `package-lock.json`, so the code itself had to be read file by
+  file. And the team had no status for Needs you, so the suggested mapping fell back to Canceled.
+- **The limit is on the context one call reached.** Both backends compare `maxTokens` with the
+  conversation a single model call read, cached or not, plus what it wrote. A long step is
+  bounded by `maxSteps` and the spend cap (D32), not by a sum that grows with every round. The
+  Claude Code backend counts a call once by its message id, as a round and in the usage. The
+  message names the context reached and the limit; Needs you says to raise it on the agent's page.
+- **`git_diff` leaves lockfiles out of the diff.** The stat lists them and a line names them; their
+  contents (`package-lock.json`, `pnpm-lock.yaml`, `yarn.lock` and the rest of `LOCKFILES`, at any
+  depth) are not in the diff, so the cap holds the code. The read tool still opens one.
+- **Needs you is never Canceled or Done.** When the team has no status for it, the suggested
+  mapping is a new one, "Needs you, a new status", offered in the wizard and in a project's
+  Linear settings while the team has no status by that name. Saving the mapping adds it to the
+  team (an open, started status) once everything else in the mapping is right, and uses the one by
+  that name after that. A Needs you mapped onto a closed status says so beside it. Linear may
+  refuse to add a status (it can take a team admin): the operator is told to add one in Linear
+  and pick it.

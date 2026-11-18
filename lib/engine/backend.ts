@@ -21,6 +21,17 @@ import {
 import { usageOf } from './plan';
 import { invokeTool, type ToolRuntime, type Trail } from './tools';
 
+/**
+ * A step whose context passed its agent's token limit (D56): the conversation one model call read,
+ * cached or not, plus what it wrote.
+ */
+export function tokenLimit(agent: Pick<Agent, 'name' | 'limits'>, context: number): EngineError {
+  return new EngineError(
+    'limit_tokens',
+    `${agent.name} reached ${context.toLocaleString('en-US')} tokens of context, over its ${agent.limits.maxTokens.toLocaleString('en-US')}-token limit.`,
+  );
+}
+
 export type { Trail };
 
 export type PlanRequest = {
@@ -128,13 +139,12 @@ export function apiBackend(client: ModelClient): RunBackend {
             ),
           { signal, onRetry: (f, n) => trail.emit('error', `Retry ${n}: ${f.message}`) },
         );
-        usage = addUsage(usage, usageOf(message));
-        if (usage.inputTokens + usage.outputTokens > agent.limits.maxTokens) {
-          throw new EngineError(
-            'limit_tokens',
-            `${agent.name} exceeded its ${agent.limits.maxTokens}-token limit.`,
-          );
-        }
+        const call = usageOf(message);
+        usage = addUsage(usage, call);
+        // The limit is on the context a call reached (D56): each call reads the whole
+        // conversation again, so the sum over calls says how long the step went, not how much.
+        const context = call.inputTokens + call.outputTokens;
+        if (context > agent.limits.maxTokens) throw tokenLimit(agent, context);
 
         const text = textOf(message);
         if (text) await trail.emit('message', text);

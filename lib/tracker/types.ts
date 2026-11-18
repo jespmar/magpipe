@@ -33,6 +33,12 @@ export interface Tracker {
   createProject(teamId: string, name: string, signal?: AbortSignal): Promise<TrackerRef>;
   /** The team's statuses, in the team's own order. */
   states(teamId: string, signal?: AbortSignal): Promise<TrackerState[]>;
+  /** Adds a status to the team: Needs you, when the team has none for it (D56). */
+  createState(
+    teamId: string,
+    input: { name: string; type: 'started' | 'unstarted' | 'backlog'; color: string },
+    signal?: AbortSignal,
+  ): Promise<TrackerState>;
   /** The label with this name usable in the team (its own or the workspace's), made if missing. */
   ensureLabel(
     teamId: string,
