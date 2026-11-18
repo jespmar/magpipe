@@ -1413,3 +1413,26 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
   asks for the first try sees that a goal was built again. Checks are read from check runs and
   commit statuses alike, and a pull request with none waits five minutes after its build before
   it counts as a repository that runs none.
+
+## D53 · Finding Node, and the lockfile an install writes
+
+- **Why.** The first real scaffold build stopped at Needs you after three rebuilds that did
+  nothing: "npm was not found on this machine". The desktop app is opened from Finder, so it has
+  no PATH of its own, and the login shell Magpipe asked (`zsh -l`) does not read `~/.zshrc`,
+  where nvm, fnm and the like set Node up. A missing tool is not something a rebuild fixes, yet
+  the rebuilds were spent on it. And even with npm found, the scaffold's own test asked for a
+  committed `package-lock.json`, which D51's install put back to nothing every time.
+- **Node is looked for where it is.** Repository commands get the PATH an interactive login
+  shell prints (so `~/.zshrc` and `~/.bashrc` count), else a login shell's, read past whatever
+  the startup files print, then the folders Node and package managers usually live in: nvm's
+  default version and the rest newest first, fnm's default, Volta, asdf and mise shims, bun,
+  `~/.local/bin`, Homebrew and `/usr/local/bin` (`nodeDirs`).
+- **A tool that cannot be found goes to the operator at once.** A run whose package manager is
+  not there says so plainly ("Magpipe could not find npm on this computer...") and is recorded as
+  a check that did not run for that reason (`skipped: 'tool'`); `needsPerson` reads the run's
+  checks and hands the goal over with that reason, without a rebuild.
+- **A finished install's lockfile is part of the change.** This revises D51: the lockfiles an
+  install wrote or changed are kept, and the run names them ("The install wrote
+  package-lock.json: commit it with package.json"); the build's Code Agent is told to commit
+  them with package.json, so a clean install (`npm ci`) gets the same versions. An install that
+  failed, was cancelled or was cut off by a crash still has its lockfiles put back as they were.

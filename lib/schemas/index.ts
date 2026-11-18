@@ -142,7 +142,7 @@ export const stepWork = z.object({
       seconds: z.number().nonnegative(),
       timedOut: z.boolean(),
       /** It did not run: not in package.json, or its dependencies did not install (D51). */
-      skipped: z.enum(['missing', 'install']).optional(),
+      skipped: z.enum(['missing', 'install', 'tool']).optional(),
     }),
   ),
 });

@@ -307,7 +307,7 @@ async function finishGoal({
   }
   // Built again on its own (D52), with what this build found, unless a person is needed: a key
   // or a tool Magpipe could not use, a budget spent, or the rebuilds used up.
-  const person = needsPerson(failed);
+  const person = needsPerson(failed, upstream);
   if (!person && current.buildAttempts < MAX_REBUILDS) {
     const attempt = await recordRebuild(
       db,
@@ -369,7 +369,11 @@ const PERSON_CODES: Record<string, string> = {
   no_agent: 'An agent of the step is missing.',
 };
 
-function needsPerson(failed: Step[]): string | null {
+export function needsPerson(failed: Step[], upstream: Step[]): string | null {
+  // A package manager Magpipe could not find (D53): no build can install or run anything.
+  if (upstream.some((s) => s.work?.checks.some((c) => c.skipped === 'tool'))) {
+    return 'Magpipe could not find the package manager (npm, pnpm, yarn or bun) on this computer. Install Node, or start Magpipe from a terminal so it has your PATH, then move the goal back.';
+  }
   for (const s of failed) {
     const code = s.error?.code ?? '';
     if (PERSON_CODES[code]) return PERSON_CODES[code]!;
