@@ -23,7 +23,7 @@ import {
   type TrackerTeam,
 } from '@/lib/schemas';
 import type { TrackerState } from '@/lib/tracker';
-import { PIPELINE_HINTS, PIPELINE_LABELS } from '@/lib/tracker/labels';
+import { needsYouHint, PIPELINE_HINTS, PIPELINE_LABELS, statusOptions } from '@/lib/tracker/labels';
 
 type Note = { tone: 'done' | 'error'; text: string } | null;
 
@@ -247,7 +247,6 @@ export function ProjectForm({ initial, agents, models, workspace }: Props) {
   }
 
   const err = (f: string) => (field === f && note?.tone === 'error' ? note.text : undefined);
-  const stateOptions = states.map((s) => ({ value: s.id, label: s.name }));
   const modelOptions = (own: string) => [
     { value: OWN, label: `The agent’s own (${own})` },
     ...models.map((m) => ({ value: m, label: m })),
@@ -349,9 +348,11 @@ export function ProjectForm({ initial, agents, models, workspace }: Props) {
                     <Select
                       key={p}
                       label={PIPELINE_LABELS[p]}
-                      description={PIPELINE_HINTS[p]}
+                      description={
+                        p === 'needs_you' ? needsYouHint(states, map[p]) : PIPELINE_HINTS[p]
+                      }
                       placeholder="Pick a status"
-                      options={stateOptions}
+                      options={statusOptions(states, p)}
                       value={map[p]}
                       onValueChange={(v) => setMap((m) => ({ ...m, [p]: v }))}
                       disabled={pending}

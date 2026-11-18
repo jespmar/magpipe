@@ -147,6 +147,21 @@ export function linearTracker(
         .map(({ id, name, type }) => ({ id, name, type }));
     },
 
+    async createState(teamId, input, signal) {
+      const made = await call<{
+        workflowStateCreate: { success: boolean; workflowState: TrackerState | null };
+      }>(
+        'mutation ($input: WorkflowStateCreateInput!) { workflowStateCreate(input: $input) { success workflowState { id name type } } }',
+        { input: { teamId, name: input.name, type: input.type, color: input.color } },
+        signal,
+      );
+      const state = made.workflowStateCreate.workflowState;
+      if (!made.workflowStateCreate.success || !state) {
+        throw new TrackerError(`Linear did not add the status ${input.name}.`, 'unknown');
+      }
+      return state;
+    },
+
     async ensureLabel(teamId, name, signal) {
       const data = await call<{
         issueLabels: { nodes: (TrackerRef & { team: { id: string } | null })[] };

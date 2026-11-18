@@ -19,7 +19,7 @@ import {
   type TrackerTeam,
   type WatcherInput,
 } from '../schemas';
-import { PIPELINE_LABELS } from './labels';
+import { NEEDS_YOU_NAME, NEW_NEEDS_YOU, PIPELINE_LABELS } from './labels';
 import { linearTracker } from './linear';
 import { scriptedTracker } from './scripted';
 import {
@@ -554,7 +554,8 @@ export function suggestStates(states: readonly TrackerState[]): Record<PipelineS
     building,
     merge_question: merge || pick([], ['started']),
     done,
-    needs_you: needsYou || pick([], ['started', 'canceled']),
+    // Never Canceled or Done (D56): a goal that needs a person would read as closed.
+    needs_you: needsYou || NEW_NEEDS_YOU,
   };
 }
 
@@ -582,8 +583,15 @@ export async function readBackMapping(
   const states = await tracker.states(team.id);
   const map: PipelineStateMap = {};
   const used = new Map<string, PipelineState>();
+  // A new Needs you (D56): the team's status by that name when it has one, else made below,
+  // once everything else is known to be right.
+  const fresh =
+    input.states.needs_you === NEW_NEEDS_YOU
+      ? (states.find((s) => s.name.trim().toLowerCase() === NEEDS_YOU_NAME.toLowerCase()) ?? null)
+      : undefined;
   for (const p of pipelineStates) {
-    const found = states.find((s) => s.id === input.states[p]);
+    if (p === 'needs_you' && fresh === null) continue;
+    const found = p === 'needs_you' && fresh ? fresh : states.find((s) => s.id === input.states[p]);
     if (!found) {
       throw new LinearMappingError(
         `${team.name} has no status for ${PIPELINE_LABELS[p]} any more. Pick one again.`,
@@ -598,8 +606,27 @@ export async function readBackMapping(
     used.set(found.id, p);
     map[p] = { id: found.id, name: found.name };
   }
+  let statuses = states.length;
+  if (fresh === null) {
+    let made: TrackerState;
+    try {
+      made = await tracker.createState(team.id, {
+        name: NEEDS_YOU_NAME,
+        type: 'started',
+        color: '#f2994a',
+      });
+    } catch (err) {
+      // Adding a status can take a team admin in Linear: said with what to do instead.
+      if (!(err instanceof TrackerError) || err.code === 'auth') throw err;
+      throw new LinearMappingError(
+        `Linear did not add the status ${NEEDS_YOU_NAME} to ${team.name} (${err.message}). Add an open status for it in the team's settings in Linear, then pick it here.`,
+      );
+    }
+    map.needs_you = { id: made.id, name: made.name };
+    statuses += 1;
+  }
   const label = await tracker.ensureLabel(team.id, input.label);
-  return { team, states: map, label, statuses: states.length };
+  return { team, states: map, label, statuses };
 }
 
 export async function saveWatcher(db: Db, input: WatcherInput): Promise<LinearSettings> {

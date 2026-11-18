@@ -9,6 +9,9 @@
  *   FAKE_CLAUDE_HANG=1                           never answer (cancellation tests)
  *   FAKE_CLAUDE_TURNS=<n>                        assistant turns before the result (default 2)
  *   FAKE_CLAUDE_WRITE=<json>                     memory_write arguments to call through MCP
+ *   FAKE_CLAUDE_SPLIT=1                          send each turn as two lines of one message, as
+ *                                                Claude Code does for a text and a tool block
+ *   FAKE_CLAUDE_CACHE_READ=<n>                   cache_read_input_tokens of every call (default 50)
  */
 const args = process.argv.slice(2);
 const flag = (name) => {
@@ -44,7 +47,7 @@ if (process.env.FAKE_CLAUDE_FAIL === 'crash') {
 const usage = {
   input_tokens: 300,
   cache_creation_input_tokens: 0,
-  cache_read_input_tokens: 50,
+  cache_read_input_tokens: Number(process.env.FAKE_CLAUDE_CACHE_READ ?? '50'),
   output_tokens: 80,
 };
 const result = (extra) => ({
@@ -155,10 +158,17 @@ if (server) {
 
 const turns = Number(process.env.FAKE_CLAUDE_TURNS ?? '2');
 for (let i = 1; i < turns; i++) {
-  emit({
+  const line = {
     type: 'assistant',
-    message: { role: 'assistant', content: [{ type: 'text', text: `Working, turn ${i}.` }], usage },
-  });
+    message: {
+      id: `msg_${i}`,
+      role: 'assistant',
+      content: [{ type: 'text', text: `Working, turn ${i}.` }],
+      usage,
+    },
+  };
+  emit(line);
+  if (process.env.FAKE_CLAUDE_SPLIT === '1') emit(line);
 }
 if (process.env.FAKE_CLAUDE_FAIL === 'max_turns') {
   emit(result({ is_error: true, subtype: 'error_max_turns', result: 'Reached max turns' }));

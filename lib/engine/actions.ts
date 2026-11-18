@@ -292,7 +292,12 @@ async function finishGoal({
   }
 
   const why = failed.length
-    ? failed.map((s) => `“${s.title}” failed: ${s.error?.message ?? 'no reason given'}`).join('; ')
+    ? failed
+        .map(
+          (s) =>
+            `“${s.title}” failed: ${(s.error?.message ?? 'no reason given').replace(/\.+$/, '')}`,
+        )
+        .join('; ')
     : judges
         .filter((s) => !(s.status === 'done' && s.verdict === 'pass'))
         .map((s) => `“${s.title}” ${s.status === 'done' ? `said ${verdictOf(s)}` : 'did not run'}`)
@@ -362,7 +367,8 @@ const PERSON_CODES: Record<string, string> = {
   no_cli: 'The claude command could not be found.',
   refusal: 'The model refused the step.',
   cancelled: 'It was cancelled.',
-  limit_tokens: 'A step ran out of its token budget.',
+  limit_tokens:
+    'A step ran out of its token limit: raise it on the agent’s page, then move the goal back.',
   limit_steps: 'A step ran out of its tool rounds.',
   limit_budget: 'A step reached its spending limit.',
   bad_request: 'The model refused the request as it was made.',

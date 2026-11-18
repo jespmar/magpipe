@@ -37,6 +37,7 @@ import {
   issueForRun,
   listIssues,
 } from '@/lib/tracker/issues';
+import { needsYouHint, NEW_NEEDS_YOU, statusName, statusOptions } from '@/lib/tracker/labels';
 import { linearTracker } from '@/lib/tracker/linear';
 import {
   SCRIPTED_STATES,
@@ -243,7 +244,8 @@ describe('suggestStates', () => {
       building: 'progress',
       merge_question: 'review',
       done: 'done',
-      needs_you: 'canceled',
+      // Never Canceled (D56): a new status, made when the mapping is saved.
+      needs_you: NEW_NEEDS_YOU,
     });
     expect(new Set(Object.values(s)).size).toBe(6);
   });
@@ -256,6 +258,73 @@ describe('suggestStates', () => {
       done: 'st_done',
       needs_you: 'st_blocked',
     });
+  });
+
+  it('makes a Needs you status once, and offers it only while the team has none (D56)', async () => {
+    const tracker = scriptedTracker('lin_api_test', scriptedStore(true));
+    const states = {
+      spec_ready: 'st_spec',
+      approved: 'st_todo',
+      building: 'st_progress',
+      merge_question: 'st_review',
+      done: 'st_done',
+      needs_you: NEW_NEEDS_YOU,
+    };
+    const before = await tracker.states(SCRIPTED_TEAM.id);
+    expect(statusOptions(before, 'needs_you').at(-1)).toEqual({
+      value: NEW_NEEDS_YOU,
+      label: 'Needs you, a new status',
+    });
+    expect(statusOptions(before, 'building').some((o) => o.value === NEW_NEEDS_YOU)).toBe(false);
+    expect(statusName(before, NEW_NEEDS_YOU)).toBe('Needs you, a new status');
+
+    const first = await readBackMapping(tracker, {
+      teamId: SCRIPTED_TEAM.id,
+      label: 'magpipe',
+      states,
+    });
+    expect(first.states.needs_you).toEqual({ id: 'st_made_1', name: 'Needs you' });
+    expect(first.statuses).toBe(before.length + 1);
+    // Saved again with the same choice: the status made before is used, not a second one.
+    const again = await readBackMapping(tracker, {
+      teamId: SCRIPTED_TEAM.id,
+      label: 'magpipe',
+      states,
+    });
+    expect(again.states.needs_you).toEqual({ id: 'st_made_1', name: 'Needs you' });
+    const after = await tracker.states(SCRIPTED_TEAM.id);
+    expect(after.filter((s) => s.name === 'Needs you')).toHaveLength(1);
+    expect(statusOptions(after, 'needs_you').some((o) => o.value === NEW_NEEDS_YOU)).toBe(false);
+  });
+
+  it('a wrong mapping makes no status', async () => {
+    const tracker = scriptedTracker('lin_api_test', scriptedStore(true));
+    await expect(
+      readBackMapping(tracker, {
+        teamId: SCRIPTED_TEAM.id,
+        label: 'magpipe',
+        states: {
+          spec_ready: 'st_spec',
+          approved: 'st_spec',
+          building: 'st_progress',
+          merge_question: 'st_review',
+          done: 'st_done',
+          needs_you: NEW_NEEDS_YOU,
+        },
+      }),
+    ).rejects.toThrow(/both use Spec ready/);
+    expect(tracker.store.states).toHaveLength(0);
+  });
+
+  it('says so when Needs you is mapped onto a closed status', () => {
+    const closed = [
+      { id: 'c', name: 'Canceled', type: 'canceled' },
+      { id: 'b', name: 'Blocked', type: 'started' },
+    ];
+    expect(needsYouHint(closed, 'c')).toBe(
+      'Canceled is a closed status, and Linear may archive issues there. Pick an open one, or Needs you, a new status.',
+    );
+    expect(needsYouHint(closed, 'b')).toBe('Stopped with findings for you.');
   });
 });
 

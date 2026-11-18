@@ -30,7 +30,13 @@ import {
   type TrackerTeam,
 } from '@/lib/schemas';
 import type { TrackerState } from '@/lib/tracker';
-import { PIPELINE_HINTS, PIPELINE_LABELS } from '@/lib/tracker/labels';
+import {
+  needsYouHint,
+  PIPELINE_HINTS,
+  PIPELINE_LABELS,
+  statusName,
+  statusOptions,
+} from '@/lib/tracker/labels';
 
 const MONO = { fontFamily: 'var(--font-mono)' } as const;
 
@@ -378,7 +384,7 @@ export function ProjectWizard({
       );
       if (twice) {
         const first = pipelineStates.find((q) => map[q] === map[twice])!;
-        const status = states.find((s) => s.id === map[twice])?.name ?? 'one status';
+        const status = statusName(states, map[twice]) ?? 'one status';
         setShowStates(true);
         return fail(
           `${PIPELINE_LABELS[first]} and ${PIPELINE_LABELS[twice]} both use ${status}. Each needs its own.`,
@@ -868,8 +874,7 @@ export function ProjectWizard({
               team’s statuses map onto the pipeline:{' '}
               {pipelineStates
                 .map(
-                  (p) =>
-                    `${PIPELINE_LABELS[p]} is ${states.find((s) => s.id === map[p])?.name ?? 'not mapped'}`,
+                  (p) => `${PIPELINE_LABELS[p]} is ${statusName(states, map[p]) ?? 'not mapped'}`,
                 )
                 .join('; ')}
               .
@@ -896,9 +901,11 @@ export function ProjectWizard({
                     <Select
                       key={p}
                       label={PIPELINE_LABELS[p]}
-                      description={PIPELINE_HINTS[p]}
+                      description={
+                        p === 'needs_you' ? needsYouHint(states, map[p]) : PIPELINE_HINTS[p]
+                      }
                       placeholder="Pick a status"
-                      options={states.map((s) => ({ value: s.id, label: s.name }))}
+                      options={statusOptions(states, p)}
                       value={map[p]}
                       onValueChange={(v) => setMap((m) => ({ ...m, [p]: v }))}
                       disabled={pending}

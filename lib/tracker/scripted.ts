@@ -30,6 +30,8 @@ type Store = {
   /** Linear projects made through the tracker, besides the scripted ones (D49). */
   projects: TrackerRef[];
   labels: (TrackerRef & { teamId: string })[];
+  /** Statuses added to the team through the tracker (D56). */
+  states: TrackerState[];
   issues: (Omit<RemoteIssue, 'labels'> & {
     labelIds: string[];
     projectId: string | null;
@@ -46,7 +48,14 @@ const g = globalThis as unknown as { __magpipeScriptedTracker?: Store };
 /** The shared store; tests pass their own so they never see each other's issues. */
 export function scriptedStore(fresh = false): Store {
   if (fresh || !g.__magpipeScriptedTracker) {
-    g.__magpipeScriptedTracker = { projects: [], labels: [], issues: [], relations: [], next: 1 };
+    g.__magpipeScriptedTracker = {
+      projects: [],
+      labels: [],
+      states: [],
+      issues: [],
+      relations: [],
+      next: 1,
+    };
   }
   return g.__magpipeScriptedTracker;
 }
@@ -67,7 +76,7 @@ export function scriptedTracker(
     if (id !== SCRIPTED_TEAM.id) throw new TrackerError('Linear has no such team.', 'not_found');
   };
   const state = (id: string) => {
-    const found = SCRIPTED_STATES.find((s) => s.id === id);
+    const found = [...SCRIPTED_STATES, ...store.states].find((s) => s.id === id);
     if (!found) throw new TrackerError(`Linear answered: no status ${id}.`, 'invalid');
     return found;
   };
@@ -118,7 +127,14 @@ export function scriptedTracker(
     async states(teamId) {
       authed();
       team(teamId);
-      return SCRIPTED_STATES.map((s) => ({ ...s }));
+      return [...SCRIPTED_STATES, ...store.states].map((s) => ({ ...s }));
+    },
+    async createState(teamId, input) {
+      authed();
+      team(teamId);
+      const made = { id: `st_made_${store.states.length + 1}`, name: input.name, type: input.type };
+      store.states.push(made);
+      return { ...made };
     },
     async ensureLabel(teamId, name) {
       authed();

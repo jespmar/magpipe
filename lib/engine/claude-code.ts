@@ -12,7 +12,7 @@ import { promisify } from 'node:util';
 import { env } from '../env';
 import type { Usage } from '../schemas';
 import { ZERO_USAGE } from '../pricing';
-import type { RunBackend, StepRequest } from './backend';
+import { tokenLimit, type RunBackend, type StepRequest } from './backend';
 import { abortError, EngineError, withRetries } from './model';
 import { registerToolSession, unregisterToolSession } from './tool-sessions';
 import type { Trail } from './tools';
@@ -209,7 +209,7 @@ export type CliResult = {
 };
 
 type StreamLine =
-  | { type: 'assistant'; message?: { content?: unknown; usage?: CliUsage } }
+  | { type: 'assistant'; message?: { id?: string; content?: unknown; usage?: CliUsage } }
   | { type: 'user'; message?: { content?: unknown } }
   | CliResult
   | { type: string };
@@ -525,34 +525,36 @@ async function runStepOnce(
     ];
 
     // Limits are enforced from the stream, turn by turn: the CLI has no per-call cap for them.
-    let turns = 0;
+    // One model call can come as several assistant lines (a block each) with the same id and
+    // usage (D56): it counts once, as a round and in the tokens.
+    const calls = new Map<string, Usage>();
     let usage = ZERO_USAGE;
     let lastText = '';
     const toolNames = new Map<string, string>();
     const onLine = async (line: StreamLine) => {
       if (line.type === 'assistant') {
-        turns += 1;
-        if (turns > agent.limits.maxSteps) {
+        const message = (line as { message?: { id?: string; usage?: CliUsage } }).message;
+        const id = message?.id || `line-${calls.size}`;
+        if (!calls.has(id) && calls.size + 1 > agent.limits.maxSteps) {
           throw new EngineError(
             'limit_steps',
             `${agent.name} used all ${agent.limits.maxSteps} allowed tool rounds.`,
           );
         }
-        const u = (line as { message?: { usage?: CliUsage } }).message?.usage;
-        if (u) {
-          const turn = usageFrom(u, 0);
-          usage = {
-            inputTokens: usage.inputTokens + turn.inputTokens,
-            outputTokens: usage.outputTokens + turn.outputTokens,
+        const turn = message?.usage ? usageFrom(message.usage, 0) : ZERO_USAGE;
+        calls.set(id, turn);
+        usage = [...calls.values()].reduce(
+          (sum, u) => ({
+            inputTokens: sum.inputTokens + u.inputTokens,
+            outputTokens: sum.outputTokens + u.outputTokens,
             costUsd: 0,
-          };
-          if (usage.inputTokens + usage.outputTokens > agent.limits.maxTokens) {
-            throw new EngineError(
-              'limit_tokens',
-              `${agent.name} exceeded its ${agent.limits.maxTokens}-token limit.`,
-            );
-          }
-        }
+          }),
+          ZERO_USAGE,
+        );
+        // The limit is on the context one call reached, cache reads included (D56): every call
+        // reads the conversation again, so a sum over calls measures how long a step went.
+        const context = turn.inputTokens + turn.outputTokens;
+        if (context > agent.limits.maxTokens) throw tokenLimit(agent, context);
         for (const block of blocksOf(line)) {
           if (block.type === 'text' && block.text?.trim()) {
             lastText = block.text.trim();
@@ -599,12 +601,6 @@ async function runStepOnce(
       outputTokens: final.outputTokens || usage.outputTokens,
       costUsd: final.costUsd,
     };
-    if (total.inputTokens + total.outputTokens > agent.limits.maxTokens) {
-      throw new EngineError(
-        'limit_tokens',
-        `${agent.name} exceeded its ${agent.limits.maxTokens}-token limit.`,
-      );
-    }
     return { summary: (res.result ?? '').trim() || lastText, usage: total };
   } finally {
     unregisterToolSession(session.token);
