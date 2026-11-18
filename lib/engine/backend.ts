@@ -12,6 +12,7 @@ import {
   fallbackParams,
   textOf,
   withRetries,
+  withSpent,
   type ModelClient,
   type ModelContentBlockParam,
   type ModelMessageParam,
@@ -114,103 +115,114 @@ export function apiBackend(client: ModelClient): RunBackend {
       let usage = ZERO_USAGE;
       let iterations = 0;
       let finalText = '';
-      for (;;) {
-        if (iterations >= agent.limits.maxSteps) {
-          throw new EngineError(
-            'limit_steps',
-            `${agent.name} used all ${agent.limits.maxSteps} allowed tool rounds.`,
-          );
-        }
-        iterations += 1;
-
-        const message = await withRetries(
-          () =>
-            client.create(
-              {
-                model: agent.model,
-                max_tokens: 16_000,
-                system: req.system,
-                messages,
-                ...(runtime.tools.length ? { tools: runtime.tools } : {}),
-                output_config: { effort: 'high' },
-                ...fallbackParams(agent.model),
-              },
-              signal,
-            ),
-          { signal, onRetry: (f, n) => trail.emit('error', `Retry ${n}: ${f.message}`) },
-        );
-        const call = usageOf(message);
-        usage = addUsage(usage, call);
-        // The limit is on the context a call reached (D56): each call reads the whole
-        // conversation again, so the sum over calls says how long the step went, not how much.
-        const context = call.inputTokens + call.outputTokens;
-        if (context > agent.limits.maxTokens) throw tokenLimit(agent, context);
-
-        const text = textOf(message);
-        if (text) await trail.emit('message', text);
-        // Server tools (web search / fetch) show up as blocks; name them in the trail.
-        for (const block of message.content) {
-          if (block.type === 'server_tool_use') {
-            await trail.emit(
-              'tool_call',
-              `${block.name}: ${JSON.stringify(block.input).slice(0, 300)}`,
-              { tool: block.name, input: block.input },
-            );
-          } else if (
-            block.type === 'web_search_tool_result' ||
-            block.type === 'web_fetch_tool_result'
-          ) {
-            const n = Array.isArray(block.content) ? block.content.length : 1;
-            await trail.emit(
-              'tool_result',
-              `${block.type === 'web_search_tool_result' ? 'web_search' : 'web_fetch'}: ${Array.isArray(block.content) ? `${n} results` : 'done'}`,
+      // A failure keeps what the step spent until then, for the step's record and the cap.
+      try {
+        for (;;) {
+          if (iterations >= agent.limits.maxSteps) {
+            throw new EngineError(
+              'limit_steps',
+              `${agent.name} used all ${agent.limits.maxSteps} allowed tool rounds.`,
             );
           }
-        }
+          iterations += 1;
 
-        if (message.stop_reason === 'refusal') {
-          throw new EngineError(
-            'refusal',
-            `${agent.name} declined this step${message.stop_details?.explanation ? `: ${message.stop_details.explanation}` : '.'}`,
+          const message = await withRetries(
+            () =>
+              client.create(
+                {
+                  model: agent.model,
+                  max_tokens: 16_000,
+                  system: req.system,
+                  messages,
+                  ...(runtime.tools.length ? { tools: runtime.tools } : {}),
+                  output_config: { effort: 'high' },
+                  ...fallbackParams(agent.model),
+                },
+                signal,
+              ),
+            { signal, onRetry: (f, n) => trail.emit('error', `Retry ${n}: ${f.message}`) },
           );
-        }
-        if (message.stop_reason === 'pause_turn') {
+          const call = usageOf(message);
+          usage = addUsage(usage, call);
+          // The limit is on the context a call reached (D56): each call reads the whole
+          // conversation again, so the sum over calls says how long the step went, not how much.
+          // A call that ran server tools (web search, fetch) sampled several times inside, and
+          // its usage adds those up: it is bounded by the rounds and the spend cap instead.
+          const context = call.inputTokens + call.outputTokens;
+          const serverLoop = message.content.some((b) => b.type === 'server_tool_use');
+          if (!serverLoop && context > agent.limits.maxTokens) throw tokenLimit(agent, context);
+
+          const text = textOf(message);
+          if (text) await trail.emit('message', text);
+          // Server tools (web search / fetch) show up as blocks; name them in the trail.
+          for (const block of message.content) {
+            if (block.type === 'server_tool_use') {
+              await trail.emit(
+                'tool_call',
+                `${block.name}: ${JSON.stringify(block.input).slice(0, 300)}`,
+                { tool: block.name, input: block.input },
+              );
+            } else if (
+              block.type === 'web_search_tool_result' ||
+              block.type === 'web_fetch_tool_result'
+            ) {
+              const n = Array.isArray(block.content) ? block.content.length : 1;
+              await trail.emit(
+                'tool_result',
+                `${block.type === 'web_search_tool_result' ? 'web_search' : 'web_fetch'}: ${Array.isArray(block.content) ? `${n} results` : 'done'}`,
+              );
+            }
+          }
+
+          if (message.stop_reason === 'refusal') {
+            throw new EngineError(
+              'refusal',
+              `${agent.name} declined this step${message.stop_details?.explanation ? `: ${message.stop_details.explanation}` : '.'}`,
+            );
+          }
+          if (message.stop_reason === 'pause_turn') {
+            messages.push({
+              role: 'assistant',
+              content: message.content as ModelContentBlockParam[],
+            });
+            continue;
+          }
+          const toolUses = message.content.filter(
+            (b): b is ModelToolUseBlock => b.type === 'tool_use',
+          );
+          if (toolUses.length === 0 || message.stop_reason === 'end_turn') {
+            if (message.stop_reason === 'max_tokens' && toolUses.length) {
+              throw new EngineError(
+                'max_tokens',
+                `${agent.name} ran out of output tokens mid tool call.`,
+              );
+            }
+            finalText = text;
+            break;
+          }
+
           messages.push({
             role: 'assistant',
             content: message.content as ModelContentBlockParam[],
           });
-          continue;
-        }
-        const toolUses = message.content.filter(
-          (b): b is ModelToolUseBlock => b.type === 'tool_use',
-        );
-        if (toolUses.length === 0 || message.stop_reason === 'end_turn') {
-          if (message.stop_reason === 'max_tokens' && toolUses.length) {
-            throw new EngineError(
-              'max_tokens',
-              `${agent.name} ran out of output tokens mid tool call.`,
-            );
+          const results: ModelToolResultParam[] = [];
+          for (const use of toolUses) {
+            const input = (use.input && typeof use.input === 'object' ? use.input : {}) as Record<
+              string,
+              unknown
+            >;
+            const outcome = await invokeTool(runtime, trail, use.name, input);
+            results.push({
+              type: 'tool_result',
+              tool_use_id: use.id,
+              content: outcome.text,
+              ...(outcome.isError ? { is_error: true } : {}),
+            });
           }
-          finalText = text;
-          break;
+          messages.push({ role: 'user', content: results });
         }
-
-        messages.push({ role: 'assistant', content: message.content as ModelContentBlockParam[] });
-        const results: ModelToolResultParam[] = [];
-        for (const use of toolUses) {
-          const input = (use.input && typeof use.input === 'object' ? use.input : {}) as Record<
-            string,
-            unknown
-          >;
-          const outcome = await invokeTool(runtime, trail, use.name, input);
-          results.push({
-            type: 'tool_result',
-            tool_use_id: use.id,
-            content: outcome.text,
-            ...(outcome.isError ? { is_error: true } : {}),
-          });
-        }
-        messages.push({ role: 'user', content: results });
+      } catch (err) {
+        throw withSpent(err, usage);
       }
       return { summary: finalText, usage };
     },

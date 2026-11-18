@@ -805,4 +805,50 @@ describe('git_diff and lockfiles (D56)', () => {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('keeps the start of a diff past the cap and says it was cut', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'magpipe-bigdiff-'));
+    try {
+      git(dir, 'init', '-q', '-b', 'main');
+      fs.writeFileSync(path.join(dir, 'a.ts'), 'export const a = 1;\n');
+      git(dir, 'add', '-A');
+      git(dir, 'commit', '-q', '-m', 'init');
+      git(dir, 'switch', '-q', '-c', 'magpipe/big');
+      fs.writeFileSync(path.join(dir, 'a.ts'), 'export const a = 2;\n');
+      const lines = Array.from({ length: 4000 }, (_, i) => `export const line${i} = ${i};`);
+      fs.writeFileSync(path.join(dir, 'z.ts'), `${lines.join('\n')}\n`);
+      git(dir, 'add', '-A');
+      git(dir, 'commit', '-q', '-m', 'big');
+      const diff = (await gitDiff(dir, 'main')).text;
+      expect(diff).toContain('diff --git a/a.ts b/a.ts');
+      expect(diff).toContain('+export const a = 2;');
+      expect(diff.trimEnd().endsWith('… (diff cut; read the files for the rest)')).toBe(true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('names lockfiles from the bound folder, and a removed one as removed', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'magpipe-sublock-'));
+    const app = path.join(root, 'app');
+    try {
+      fs.mkdirSync(app);
+      git(root, 'init', '-q', '-b', 'main');
+      fs.writeFileSync(path.join(app, 'yarn.lock'), '# old\n');
+      fs.writeFileSync(path.join(app, 'index.ts'), 'export {};\n');
+      git(root, 'add', '-A');
+      git(root, 'commit', '-q', '-m', 'init');
+      git(root, 'switch', '-q', '-c', 'magpipe/sub');
+      fs.rmSync(path.join(app, 'yarn.lock'));
+      fs.writeFileSync(path.join(app, 'package-lock.json'), '{}\n');
+      git(root, 'add', '-A');
+      git(root, 'commit', '-q', '-m', 'npm now');
+      const diff = (await gitDiff(app, 'main')).text;
+      expect(diff).toContain(
+        'Lockfiles changed, contents not shown: package-lock.json, yarn.lock (removed).',
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

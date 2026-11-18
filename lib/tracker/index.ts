@@ -616,10 +616,11 @@ export async function readBackMapping(
         color: '#f2994a',
       });
     } catch (err) {
-      // Adding a status can take a team admin in Linear: said with what to do instead.
-      if (!(err instanceof TrackerError) || err.code === 'auth') throw err;
+      // Adding a status can take a team admin in Linear: said with what to do instead. The key
+      // just read the team, so a refusal here (even one Linear answers as 403) is permission.
+      if (!(err instanceof TrackerError) || err.code === 'network') throw err;
       throw new LinearMappingError(
-        `Linear did not add the status ${NEEDS_YOU_NAME} to ${team.name} (${err.message}). Add an open status for it in the team's settings in Linear, then pick it here.`,
+        `Linear did not let this key add the status ${NEEDS_YOU_NAME} to ${team.name}. Add an open status for it in the team's settings in Linear (it can take a team admin), then pick it here.`,
       );
     }
     map.needs_you = { id: made.id, name: made.name };

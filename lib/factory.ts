@@ -51,6 +51,7 @@ import {
 import { goalBranch } from './engine/actions';
 import { ensureWorktree, removeWorktree } from './worktrees';
 import { getTracker, linearReady } from './tracker';
+import { closedNeedsYou } from './tracker/labels';
 import { ForgeError, forgeReady, getForge, type PullRequest } from './forge';
 import { ensureDefaultProject, forgeOf, linearOf, listProjects, resolveProject } from './projects';
 
@@ -1005,7 +1006,7 @@ async function reconcileBuilds(db: Db, problems: string[]): Promise<string[]> {
       await releaseBuildRun(db, goal.id);
       // Handed to the operator: a move back to Approved starts a fresh count (D52).
       await clearRebuilds(db, goal.id);
-      out.push(`${goal.identifier} needs you: ${why}.`);
+      out.push(`${goal.identifier} needs you: ${why}.${closedNeedsYou(moved.state)}`);
     });
   }
   return out;

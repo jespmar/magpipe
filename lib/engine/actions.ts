@@ -6,6 +6,7 @@
  */
 import type { Db } from '../db';
 import { getTracker, linearReady } from '../tracker';
+import { closedNeedsYou } from '../tracker/labels';
 import { forgeOf, linearOf, linearProjectOf } from '../projects';
 import { acceptanceCriteria, type Criterion } from '../goals';
 import { workFacts } from '../work';
@@ -198,7 +199,7 @@ async function mergeGoal({
   if (!allPassed(upstream)) {
     const failed = upstream.find((s) => s.status === 'failed');
     const why = failed
-      ? `“${failed.title}” failed: ${failed.error?.message ?? 'no reason given'}`
+      ? `“${failed.title}” failed: ${(failed.error?.message ?? 'no reason given').replace(/\.+$/, '')}`
       : 'a check before merging did not pass';
     await tracker.comment(
       issue.externalId,
@@ -208,7 +209,10 @@ async function mergeGoal({
     const moved = await tracker.setState(issue.externalId, settings.states.needs_you!.id, signal);
     await recordState(db, issue.id, settings, moved);
     await releaseGoal(db, issue.id);
-    return { status: 'done', summary: `${issue.identifier} needs you: ${why}.` };
+    return {
+      status: 'done',
+      summary: `${issue.identifier} needs you: ${why}.${closedNeedsYou(moved.state)}`,
+    };
   }
   const { forge, repo, settings: forgeSettings } = await getForge(db, await runForge(db, run));
   const merged = await forge.merge(repo, issue.prNumber, forgeSettings.mergeMethod, signal);
@@ -349,7 +353,7 @@ async function finishGoal({
   await clearRebuilds(db, issue.id);
   return {
     status: 'done',
-    summary: `${issue.identifier} needs you: ${handed}. Moved to ${moved.state.name} with the findings.`,
+    summary: `${issue.identifier} needs you: ${handed}. Moved to ${moved.state.name} with the findings.${closedNeedsYou(moved.state)}`,
   };
 }
 
@@ -537,7 +541,7 @@ async function fileGoals({
     await releaseGoalsRun(db, issue.id);
     return {
       status: 'skipped',
-      summary: `Not filed: the goals did not pass review. ${issue.identifier} moved to ${remote.state.name} with the findings.`,
+      summary: `Not filed: the goals did not pass review. ${issue.identifier} moved to ${remote.state.name} with the findings.${closedNeedsYou(remote.state)}`,
     };
   }
 

@@ -301,6 +301,9 @@ describe('run engine', () => {
     expect(plans).toBe(2); // an unparseable plan is retried once
     expect(result.status).toBe('failed');
     expect(result.plan[0]!.error?.code).toBe('limit_steps');
+    // What it spent before it stopped is the step's, and the run's (D56), so the cap counts it.
+    expect(result.plan[0]!.usage?.inputTokens).toBeGreaterThan(0);
+    expect(result.usage.inputTokens).toBeGreaterThanOrEqual(result.plan[0]!.usage!.inputTokens);
   }, 20_000);
 
   it('cancels a running run', async () => {

@@ -55,14 +55,22 @@ type ExecResult = { code: number | null; output: string; truncated: boolean; tim
 
 /**
  * Runs a program without a shell (except for Windows' `.cmd` shims) and keeps the tail of its
- * combined output. On posix it gets its own process group, so a timeout or a cancelled step
- * stops everything it started.
+ * combined output, or its head (`keep: 'head'`, a diff read from the top). On posix it gets its
+ * own process group, so a timeout or a cancelled step stops everything it started.
  */
 function exec(
   file: string,
   args: string[],
-  opts: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number; signal?: AbortSignal },
+  opts: {
+    cwd: string;
+    env: NodeJS.ProcessEnv;
+    timeoutMs: number;
+    signal?: AbortSignal;
+    keep?: 'head' | 'tail';
+    cap?: number;
+  },
 ): Promise<ExecResult> {
+  const cap = opts.cap ?? REPO_OUTPUT_CAP;
   return new Promise((resolve, reject) => {
     if (opts.signal?.aborted) return reject(new Error('Cancelled'));
     const posix = process.platform !== 'win32';
@@ -78,9 +86,10 @@ function exec(
     let truncated = false;
     let timedOut = false;
     const take = (chunk: Buffer) => {
+      if (opts.keep === 'head' && truncated) return;
       output += chunk.toString();
-      if (output.length > REPO_OUTPUT_CAP) {
-        output = output.slice(-REPO_OUTPUT_CAP);
+      if (output.length > cap) {
+        output = opts.keep === 'head' ? output.slice(0, cap) : output.slice(-cap);
         truncated = true;
       }
     };
@@ -315,7 +324,7 @@ async function commandEnv(): Promise<NodeJS.ProcessEnv> {
 async function git(
   cwd: string,
   args: string[],
-  opts: { timeoutMs?: number; signal?: AbortSignal } = {},
+  opts: { timeoutMs?: number; signal?: AbortSignal; keep?: 'head' | 'tail'; cap?: number } = {},
 ): Promise<ExecResult> {
   try {
     return await exec('git', ['-c', 'core.quotepath=off', ...args], {
@@ -323,6 +332,8 @@ async function git(
       env: await commandEnv(),
       timeoutMs: opts.timeoutMs ?? GIT_TIMEOUT_MS,
       signal: opts.signal,
+      keep: opts.keep,
+      cap: opts.cap,
     });
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
@@ -1177,16 +1188,29 @@ export async function gitDiff(
   const diff = await git(
     base,
     ['diff', ...range, '--', '.', ...locks.map((l) => l.replace(':(glob)', ':(exclude,glob)'))],
-    { signal },
+    // Read from the top, so what is cut is the end, and said (D56).
+    { signal, keep: 'head', cap: 2 * REPO_OUTPUT_CAP },
   );
   if (diff.code !== 0) return { text: gitText(diff) || 'git diff failed', isError: true };
-  const lockNames = await git(base, ['diff', '--name-only', ...range, '--', ...locks], { signal });
+  // Named from the bound folder, as the read tool takes them; a removed one is said so.
+  const lockNames = await git(
+    base,
+    ['diff', '--name-status', '--no-renames', '--relative', ...range, '--', ...locks],
+    { signal },
+  );
   const lockDiffs =
-    lockNames.code === 0 ? lockNames.output.trim().split('\n').filter(Boolean) : [];
+    lockNames.code === 0
+      ? lockNames.output
+          .trim()
+          .split('\n')
+          .filter(Boolean)
+          .map((line) => {
+            const [status, ...name] = line.split('\t');
+            return status === 'D' ? `${name.join('\t')} (removed)` : name.join('\t');
+          })
+      : [];
   let text = diff.output.trimEnd();
-  if (text.length > 2 * REPO_OUTPUT_CAP) {
-    text = `${text.slice(0, 2 * REPO_OUTPUT_CAP)}\n… (diff cut; read the files for the rest)`;
-  }
+  if (diff.truncated) text = `${text}\n… (diff cut; read the files for the rest)`;
   const untracked = against
     ? ''
     : await gitOrThrow(base, ['ls-files', '--others', '--exclude-standard', '--', '.'], signal);
