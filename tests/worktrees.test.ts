@@ -137,7 +137,10 @@ describe('worktrees', () => {
     // The operator removed the bound folder's node_modules: the link points at nothing.
     fs.renameSync(path.join(repo, 'node_modules'), path.join(dir, 'nm-aside'));
     try {
-      const ran = await repoRun({ path: wt.path, scripts: ['test'], timeoutSec: 120 }, 'test');
+      const ran = await repoRun(
+        { path: wt.path, scripts: ['test'], timeoutSec: 120, goalWorktree: true },
+        'test',
+      );
       expect(ran.isError).toBe(false);
       expect(ran.text).toContain('dep ok');
       expect(fs.lstatSync(path.join(wt.path, 'node_modules')).isSymbolicLink()).toBe(false);
@@ -162,12 +165,49 @@ describe('worktrees', () => {
         dependencies: { dep: 'file:./dep' },
       }),
     );
-    const ran = await repoRun({ path: wt.path, scripts: ['test'], timeoutSec: 120 }, 'test');
+    const ran = await repoRun(
+      { path: wt.path, scripts: ['test'], timeoutSec: 120, goalWorktree: true },
+      'test',
+    );
     expect(ran.isError).toBe(false);
     expect(ran.text).toContain('dep ok');
     expect(fs.lstatSync(path.join(wt.path, 'node_modules')).isSymbolicLink()).toBe(false);
     // The bound folder's own node_modules is untouched.
     expect(fs.existsSync(path.join(repo, 'node_modules', 'left-pad'))).toBe(true);
+  }, 120_000);
+
+  it('installs over a linked node_modules missing a package, only in a goal’s worktree (D55)', async () => {
+    const wt = await ensureWorktree(repo, 'magpipe/incomplete', data);
+    expect(fs.lstatSync(path.join(wt.path, 'node_modules')).isSymbolicLink()).toBe(true);
+    fs.mkdirSync(path.join(wt.path, 'dep'));
+    fs.writeFileSync(
+      path.join(wt.path, 'dep', 'package.json'),
+      JSON.stringify({ name: 'dep', version: '1.0.0', main: 'index.js' }),
+    );
+    fs.writeFileSync(path.join(wt.path, 'dep', 'index.js'), "module.exports = 'dep here';");
+    const pkg = JSON.stringify({
+      scripts: { test: 'node -e "console.log(require(\'dep\'))"' },
+      dependencies: { dep: 'file:./dep' },
+    });
+    fs.writeFileSync(path.join(wt.path, 'package.json'), pkg);
+    // The bound folder names the same dependencies, and its node_modules does not hold them.
+    fs.writeFileSync(path.join(repo, 'package.json'), pkg);
+    try {
+      const config = { path: wt.path, scripts: ['test'], timeoutSec: 120 };
+      // A worktree the operator made and bound is their own: left as it is.
+      const theirs = await repoRun(config, 'test');
+      expect(theirs.text).toMatch(/^\$ npm run test/);
+      expect(fs.lstatSync(path.join(wt.path, 'node_modules')).isSymbolicLink()).toBe(true);
+      // A goal's: it gets an install of its own.
+      const ran = await repoRun({ ...config, goalWorktree: true }, 'test');
+      expect(ran.isError).toBe(false);
+      expect(ran.text).toContain('Installed the dependencies');
+      expect(ran.text).toContain('dep here');
+      expect(fs.lstatSync(path.join(wt.path, 'node_modules')).isSymbolicLink()).toBe(false);
+      expect(fs.existsSync(path.join(repo, 'node_modules', 'dep'))).toBe(false);
+    } finally {
+      git(repo, 'checkout', '--', 'package.json');
+    }
   }, 120_000);
 
   it('an untracked lockfile gives way to the base’s, and does not keep a worktree from going (D53)', async () => {

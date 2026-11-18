@@ -275,15 +275,20 @@ function shellPath(): Promise<string> {
 
 /**
  * What Magpipe's own process carries that is not the operator's (D55): the desktop server runs with
- * NODE_ENV=production, its port and host, and Next's and Electron's own switches. Passed on, an
- * install leaves out devDependencies, and a project's tests run as a production build.
+ * NODE_ENV=production and its port and host (electron/server.ts), Next and Electron add their own
+ * switches, and a Magpipe started through npm (in development) has npm's lower-case npm_* set.
+ * Passed on, an install leaves out devDependencies and a project's tests run as a production
+ * build. The operator's own NPM_TOKEN, NPM_CONFIG_*, ELECTRON_MIRROR or NEXT_TELEMETRY_DISABLED
+ * are theirs, and stay.
  */
-const OWN_ENV = /^(NODE_ENV|PORT|HOSTNAME|NEXT_.*|__NEXT_.*|ELECTRON_.*|npm_.*)$/i;
+const OWN_ENV = /^(NODE_ENV|PORT|HOSTNAME)$/i;
+const OWN_SWITCHES =
+  /^(NEXT_RUNTIME|__NEXT_.*|ELECTRON_RUN_AS_NODE|ELECTRON_NO_ATTACH_CONSOLE|npm_.*)$/;
 
 /** The environment of a repository command: the operator's, without Magpipe's own settings. */
 export function repositoryEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return Object.fromEntries(
-    Object.entries(childEnv(env)).filter(([k]) => !OWN_ENV.test(k)),
+    Object.entries(childEnv(env)).filter(([k]) => !OWN_ENV.test(k) && !OWN_SWITCHES.test(k)),
   ) as NodeJS.ProcessEnv;
 }
 
@@ -679,7 +684,9 @@ function installArgs(pm: PackageManager): string[] {
     return ['install', '--ignore-scripts', '--include=dev', '--no-audit', '--no-fund'];
   }
   // CI=1 (commandEnv) would freeze pnpm's lockfile; the lockfile is put back after anyway.
-  if (pm === 'pnpm') return ['install', '--ignore-scripts', '--no-frozen-lockfile'];
+  if (pm === 'pnpm') {
+    return ['install', '--ignore-scripts', '--no-frozen-lockfile', '--production=false'];
+  }
   if (pm === 'yarn') {
     return ['install', '--ignore-scripts', '--non-interactive', '--production=false'];
   }
@@ -761,9 +768,9 @@ async function installDependencies(
   dir: string,
   pkg: PackageJson,
   pm: PackageManager,
-  keepLocks: boolean,
-  signal?: AbortSignal,
+  opts: { keepLocks: boolean; goalWorktree: boolean; signal?: AbortSignal },
 ): Promise<Install> {
+  const { keepLocks, signal } = opts;
   const key = dependencyKey(pkg);
   if (key === '[]') return { ran: false };
   // A package inside a workspace is installed from its root, which is the operator's to do.
@@ -779,8 +786,10 @@ async function installDependencies(
   const commonOut = await git(dir, ['rev-parse', '--git-common-dir']);
   if (gitDirOut.code !== 0 || commonOut.code !== 0) return { ran: false };
   const gitDir = gitDirOut.output.trim();
-  // A goal's worktree (D41) has a git folder of its own beside the repository's common one.
-  const linkedWorktree =
+  // A goal's worktree (D41): the engine says so, and it has a git folder of its own beside the
+  // repository's common one. A worktree the operator made and bound is their own checkout.
+  const goalWorktree =
+    opts.goalWorktree &&
     (await real(gitDir)) !== (await real(path.resolve(dir, commonOut.output.trim())));
   const stateFile = path.join(gitDir, 'magpipe-install.json');
   const saved = path.join(gitDir, 'magpipe-install-locks');
@@ -798,7 +807,7 @@ async function installDependencies(
   if (there?.isSymbolicLink()) {
     // Only a goal's worktree link to the bound folder's node_modules is Magpipe's to replace; a
     // link the operator made in their own checkout is theirs.
-    if (!linkedWorktree) return { ran: false };
+    if (!goalWorktree) return { ran: false };
     const target = path.resolve(dir, await fs.readlink(modules));
     const alive = await fs.stat(target).catch(() => null);
     const linked = alive ? await readJson(path.join(path.dirname(target), 'package.json')) : null;
@@ -811,7 +820,7 @@ async function installDependencies(
   } else if (there && !created) {
     // Complete is enough. One missing packages is installed over: always in a goal's worktree, and
     // in the operator's own checkout only once Magpipe has installed there.
-    if ((!state && !linkedWorktree) || (await modulesComplete(modules, pkg))) {
+    if ((!state && !goalWorktree) || (await modulesComplete(modules, pkg))) {
       if (!state || state.key === key) return { ran: false };
     }
   }
@@ -978,13 +987,11 @@ export async function repoRun(
   const file = process.platform === 'win32' ? `${pm}.cmd` : pm;
   const timeoutMs = opts.timeoutMs ?? config.timeoutSec * 1000;
   // The dependencies first, when Magpipe can tell they are not there (D51).
-  const installed = await installDependencies(
-    config.path,
-    read.pkg,
-    pm,
-    Boolean(config.keepLockfiles),
-    opts.signal,
-  );
+  const installed = await installDependencies(config.path, read.pkg, pm, {
+    keepLocks: Boolean(config.keepLockfiles),
+    goalWorktree: Boolean(config.goalWorktree),
+    signal: opts.signal,
+  });
   const wrote =
     installed.ran && installed.lockfiles.length
       ? `\nThe install wrote ${installed.lockfiles.join(', ')}: commit ${installed.lockfiles.length === 1 ? 'it' : 'them'} with package.json, so a clean install gets the same versions.`

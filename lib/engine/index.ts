@@ -246,8 +246,10 @@ export class Engine {
     // A project's run (D45) puts the project's folder and scripts in place of the factory's
     // repository, the one the factory's agents hold; a goal's worktree stands in for the folder.
     const wt = run.input.worktree;
-    const repoPaths: Record<string, { path: string; scripts?: string[]; keepLockfiles?: boolean }> =
-      {};
+    const repoPaths: Record<
+      string,
+      { path: string; scripts?: string[]; keepLockfiles?: boolean; goalWorktree?: boolean }
+    > = {};
     if (project) {
       const granted = new Set(
         agents.filter((a) => a.templateOnly).flatMap((a) => a.tools.map((g) => g.toolId)),
@@ -264,6 +266,7 @@ export class Engine {
         ...repoPaths[wt.toolId],
         path: wt.path,
         keepLockfiles: run.input.template === 'build',
+        goalWorktree: true,
       };
     }
     for (const tool of tools) {
@@ -274,6 +277,7 @@ export class Engine {
           path: o.path,
           scripts: o.scripts ?? tool.repository.scripts,
           ...(o.keepLockfiles ? { keepLockfiles: true } : {}),
+          ...(o.goalWorktree ? { goalWorktree: true } : {}),
         };
       }
     }

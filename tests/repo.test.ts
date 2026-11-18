@@ -350,7 +350,7 @@ describe('scripts ahead of package.json (D51)', () => {
           name: 'fresh',
           private: true,
           scripts: {
-            test: 'node -e "console.log(require(\'dep\'), process.env.NODE_ENV || \'no NODE_ENV\', process.env.PORT || \'no PORT\')"',
+            test: "node -e \"console.log(require('dep'), process.env.NODE_ENV || 'no NODE_ENV', process.env.PORT || 'no PORT')\"",
           },
           devDependencies: { dep: 'file:./dep' },
         }),
@@ -380,6 +380,45 @@ describe('scripts ahead of package.json (D51)', () => {
     // Complete again: the next run goes straight to the script.
     expect((await repoRun(config(), 'test')).text).toMatch(/^\$ npm run test/);
   }, 120_000);
+
+  it('installs devDependencies with pnpm even where its config says production (D55)', async () => {
+    const pnpm = (() => {
+      try {
+        execFileSync('pnpm', ['--version'], { stdio: 'ignore' });
+        return true;
+      } catch {
+        return false;
+      }
+    })();
+    if (!pnpm) return;
+    const own = fs.mkdtempSync(path.join(os.tmpdir(), 'magpipe-pnpm-'));
+    try {
+      execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: own });
+      fs.mkdirSync(path.join(own, 'dep'));
+      fs.writeFileSync(
+        path.join(own, 'dep', 'package.json'),
+        JSON.stringify({ name: 'dep', version: '4.0.0', main: 'index.js' }),
+      );
+      fs.writeFileSync(path.join(own, 'dep', 'index.js'), "module.exports = 'dep 4.0.0';");
+      fs.writeFileSync(
+        path.join(own, 'package.json'),
+        JSON.stringify({
+          name: 'pnpm-fresh',
+          private: true,
+          scripts: { test: 'node -e "console.log(require(\'dep\'))"' },
+          devDependencies: { dep: 'file:./dep' },
+        }),
+      );
+      fs.writeFileSync(path.join(own, 'pnpm-lock.yaml'), "lockfileVersion: '9.0'\n");
+      fs.writeFileSync(path.join(own, '.npmrc'), 'production=true\n');
+      const ran = await repoRun({ path: own, scripts: ['test'], timeoutSec: 120 }, 'test');
+      expect(ran.text).toMatch(/^\$ pnpm install .*--production=false/);
+      expect(ran.isError).toBe(false);
+      expect(ran.text).toContain('dep 4.0.0');
+    } finally {
+      fs.rmSync(own, { recursive: true, force: true });
+    }
+  }, 120_000);
 });
 
 describe('repositoryEnv (D55)', () => {
@@ -395,13 +434,23 @@ describe('repositoryEnv (D55)', () => {
       __NEXT_PRIVATE_ORIGIN: 'x',
       ELECTRON_RUN_AS_NODE: '1',
       npm_config_production: 'true',
+      npm_lifecycle_event: 'dev',
       MAGPIPE_DESKTOP_TOKEN: 'secret',
       ANTHROPIC_API_KEY: 'sk',
+      // The operator's own: credentials and mirrors their projects read.
+      NPM_TOKEN: 'npm-token',
+      NPM_CONFIG_REGISTRY: 'https://mirror.example/npm/',
+      ELECTRON_MIRROR: 'https://mirror.example/electron/',
+      NEXT_TELEMETRY_DISABLED: '1',
     });
     expect(env).toEqual({
       HOME: '/home/op',
       PATH: '/usr/bin',
       NODE_OPTIONS: '--max-old-space-size=4096',
+      NPM_TOKEN: 'npm-token',
+      NPM_CONFIG_REGISTRY: 'https://mirror.example/npm/',
+      ELECTRON_MIRROR: 'https://mirror.example/electron/',
+      NEXT_TELEMETRY_DISABLED: '1',
     });
   });
 });
