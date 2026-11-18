@@ -694,7 +694,15 @@ function installArgs(pm: PackageManager): string[] {
     return ['install', '--ignore-scripts', '--no-frozen-lockfile', '--production=false'];
   }
   if (pm === 'yarn') {
-    return ['install', '--ignore-scripts', '--non-interactive', '--production=false'];
+    // --check-files: yarn classic otherwise trusts its integrity file, and a package removed
+    // from node_modules since is not put back (D55).
+    return [
+      'install',
+      '--ignore-scripts',
+      '--non-interactive',
+      '--production=false',
+      '--check-files',
+    ];
   }
   return ['install', '--ignore-scripts'];
 }
@@ -722,6 +730,8 @@ type Install =
       noTool: boolean;
       /** Lockfiles the install wrote or changed, kept for the change to commit (D53). */
       lockfiles: string[];
+      /** Packages package.json names that a finished install still left out (D55). */
+      missing: string[];
       command: string;
       output: string;
       seconds: number;
@@ -745,7 +755,7 @@ function dependencyKey(pkg: PackageJson): string {
  * removed by hand since. An optional dependency may be left out on this platform, so it is not
  * looked for.
  */
-async function modulesComplete(modules: string, pkg: PackageJson): Promise<boolean> {
+async function modulesMissing(modules: string, pkg: PackageJson): Promise<string[]> {
   const optional = new Set(Object.keys(pkg.optionalDependencies ?? {}));
   const names = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).filter(
     (n) => !optional.has(n),
@@ -758,7 +768,11 @@ async function modulesComplete(modules: string, pkg: PackageJson): Promise<boole
       ),
     ),
   );
-  return found.every(Boolean);
+  return names.filter((_, i) => !found[i]).sort();
+}
+
+async function modulesComplete(modules: string, pkg: PackageJson): Promise<boolean> {
+  return (await modulesMissing(modules, pkg)).length === 0;
 }
 
 async function readJson(file: string): Promise<PackageJson | null> {
@@ -852,15 +866,21 @@ async function installDependencies(
   await excludeNodeModules(dir);
   await saveLocks(dir, saved);
   await fs.writeFile(stateFile, JSON.stringify({ state: 'installing', key }));
-  const settle = async (ok: boolean): Promise<string[]> => {
+  const settle = async (ok: boolean): Promise<{ wrote: string[]; missing: string[] }> => {
     // A finished install's lockfile is part of the change (D53): kept, and named, so the agent
     // commits it with package.json. One cut off or failed is put back as it was.
     const wrote = ok && keepLocks ? await changedLocks(dir, saved) : [];
     if (ok && keepLocks) await fs.rm(saved, { recursive: true, force: true });
     else await restoreLocks(dir, saved);
+    let missing: string[] = [];
     if (ok) {
-      const complete = await modulesComplete(modules, pkg);
-      await fs.writeFile(stateFile, JSON.stringify({ state: 'done', key, complete }));
+      // Left incomplete by the package manager's own config, it is not installed again for the
+      // same dependencies; the run says what is missing, so it is not taken for an install.
+      missing = await modulesMissing(modules, pkg);
+      await fs.writeFile(
+        stateFile,
+        JSON.stringify({ state: 'done', key, complete: missing.length === 0 }),
+      );
     } else if (created) {
       // Made by this install: nothing half-made is left for the next run to trust.
       await fs.rm(modules, { recursive: true, force: true });
@@ -873,7 +893,7 @@ async function installDependencies(
         JSON.stringify({ state: 'done', key: state?.key ?? '', complete: state?.complete }),
       );
     }
-    return wrote;
+    return { wrote, missing };
   };
   const args = installArgs(pm);
   const file = process.platform === 'win32' ? `${pm}.cmd` : pm;
@@ -896,12 +916,13 @@ async function installDependencies(
     res = { code: null, output: notFound(pm), truncated: false, timedOut: false };
   }
   const ok = res.code === 0 && !res.timedOut;
-  const lockfiles = await settle(ok);
+  const { wrote: lockfiles, missing } = await settle(ok);
   return {
     ran: true,
     ok,
     noTool,
     lockfiles,
+    missing,
     command: `${pm} ${args.join(' ')}`,
     output: `${res.truncated ? '… (earlier output cut)\n' : ''}${res.output.trimEnd()}`,
     seconds: Math.round((Date.now() - started) / 100) / 10,
@@ -1025,8 +1046,12 @@ export async function repoRun(
     installed.ran && installed.lockfiles.length
       ? `\nThe install wrote ${installed.lockfiles.join(', ')}: commit ${installed.lockfiles.length === 1 ? 'it' : 'them'} with package.json, so a clean install gets the same versions.`
       : '';
+  const left =
+    installed.ran && installed.ok && installed.missing.length
+      ? `\nnode_modules still lacks ${installed.missing.join(', ')}: the package manager's own config leaves ${installed.missing.length === 1 ? 'it' : 'them'} out, and Magpipe will not install again for the same dependencies.`
+      : '';
   const installLine = installed.ran
-    ? `$ ${installed.command}\n${installed.output}\n${installed.ok ? `Installed the dependencies in ${installed.seconds.toFixed(1)} s.${wrote}` : installed.timedOut ? `The install stopped after ${Math.round(INSTALL_TIMEOUT_MS / 1000)} s without finishing.` : 'The install failed.'}\n`
+    ? `$ ${installed.command}\n${installed.output}\n${installed.ok ? `Installed the dependencies in ${installed.seconds.toFixed(1)} s.${left}${wrote}` : installed.timedOut ? `The install stopped after ${Math.round(INSTALL_TIMEOUT_MS / 1000)} s without finishing.` : 'The install failed.'}\n`
     : '';
   // A package manager installed since the PATH was worked out: looked for again, once (D53).
   if (installed.ran && installed.noTool && !opts.lookedAgain) {

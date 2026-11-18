@@ -420,6 +420,80 @@ describe('scripts ahead of package.json (D51)', () => {
     expect((await repoRun(config(), 'test')).text).toMatch(/^\$ npm run test/);
   }, 120_000);
 
+  const has = (tool: string) => {
+    try {
+      execFileSync(tool, ['--version'], { stdio: 'ignore' });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  /** A project of its own with one devDependency, `dep`, and the files given. */
+  const scratch = (files: Record<string, string>) => {
+    const own = fs.mkdtempSync(path.join(os.tmpdir(), 'magpipe-pm-'));
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: own });
+    fs.mkdirSync(path.join(own, 'dep'));
+    fs.writeFileSync(
+      path.join(own, 'dep', 'package.json'),
+      JSON.stringify({ name: 'dep', version: '5.0.0', main: 'index.js' }),
+    );
+    fs.writeFileSync(path.join(own, 'dep', 'index.js'), "module.exports = 'dep 5.0.0';");
+    fs.writeFileSync(
+      path.join(own, 'package.json'),
+      JSON.stringify({
+        name: 'pm-fresh',
+        private: true,
+        scripts: { test: 'node -e "console.log(require(\'dep\'))"' },
+        devDependencies: { dep: 'file:./dep' },
+      }),
+    );
+    for (const [name, text] of Object.entries(files)) fs.writeFileSync(path.join(own, name), text);
+    return own;
+  };
+
+  it('yarn puts back a package removed since its install (D55)', async () => {
+    if (!has('yarn')) return;
+    const own = scratch({ 'yarn.lock': '' });
+    const cfg = { path: own, scripts: ['test'], timeoutSec: 120, keepLockfiles: true };
+    try {
+      const first = await repoRun(cfg, 'test');
+      expect(first.text).toMatch(/^\$ yarn install .*--check-files/);
+      expect(first.text).toContain('dep 5.0.0');
+      fs.rmSync(path.join(own, 'node_modules', 'dep'), { recursive: true, force: true });
+      const again = await repoRun(cfg, 'test');
+      expect(again.isError).toBe(false);
+      expect(again.text).toContain('dep 5.0.0');
+    } finally {
+      fs.rmSync(own, { recursive: true, force: true });
+    }
+  }, 120_000);
+
+  it('says what an install its own config cut short left out, and does not repeat it (D55)', async () => {
+    if (!has('bun')) return;
+    // bun has no flag that brings devDependencies back over a bunfig that leaves them out (and
+    // then holds its lockfile frozen, so the one here matches package.json).
+    const own = scratch({
+      'bun.lock': JSON.stringify({
+        lockfileVersion: 1,
+        workspaces: { '': { name: 'pm-fresh', devDependencies: { dep: 'file:./dep' } } },
+        packages: { dep: ['dep@file:dep', {}] },
+      }),
+      'bunfig.toml': '[install]\nproduction = true\n',
+    });
+    const cfg = { path: own, scripts: ['test'], timeoutSec: 120 };
+    try {
+      const first = await repoRun(cfg, 'test');
+      if (first.text.includes('could not find bun')) return;
+      expect(first.text).toContain(
+        "node_modules still lacks dep: the package manager's own config leaves it out",
+      );
+      const again = await repoRun(cfg, 'test');
+      expect(again.text).toMatch(/^\$ bun run test/);
+    } finally {
+      fs.rmSync(own, { recursive: true, force: true });
+    }
+  }, 120_000);
+
   it('installs devDependencies with pnpm even where its config says production (D55)', async () => {
     const pnpm = (() => {
       try {
@@ -481,6 +555,10 @@ describe('repositoryEnv (D55)', () => {
       NPM_CONFIG_REGISTRY: 'https://mirror.example/npm/',
       ELECTRON_MIRROR: 'https://mirror.example/electron/',
       NEXT_TELEMETRY_DISABLED: '1',
+      // What git needs to push and clone.
+      SSH_AUTH_SOCK: '/tmp/agent.sock',
+      GIT_ASKPASS: '/usr/bin/askpass',
+      GIT_CONFIG_COUNT: '1',
     });
     expect(env).toEqual({
       HOME: '/home/op',
@@ -490,6 +568,9 @@ describe('repositoryEnv (D55)', () => {
       NPM_CONFIG_REGISTRY: 'https://mirror.example/npm/',
       ELECTRON_MIRROR: 'https://mirror.example/electron/',
       NEXT_TELEMETRY_DISABLED: '1',
+      SSH_AUTH_SOCK: '/tmp/agent.sock',
+      GIT_ASKPASS: '/usr/bin/askpass',
+      GIT_CONFIG_COUNT: '1',
     });
   });
 

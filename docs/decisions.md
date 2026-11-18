@@ -1482,14 +1482,17 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
   `NPM_TOKEN`, `NPM_CONFIG_*`, `npm_config_*`, `ELECTRON_MIRROR`, `NEXT_TELEMETRY_DISABLED`.
 - **The install asks for devDependencies itself.** npm gets `--include=dev`, and pnpm and yarn
   `--production=false`, so a project or user config that omits them does not either. bun has no
-  such flag; a bunfig that leaves them out is the operator's to change.
+  such flag; a bunfig that leaves them out is the operator's to change. yarn also gets
+  `--check-files`: without it yarn classic trusts its integrity file, and a package removed from
+  `node_modules` since is not put back.
 - **An install is trusted only while it is complete.** Before skipping, Magpipe looks for an
   entry in `node_modules` (a folder or a link) for each package package.json names, optional
   dependencies aside, which a platform may leave out. The state file records whether the install
   left them all (`complete`). One missing since is installed again: in a goal's worktree whatever
   made its `node_modules`, including a link to the bound folder's, and in the operator's own
   checkout only where Magpipe installed before. One the install itself left incomplete (a bun or
-  workspace config) is not installed again and again for the same dependencies. A state file from
+  workspace config) is not installed again and again for the same dependencies, and the run names
+  what `node_modules` still lacks, so it is not taken for an install that worked. A state file from
   before D55 has no `complete`, so each such install is redone once: the ones made without
   devDependencies heal on their next run, a workspace's members' included.
 - **A goal's worktree is the engine's to name.** The engine sets `goalWorktree` on the repository
