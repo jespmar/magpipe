@@ -17,9 +17,10 @@ import {
   type Step,
   type Usage,
 } from '../schemas';
+import { ZERO_USAGE } from '../pricing';
 import type { RunBackend } from './backend';
 import { emitEvent } from './events';
-import { EngineError, withRetries } from './model';
+import { EngineError, spentOf, withRetries, withSpent } from './model';
 import { memoryText } from './plan';
 import { setupTools, type StepConventions, type Trail } from './tools';
 import { CONVENTIONS_CAP } from '../repo';
@@ -169,9 +170,13 @@ export async function runStep(opts: {
     return { summary: text.slice(0, 1000), usage: outcome.usage };
   } catch (err) {
     if (timeout.aborted && !opts.signal.aborted) {
-      throw new EngineError(
-        'timeout',
-        `${agent.name} ran past its ${agent.limits.timeoutSec} s limit.`,
+      // What it spent until the clock ran out is kept (D56).
+      throw withSpent(
+        new EngineError(
+          'timeout',
+          `${agent.name} ran past its ${agent.limits.timeoutSec} s limit.`,
+        ),
+        spentOf(err) ?? ZERO_USAGE,
       );
     }
     throw err;

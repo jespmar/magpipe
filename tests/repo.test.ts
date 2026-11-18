@@ -823,6 +823,14 @@ describe('git_diff and lockfiles (D56)', () => {
       expect(diff).toContain('diff --git a/a.ts b/a.ts');
       expect(diff).toContain('+export const a = 2;');
       expect(diff.trimEnd().endsWith('… (diff cut; read the files for the rest)')).toBe(true);
+      // Cut at a whole character: no half of an emoji is left before the marker.
+      const emoji = Array.from({ length: 30_000 }, () => '😀').join('');
+      fs.writeFileSync(path.join(dir, 'a.ts'), `export const a = '${emoji}';\n`);
+      git(dir, 'commit', '-q', '-am', 'emoji');
+      const wide = (await gitDiff(dir, 'main')).text;
+      expect(wide).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+      expect(wide).not.toContain('\uFFFD');
+      expect(wide).toContain('… (diff cut; read the files for the rest)');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -835,17 +843,19 @@ describe('git_diff and lockfiles (D56)', () => {
       fs.mkdirSync(app);
       git(root, 'init', '-q', '-b', 'main');
       fs.writeFileSync(path.join(app, 'yarn.lock'), '# old\n');
+      fs.mkdirSync(path.join(app, 'qu"ote'));
       fs.writeFileSync(path.join(app, 'index.ts'), 'export {};\n');
       git(root, 'add', '-A');
       git(root, 'commit', '-q', '-m', 'init');
       git(root, 'switch', '-q', '-c', 'magpipe/sub');
       fs.rmSync(path.join(app, 'yarn.lock'));
       fs.writeFileSync(path.join(app, 'package-lock.json'), '{}\n');
+      fs.writeFileSync(path.join(app, 'qu"ote', 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
       git(root, 'add', '-A');
       git(root, 'commit', '-q', '-m', 'npm now');
       const diff = (await gitDiff(app, 'main')).text;
       expect(diff).toContain(
-        'Lockfiles changed, contents not shown: package-lock.json, yarn.lock (removed).',
+        'Lockfiles changed, contents not shown: package-lock.json, qu"ote/pnpm-lock.yaml, yarn.lock (removed).',
       );
     } finally {
       fs.rmSync(root, { recursive: true, force: true });

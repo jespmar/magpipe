@@ -431,6 +431,8 @@ describe('the goals template', () => {
       status: 'failed',
       error: { code: 'no_goals' },
     });
+    // The step ran to its end and spent: that stays on it (D56).
+    expect(done.plan.find((s) => s.id === 'goals')!.usage?.inputTokens).toBeGreaterThan(0);
   }, 30_000);
 
   it('refuses to start without the factory’s goal agents', async () => {

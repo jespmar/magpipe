@@ -31,6 +31,7 @@ import {
   describeFailure,
   EngineError,
   spentOf,
+  withSpent,
   withRetries,
   type ModelClient,
 } from './model';
@@ -389,7 +390,9 @@ export class Engine {
           wave.push(step);
         }
 
-        await Promise.all(
+        // Every step of the wave settles before a failure goes on (D56): a cancel reaches them all
+        // at once, and each records what it spent before the run is closed.
+        const waveResults = await Promise.allSettled(
           wave.map(async (step) => {
             // Magpipe's own work (D38): no agent, no model, no spend, no lock.
             if (step.action) {
@@ -483,9 +486,12 @@ export class Engine {
               });
               const goals = (recordGoals as { goals?: Goal[] } | undefined)?.goals;
               if (recordGoals && !goals) {
-                throw new EngineError(
-                  'no_goals',
-                  `${agent.name} finished without recording goals that pass Magpipe's checks.`,
+                throw withSpent(
+                  new EngineError(
+                    'no_goals',
+                    `${agent.name} finished without recording goals that pass Magpipe's checks.`,
+                  ),
+                  outcome.usage,
                 );
               }
               await this.finishStep(save, () => run!, step.id, {
@@ -502,7 +508,16 @@ export class Engine {
               });
               await emit('message', `${agent.name} finished: ${step.title}`, null, step.id);
             } catch (err) {
-              if (signal.aborted) throw err;
+              if (signal.aborted) {
+                // Cancelled: the step stays live for the run to close, with what it spent.
+                const spent = spentOf(err);
+                if (spent) {
+                  await save({
+                    plan: run!.plan.map((s) => (s.id === step.id ? { ...s, usage: spent } : s)),
+                  });
+                }
+                throw err;
+              }
               const f =
                 err instanceof EngineError
                   ? { code: err.code, message: err.message }
@@ -529,6 +544,10 @@ export class Engine {
             }
           }),
         );
+        const rejected = waveResults.find(
+          (r): r is PromiseRejectedResult => r.status === 'rejected',
+        );
+        if (rejected) throw rejected.reason;
         if (capStop) throw capStop;
 
         // A reviewing step that sent the work back reopens it: the steps it reviews run again
@@ -695,7 +714,9 @@ export class Engine {
         ),
         finishedAt,
         durationMs: finishedAt.getTime() - (run.startedAt ?? run.createdAt).getTime(),
-        usage: addUsage(run.usage, stepUsage),
+        // A plan or merge call that failed keeps its cost (D56). A cancelled step's is already
+        // on the step, so a cancel adds nothing here.
+        usage: addUsage(addUsage(run.usage, stepUsage), (!cancelled && spentOf(err)) || ZERO_USAGE),
       });
       await emit('error', f.message, { code: f.code });
     } finally {
