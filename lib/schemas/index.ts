@@ -332,6 +332,11 @@ export const repositoryConfig = z.object({
    * factory build run only (D53), never stored. Otherwise they are put back as they were.
    */
   keepLockfiles: z.boolean().optional(),
+  /**
+   * The folder is a goal's worktree (D41), Magpipe's own: set by the engine, never stored. Its
+   * node_modules, a link to the bound folder's included, is Magpipe's to install over (D55).
+   */
+  goalWorktree: z.boolean().optional(),
 });
 
 export const tool = z.object({

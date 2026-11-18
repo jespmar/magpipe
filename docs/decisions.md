@@ -1473,14 +1473,19 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
   and every later run trusted it.
 - **`repositoryEnv` leaves Magpipe's own settings out.** On top of the secrets `childEnv` drops,
   a repository command (and the login-shell probe for the PATH, D53) no longer sees `NODE_ENV`,
-  `PORT`, `HOSTNAME`, `NEXT_*`, `__NEXT_*`, `ELECTRON_*` or `npm_*` from Magpipe's process. A
-  project's tests do not run as a production build, and a dev server it starts does not take
-  Magpipe's port.
-- **The install asks for devDependencies itself.** npm gets `--include=dev` and yarn
-  `--production=false`, so an npm config that omits them does not either.
+  `PORT` or `HOSTNAME` from Magpipe's process, Next's `NEXT_RUNTIME` and `__NEXT_*`, Electron's
+  `ELECTRON_RUN_AS_NODE` and `ELECTRON_NO_ATTACH_CONSOLE`, or the lower-case `npm_*` npm sets
+  when Magpipe itself is started through it. A project's tests do not run as a production build,
+  and a dev server it starts does not take Magpipe's port. The operator's own settings stay:
+  `NPM_TOKEN`, `NPM_CONFIG_*`, `ELECTRON_MIRROR`, `NEXT_TELEMETRY_DISABLED` and the like.
+- **The install asks for devDependencies itself.** npm gets `--include=dev`, and pnpm and yarn
+  `--production=false`, so a project or user config that omits them does not either.
 - **An install is trusted only while it is complete.** Before skipping, Magpipe looks for each
   package package.json names in `node_modules` (optional dependencies aside, which a platform
   may leave out). One missing is installed again: in a goal's worktree whatever made its
   `node_modules`, including a link to the bound folder's, and in the operator's own checkout only
   where Magpipe installed before. The installs D51 to D54 made without devDependencies heal on
   their next run.
+- **A goal's worktree is the engine's to name.** The engine sets `goalWorktree` on the repository
+  tools of a run in a goal's worktree (D41), never stored; a git worktree the operator made and
+  bound is their own checkout, and its `node_modules` is left as it is.
