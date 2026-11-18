@@ -1462,3 +1462,25 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
   home folder or from an environment variable goes through them; a new one should too.
 - **`nodeDirs` takes nvm's folder as an argument** (`NVM_DIR`, passed by the caller), so a test,
   or a CI runner with nvm of its own, gets the folder it names.
+
+## D55 · A project's commands run with the operator's settings, not Magpipe's
+
+- **Why.** A build of a new project failed every round with `vitest: command not found`
+  (exit 127), and so did its lint and typecheck. The desktop server runs with
+  `NODE_ENV=production` (`electron/server.ts`), and every repository command inherited it. npm
+  leaves out devDependencies under it, which is where a project's test runner, linter and
+  compiler live; the install still finished, was recorded as done for those dependencies (D51),
+  and every later run trusted it.
+- **`repositoryEnv` leaves Magpipe's own settings out.** On top of the secrets `childEnv` drops,
+  a repository command (and the login-shell probe for the PATH, D53) no longer sees `NODE_ENV`,
+  `PORT`, `HOSTNAME`, `NEXT_*`, `__NEXT_*`, `ELECTRON_*` or `npm_*` from Magpipe's process. A
+  project's tests do not run as a production build, and a dev server it starts does not take
+  Magpipe's port.
+- **The install asks for devDependencies itself.** npm gets `--include=dev` and yarn
+  `--production=false`, so an npm config that omits them does not either.
+- **An install is trusted only while it is complete.** Before skipping, Magpipe looks for each
+  package package.json names in `node_modules` (optional dependencies aside, which a platform
+  may leave out). One missing is installed again: in a goal's worktree whatever made its
+  `node_modules`, including a link to the bound folder's, and in the operator's own checkout only
+  where Magpipe installed before. The installs D51 to D54 made without devDependencies heal on
+  their next run.

@@ -255,10 +255,10 @@ function shellPath(): Promise<string> {
     for (const flags of ['-ilc', '-lc']) {
       try {
         // The operator's own startup files run here: without Magpipe's secrets, as every
-        // repository command does (childEnv).
+        // repository command does (repositoryEnv).
         const res = await exec(shell, [flags, `printf '\\n${PATH_MARK}%s\\n' "$PATH"`], {
           cwd: homeDir(),
-          env: childEnv(process.env),
+          env: repositoryEnv(process.env),
           timeoutMs: 10_000,
         });
         // Read whatever the shell printed: some exit non-zero after a startup file complains.
@@ -273,10 +273,24 @@ function shellPath(): Promise<string> {
   return loginPath;
 }
 
+/**
+ * What Magpipe's own process carries that is not the operator's (D55): the desktop server runs with
+ * NODE_ENV=production, its port and host, and Next's and Electron's own switches. Passed on, an
+ * install leaves out devDependencies, and a project's tests run as a production build.
+ */
+const OWN_ENV = /^(NODE_ENV|PORT|HOSTNAME|NEXT_.*|__NEXT_.*|ELECTRON_.*|npm_.*)$/i;
+
+/** The environment of a repository command: the operator's, without Magpipe's own settings. */
+export function repositoryEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return Object.fromEntries(
+    Object.entries(childEnv(env)).filter(([k]) => !OWN_ENV.test(k)),
+  ) as NodeJS.ProcessEnv;
+}
+
 /** The environment a repository command sees: the operator's, minus Magpipe's own secrets. */
 async function commandEnv(): Promise<NodeJS.ProcessEnv> {
   return {
-    ...childEnv(process.env),
+    ...repositoryEnv(process.env),
     PATH: await shellPath(),
     CI: '1',
     FORCE_COLOR: '0',
@@ -631,6 +645,7 @@ type PackageJson = {
   scripts?: Record<string, unknown>;
   dependencies?: Record<string, unknown>;
   devDependencies?: Record<string, unknown>;
+  optionalDependencies?: Record<string, unknown>;
 };
 
 /** A folder's package.json: there and parsed, not there, or there and not JSON. */
@@ -659,10 +674,15 @@ async function readPackageJson(
 
 /** The install each package manager does from package.json, the packages' own scripts not run. */
 function installArgs(pm: PackageManager): string[] {
-  if (pm === 'npm') return ['install', '--ignore-scripts', '--no-audit', '--no-fund'];
+  // The checks need devDependencies, whatever NODE_ENV or the npm config says (D55).
+  if (pm === 'npm') {
+    return ['install', '--ignore-scripts', '--include=dev', '--no-audit', '--no-fund'];
+  }
   // CI=1 (commandEnv) would freeze pnpm's lockfile; the lockfile is put back after anyway.
   if (pm === 'pnpm') return ['install', '--ignore-scripts', '--no-frozen-lockfile'];
-  if (pm === 'yarn') return ['install', '--ignore-scripts', '--non-interactive'];
+  if (pm === 'yarn') {
+    return ['install', '--ignore-scripts', '--non-interactive', '--production=false'];
+  }
   return ['install', '--ignore-scripts'];
 }
 
@@ -703,6 +723,20 @@ function dependencyKey(pkg: PackageJson): string {
       .sort()
       .map((k) => [k, named[k]]),
   );
+}
+
+/**
+ * Whether every package package.json names is in node_modules (D55). An install recorded as done
+ * can still lack some: one made without devDependencies, or packages removed by hand since. An
+ * optional dependency may be left out on this platform, so it is not looked for.
+ */
+async function modulesComplete(modules: string, pkg: PackageJson): Promise<boolean> {
+  const optional = new Set(Object.keys(pkg.optionalDependencies ?? {}));
+  const names = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).filter(
+    (n) => !optional.has(n),
+  );
+  const found = await Promise.all(names.map((n) => exists(path.join(modules, n, 'package.json'))));
+  return found.every(Boolean);
 }
 
 async function readJson(file: string): Promise<PackageJson | null> {
@@ -768,13 +802,18 @@ async function installDependencies(
     const target = path.resolve(dir, await fs.readlink(modules));
     const alive = await fs.stat(target).catch(() => null);
     const linked = alive ? await readJson(path.join(path.dirname(target), 'package.json')) : null;
-    if (linked && dependencyKey(linked) === key) return { ran: false };
-    // Gone, or installed for other dependencies: this worktree gets an install of its own.
+    if (linked && dependencyKey(linked) === key && (await modulesComplete(modules, pkg))) {
+      return { ran: false };
+    }
+    // Gone, installed for other dependencies, or missing some: this worktree gets its own.
     await fs.unlink(modules);
     created = true;
   } else if (there && !created) {
-    if (!state) return { ran: false };
-    if (state.key === key) return { ran: false };
+    // Complete is enough. One missing packages is installed over: always in a goal's worktree, and
+    // in the operator's own checkout only once Magpipe has installed there.
+    if ((!state && !linkedWorktree) || (await modulesComplete(modules, pkg))) {
+      if (!state || state.key === key) return { ran: false };
+    }
   }
   await excludeNodeModules(dir);
   await saveLocks(dir, saved);
