@@ -500,7 +500,7 @@ describe('repositoryEnv (D55)', () => {
         TURBOPACK: '1',
         npm_config_registry: 'https://mirror.example/npm/',
         npm_config_https_proxy: 'http://proxy.example:3128',
-      }),
+      } as unknown as NodeJS.ProcessEnv),
     ).toEqual({
       HOME: '/home/op',
       npm_config_registry: 'https://mirror.example/npm/',
