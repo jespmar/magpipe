@@ -127,6 +127,10 @@ engine and no sign-in on desktop.
   sign-in, which is never stored (D47). A new project is made by the wizard's tasks in
   `lib/project-wizard.ts` (D49), each safe to run again; a clone goes through `lib/clone.ts`,
   which hands git the token through its environment, never in a URL or the repository's config.
+- **Paths on the operator's computer go through `lib/runtime-path.ts`** (D54): a path built from
+  the home folder or an environment variable uses `runtimePath` / `homeDir` / `envVar`, never
+  `path.join(os.homedir(), ...)` or `process.env.X` in a path, or Next's build tracer searches
+  the build machine's folders and the Windows installer build fails.
 - **Tests never need model credentials.** Unit tests script `ModelClient`; the Playwright
   server runs with `MAGPIPE_MODEL_STUB=scripted` (`lib/engine/stub-model.ts`), which the engine
   ignores in production builds.

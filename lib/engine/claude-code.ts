@@ -7,8 +7,7 @@
  */
 import { execFile, spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
+import { envVar, homeDir, runtimePath } from '../runtime-path';
 import { promisify } from 'node:util';
 import { env } from '../env';
 import type { Usage } from '../schemas';
@@ -89,19 +88,24 @@ async function fromLoginShell(): Promise<string | null> {
 
 /** Where the installers put it when it is not on the PATH. */
 function usualPlaces(): string[] {
-  const home = os.homedir();
+  // Built at run time only, out of the build's file tracer's reach (D54).
+  const home = homeDir();
   if (process.platform === 'win32') {
     return [
-      path.join(process.env.APPDATA ?? path.join(home, 'AppData', 'Roaming'), 'npm', 'claude.cmd'),
-      path.join(home, '.claude', 'local', 'claude.exe'),
+      runtimePath(
+        envVar('APPDATA') ?? runtimePath(home, 'AppData', 'Roaming'),
+        'npm',
+        'claude.cmd',
+      ),
+      runtimePath(home, '.claude', 'local', 'claude.exe'),
     ];
   }
   return [
-    path.join(home, '.claude', 'local', 'claude'),
-    path.join(home, '.local', 'bin', 'claude'),
-    path.join(home, '.npm-global', 'bin', 'claude'),
-    '/opt/homebrew/bin/claude',
-    '/usr/local/bin/claude',
+    runtimePath(home, '.claude', 'local', 'claude'),
+    runtimePath(home, '.local', 'bin', 'claude'),
+    runtimePath(home, '.npm-global', 'bin', 'claude'),
+    runtimePath('/opt/homebrew/bin/claude'),
+    runtimePath('/usr/local/bin/claude'),
   ];
 }
 
