@@ -1472,20 +1472,26 @@ magpipe/x · test passed`. A run's artefacts gain `kind`, `repo` and `detail` be
   compiler live; the install still finished, was recorded as done for those dependencies (D51),
   and every later run trusted it.
 - **`repositoryEnv` leaves Magpipe's own settings out.** On top of the secrets `childEnv` drops,
-  a repository command (and the login-shell probe for the PATH, D53) no longer sees `NODE_ENV`,
-  `PORT` or `HOSTNAME` from Magpipe's process, Next's `NEXT_RUNTIME` and `__NEXT_*`, Electron's
-  `ELECTRON_RUN_AS_NODE` and `ELECTRON_NO_ATTACH_CONSOLE`, or the lower-case `npm_*` npm sets
-  when Magpipe itself is started through it. A project's tests do not run as a production build,
-  and a dev server it starts does not take Magpipe's port. The operator's own settings stay:
-  `NPM_TOKEN`, `NPM_CONFIG_*`, `ELECTRON_MIRROR`, `NEXT_TELEMETRY_DISABLED` and the like.
+  a repository command, the login-shell probe for the PATH (D53), and the git of
+  `lib/worktrees.ts` and `lib/clone.ts` (whose hooks are the project's) no longer see `NODE_ENV`,
+  `PORT` or `HOSTNAME` from Magpipe's process, Next's `NEXT_RUNTIME` and `__NEXT_*`, `TURBOPACK`,
+  or Electron's `ELECTRON_RUN_AS_NODE` and `ELECTRON_NO_ATTACH_CONSOLE`. A Magpipe started by an
+  npm script (in development, `npm_lifecycle_event` set) also leaves out npm's lower-case `npm_*`;
+  otherwise those are the operator's. A project's tests do not run as a production build, and a
+  dev server it starts does not take Magpipe's port. The operator's own settings stay:
+  `NPM_TOKEN`, `NPM_CONFIG_*`, `npm_config_*`, `ELECTRON_MIRROR`, `NEXT_TELEMETRY_DISABLED`.
 - **The install asks for devDependencies itself.** npm gets `--include=dev`, and pnpm and yarn
-  `--production=false`, so a project or user config that omits them does not either.
-- **An install is trusted only while it is complete.** Before skipping, Magpipe looks for each
-  package package.json names in `node_modules` (optional dependencies aside, which a platform
-  may leave out). One missing is installed again: in a goal's worktree whatever made its
-  `node_modules`, including a link to the bound folder's, and in the operator's own checkout only
-  where Magpipe installed before. The installs D51 to D54 made without devDependencies heal on
-  their next run.
+  `--production=false`, so a project or user config that omits them does not either. bun has no
+  such flag; a bunfig that leaves them out is the operator's to change.
+- **An install is trusted only while it is complete.** Before skipping, Magpipe looks for an
+  entry in `node_modules` (a folder or a link) for each package package.json names, optional
+  dependencies aside, which a platform may leave out. The state file records whether the install
+  left them all (`complete`). One missing since is installed again: in a goal's worktree whatever
+  made its `node_modules`, including a link to the bound folder's, and in the operator's own
+  checkout only where Magpipe installed before. One the install itself left incomplete (a bun or
+  workspace config) is not installed again and again for the same dependencies. A state file from
+  before D55 has no `complete`, so each such install is redone once: the ones made without
+  devDependencies heal on their next run, a workspace's members' included.
 - **A goal's worktree is the engine's to name.** The engine sets `goalWorktree` on the repository
   tools of a run in a goal's worktree (D41), never stored; a git worktree the operator made and
   bound is their own checkout, and its `node_modules` is left as it is.

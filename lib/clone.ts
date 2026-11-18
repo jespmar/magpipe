@@ -11,6 +11,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { repoFromRemote } from './forge';
 import type { CloneSource } from './forge/types';
+import { repositoryEnv } from './repo';
 import { originUrl } from './worktrees';
 
 export class CloneError extends Error {
@@ -105,7 +106,7 @@ export async function checkCloneTarget(input: {
 
 /** The environment git clones with: never asks on a terminal, and carries the token if any. */
 function cloneEnv(source: CloneSource, token: string | null): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: '0' };
+  const env: NodeJS.ProcessEnv = { ...repositoryEnv(process.env), GIT_TERMINAL_PROMPT: '0' };
   if (source.auth && token) {
     // Config given through the environment (git 2.31+) applies to this command only.
     const n = Number(env.GIT_CONFIG_COUNT ?? 0) || 0;

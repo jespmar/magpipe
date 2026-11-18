@@ -275,20 +275,26 @@ function shellPath(): Promise<string> {
 
 /**
  * What Magpipe's own process carries that is not the operator's (D55): the desktop server runs with
- * NODE_ENV=production and its port and host (electron/server.ts), Next and Electron add their own
- * switches, and a Magpipe started through npm (in development) has npm's lower-case npm_* set.
- * Passed on, an install leaves out devDependencies and a project's tests run as a production
- * build. The operator's own NPM_TOKEN, NPM_CONFIG_*, ELECTRON_MIRROR or NEXT_TELEMETRY_DISABLED
- * are theirs, and stay.
+ * NODE_ENV=production and its port and host (electron/server.ts), and Next, Turbopack and Electron
+ * add their own switches. Passed on, an install leaves out devDependencies and a project's tests
+ * run as a production build. The operator's own NPM_TOKEN, NPM_CONFIG_*, ELECTRON_MIRROR or
+ * NEXT_TELEMETRY_DISABLED are theirs, and stay.
  */
 const OWN_ENV = /^(NODE_ENV|PORT|HOSTNAME)$/i;
 const OWN_SWITCHES =
-  /^(NEXT_RUNTIME|__NEXT_.*|ELECTRON_RUN_AS_NODE|ELECTRON_NO_ATTACH_CONSOLE|npm_.*)$/;
+  /^(NEXT_RUNTIME|__NEXT_.*|TURBOPACK|ELECTRON_RUN_AS_NODE|ELECTRON_NO_ATTACH_CONSOLE)$/;
 
-/** The environment of a repository command: the operator's, without Magpipe's own settings. */
+/**
+ * The environment of a repository command: the operator's, without Magpipe's own settings. A
+ * Magpipe started by an npm script (in development) carries npm's lower-case npm_* for that
+ * script, which are left out too; otherwise an npm_config_* there is the operator's.
+ */
 export function repositoryEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const fromNpm = Boolean(env.npm_lifecycle_event);
   return Object.fromEntries(
-    Object.entries(childEnv(env)).filter(([k]) => !OWN_ENV.test(k) && !OWN_SWITCHES.test(k)),
+    Object.entries(childEnv(env)).filter(
+      ([k]) => !OWN_ENV.test(k) && !OWN_SWITCHES.test(k) && !(fromNpm && k.startsWith('npm_')),
+    ),
   ) as NodeJS.ProcessEnv;
 }
 
@@ -733,16 +739,25 @@ function dependencyKey(pkg: PackageJson): string {
 }
 
 /**
- * Whether every package package.json names is in node_modules (D55). An install recorded as done
- * can still lack some: one made without devDependencies, or packages removed by hand since. An
- * optional dependency may be left out on this platform, so it is not looked for.
+ * Whether every package package.json names has an entry in node_modules (D55): a folder, or a
+ * link, even one to a folder without a package.json, as a `file:` or `link:` dependency may be.
+ * An install recorded as done can still lack some: one made without devDependencies, or packages
+ * removed by hand since. An optional dependency may be left out on this platform, so it is not
+ * looked for.
  */
 async function modulesComplete(modules: string, pkg: PackageJson): Promise<boolean> {
   const optional = new Set(Object.keys(pkg.optionalDependencies ?? {}));
   const names = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).filter(
     (n) => !optional.has(n),
   );
-  const found = await Promise.all(names.map((n) => exists(path.join(modules, n, 'package.json'))));
+  const found = await Promise.all(
+    names.map((n) =>
+      fs.lstat(path.join(modules, n)).then(
+        () => true,
+        () => false,
+      ),
+    ),
+  );
   return found.every(Boolean);
 }
 
@@ -793,7 +808,12 @@ async function installDependencies(
     (await real(gitDir)) !== (await real(path.resolve(dir, commonOut.output.trim())));
   const stateFile = path.join(gitDir, 'magpipe-install.json');
   const saved = path.join(gitDir, 'magpipe-install-locks');
-  const state = (await readJson(stateFile)) as { state?: string; key?: string } | null;
+  // `complete` (D55): whether the install left every package package.json names in place.
+  const state = (await readJson(stateFile)) as {
+    state?: string;
+    key?: string;
+    complete?: boolean;
+  } | null;
   const modules = path.join(dir, 'node_modules');
 
   // An install cut off before (a crash, a quit): its lockfiles are put back from what was saved
@@ -818,11 +838,16 @@ async function installDependencies(
     await fs.unlink(modules);
     created = true;
   } else if (there && !created) {
-    // Complete is enough. One missing packages is installed over: always in a goal's worktree, and
-    // in the operator's own checkout only once Magpipe has installed there.
-    if ((!state && !goalWorktree) || (await modulesComplete(modules, pkg))) {
-      if (!state || state.key === key) return { ran: false };
+    if (!state) {
+      // The operator's own, unless it is a goal's worktree and missing packages.
+      if (!goalWorktree || (await modulesComplete(modules, pkg))) return { ran: false };
+    } else if (state.key === key && typeof state.complete === 'boolean') {
+      // Installed for these dependencies. One the install itself left incomplete (a bun or
+      // workspace config that leaves devDependencies out) is as complete as installing makes it;
+      // one missing packages since is installed again.
+      if (!state.complete || (await modulesComplete(modules, pkg))) return { ran: false };
     }
+    // Otherwise: other dependencies, or installed before D55, possibly without devDependencies.
   }
   await excludeNodeModules(dir);
   await saveLocks(dir, saved);
@@ -834,7 +859,8 @@ async function installDependencies(
     if (ok && keepLocks) await fs.rm(saved, { recursive: true, force: true });
     else await restoreLocks(dir, saved);
     if (ok) {
-      await fs.writeFile(stateFile, JSON.stringify({ state: 'done', key }));
+      const complete = await modulesComplete(modules, pkg);
+      await fs.writeFile(stateFile, JSON.stringify({ state: 'done', key, complete }));
     } else if (created) {
       // Made by this install: nothing half-made is left for the next run to trust.
       await fs.rm(modules, { recursive: true, force: true });
@@ -842,7 +868,10 @@ async function installDependencies(
     } else {
       // An update over a working node_modules failed: it stays as it was, and so does the record
       // of what it was installed for, so the next run tries the update again.
-      await fs.writeFile(stateFile, JSON.stringify({ state: 'done', key: state?.key ?? '' }));
+      await fs.writeFile(
+        stateFile,
+        JSON.stringify({ state: 'done', key: state?.key ?? '', complete: state?.complete }),
+      );
     }
     return wrote;
   };
